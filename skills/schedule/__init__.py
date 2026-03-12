@@ -1,0 +1,1 @@
+"""Schedule skill package."""
