@@ -107,6 +107,8 @@ Variaveis opcionais:
 - Historico unificado e salvo em `data/conversation_history.json`
 - No chat web, o botao "Nova conversa" limpa a memoria atual
 - O chat web segue a logica de ativacao por wake word: use `cassandra, ...` para ativar
+- O `on.mp3` toca quando a wake word e detectada (voz e web)
+- No chat web, apos comando valido, a Cassandra responde no chat e tambem fala pela caixa de som
 
 ## Exemplos de comando
 

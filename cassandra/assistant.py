@@ -81,8 +81,6 @@ class CassandraAssistant:
             f"Diga/digite 'sair' para encerrar."
         )
         print(f"Alias ativos: {', '.join(aliases)} | Modo: {self.settings.input_mode}")
-        # Startup chime to quickly validate audio output when the system boots.
-        self.sound_player.play(self.settings.on_sound_path)
         if self.settings.input_mode == "mic" and self.settings.mic_debug:
             print(
                 f"[DEBUG] VAD threshold={self.settings.vad_energy_threshold} | "
@@ -124,6 +122,10 @@ class CassandraAssistant:
 
             raw_text = event.text.strip()
             if not raw_text:
+                if active_until is not None:
+                    retry = "Nao entendi. Pode repetir, por favor?"
+                    self.voice_output.speak(retry)
+                    print(f"Cassandra: {retry}")
                 continue
 
             if self.settings.mic_debug and self.settings.input_mode == "mic":
@@ -149,6 +151,12 @@ class CassandraAssistant:
                         break
                     command = follow_event.text.strip()
                     command_source = "wake_followup"
+                    if not command:
+                        retry = "Nao entendi. Pode repetir, por favor?"
+                        self.voice_output.speak(retry)
+                        print(f"Cassandra: {retry}")
+                        active_until = time.monotonic() + self.settings.wake_timeout_seconds
+                        continue
             else:
                 # Active session: no wake word required.
                 command = raw_text
@@ -168,7 +176,6 @@ class CassandraAssistant:
 
             response = result["response"]
             print(f"Cassandra: {response}")
-            self.sound_player.play(self.settings.on_sound_path)
             active_until = time.monotonic() + self.settings.wake_timeout_seconds
 
     def process_text_command(
@@ -255,6 +262,7 @@ class CassandraAssistant:
                 return {"response": wait_msg, "dismissed": False, "activated": False}
 
             if wake_detected:
+                self.sound_player.play(self.settings.on_sound_path)
                 command = (wake_command or "").strip()
                 if not command:
                     self._web_active_until = now + self.settings.wake_timeout_seconds
@@ -280,7 +288,7 @@ class CassandraAssistant:
         result = self.process_text_command(
             command,
             source=command_source,
-            speak_response=False,
+            speak_response=True,
         )
         with self._state_lock:
             if result["dismissed"]:
