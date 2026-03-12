@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -52,6 +53,7 @@ class MicrophoneInputSource:
         self.vad_wake_silence_duration = vad_wake_silence_duration
         self.interrupt_event = interrupt_event
         self.debug = debug
+        self._last_capture_error_at = 0.0
 
         from cassandra.vad_recorder import VadRecorder  # noqa: PLC0415
 
@@ -69,7 +71,15 @@ class MicrophoneInputSource:
                 so activation is faster after the user says just the assistant name.
         """
         silence_override = self.vad_wake_silence_duration if wake_phase else None
-        text = self._capture_and_transcribe(silence_override)
+        try:
+            text = self._capture_and_transcribe(silence_override)
+        except Exception as exc:  # noqa: BLE001
+            now = time.monotonic()
+            if now - self._last_capture_error_at > 5.0:
+                self._last_capture_error_at = now
+                print(f"[MIC] Entrada de audio indisponivel: {exc}")
+            time.sleep(1.0)
+            return InputEvent(text="")
         if text.lower() in {"sair", "exit", "quit"}:
             return InputEvent(text="", exit_requested=True)
         return InputEvent(text=text)

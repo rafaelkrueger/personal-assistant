@@ -109,6 +109,9 @@ Variaveis opcionais:
 - O chat web segue a logica de ativacao por wake word: use `cassandra, ...` para ativar
 - O `on.mp3` toca quando a wake word e detectada (voz e web)
 - No chat web, apos comando valido, a Cassandra responde no chat e tambem fala pela caixa de som
+- No modo voz, apos cada resposta da Cassandra, toca `on.mp3` para sinalizar que voltou a escutar
+- No modo voz, se o usuario nao responder por `WAKE_TIMEOUT_SECONDS`, toca `off.mp3` e entra em standby
+- No modo web, nao ha timeout de standby: a sessao ativa permanece ate reset/fechamento da conversa
 
 ## Exemplos de comando
 

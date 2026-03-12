@@ -71,7 +71,7 @@ class CassandraAssistant:
         self.conversation_history_path = Path("data/conversation_history.json")
         self._state_lock = threading.Lock()
         self._conversation_history: list[dict[str, str]] = []
-        self._web_active_until: float | None = None
+        self._web_session_active = False
         self._load_conversation_history()
 
     def run(self) -> None:
@@ -126,6 +126,7 @@ class CassandraAssistant:
                     retry = "Nao entendi. Pode repetir, por favor?"
                     self.voice_output.speak(retry)
                     print(f"Cassandra: {retry}")
+                    self.sound_player.play(self.settings.on_sound_path)
                 continue
 
             if self.settings.mic_debug and self.settings.input_mode == "mic":
@@ -155,6 +156,7 @@ class CassandraAssistant:
                         retry = "Nao entendi. Pode repetir, por favor?"
                         self.voice_output.speak(retry)
                         print(f"Cassandra: {retry}")
+                        self.sound_player.play(self.settings.on_sound_path)
                         active_until = time.monotonic() + self.settings.wake_timeout_seconds
                         continue
             else:
@@ -171,12 +173,14 @@ class CassandraAssistant:
                 source=command_source,
                 speak_response=True,
             )
-            if result["dismissed"]:
-                break
-
             response = result["response"]
             print(f"Cassandra: {response}")
+            if result["dismissed"]:
+                active_until = None
+                continue
             active_until = time.monotonic() + self.settings.wake_timeout_seconds
+            # Audible cue that Cassandra is now waiting for the user's next utterance.
+            self.sound_player.play(self.settings.on_sound_path)
 
     def process_text_command(
         self,
@@ -193,11 +197,7 @@ class CassandraAssistant:
             self._append_history(role="user", content=text, source=source, kind="chat")
 
             if self._is_dismissal(text):
-                goodbye_text = "Ate logo! Encerrando escuta."
-                if speak_response:
-                    self._shutdown_with_goodbye()
-                else:
-                    self.memory.clear()
+                goodbye_text = self._dismiss_to_standby(speak_response=speak_response)
                 self._append_history(
                     role="assistant",
                     content=goodbye_text,
@@ -235,13 +235,8 @@ class CassandraAssistant:
             raise ValueError("Message cannot be empty.")
 
         with self._state_lock:
-            now = time.monotonic()
-            if self._web_active_until is not None and now >= self._web_active_until:
-                self._web_active_until = None
-                self.memory.clear()
-
             wake_detected, wake_command = self._parse_wake(text)
-            if self._web_active_until is None and not wake_detected:
+            if not self._web_session_active and not wake_detected:
                 self._log_passive_heard(text)
                 wait_msg = (
                     f"Diga '{self.settings.assistant_name}, ...' para me ativar no chat "
@@ -265,7 +260,7 @@ class CassandraAssistant:
                 self.sound_player.play(self.settings.on_sound_path)
                 command = (wake_command or "").strip()
                 if not command:
-                    self._web_active_until = now + self.settings.wake_timeout_seconds
+                    self._web_session_active = True
                     prompt = "Ativada. Pode mandar o pedido."
                     self._append_history(
                         role="user",
@@ -292,9 +287,9 @@ class CassandraAssistant:
         )
         with self._state_lock:
             if result["dismissed"]:
-                self._web_active_until = None
+                self._web_session_active = False
             else:
-                self._web_active_until = time.monotonic() + self.settings.wake_timeout_seconds
+                self._web_session_active = True
         return {
             "response": result["response"],
             "dismissed": result["dismissed"],
@@ -309,6 +304,7 @@ class CassandraAssistant:
         with self._state_lock:
             self.memory.clear()
             self._conversation_history = []
+            self._web_session_active = False
             self._persist_conversation_history()
 
     def _log_action_command(self, command: str, source: str) -> None:
@@ -401,6 +397,14 @@ class CassandraAssistant:
         print(f"Cassandra: {goodbye_text}")
         self.voice_output.speak(goodbye_text)
         self.sound_player.play(self.settings.off_sound_path)
+
+    def _dismiss_to_standby(self, speak_response: bool) -> str:
+        self.memory.clear()
+        standby_text = "Ate logo! Vou ficar em espera. Me chame quando precisar."
+        if speak_response:
+            self.voice_output.speak(standby_text)
+            self.sound_player.play(self.settings.off_sound_path)
+        return standby_text
 
     def _is_dismissal(self, command: str) -> bool:
         """Uses the LLM to classify whether the utterance is a session dismissal.
