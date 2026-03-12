@@ -169,7 +169,7 @@ class VoiceOutput:
 
     @staticmethod
     def _detect_player() -> str | None:
-        for player in ["ffplay", "mpg123", "mpv", "cvlc"]:
+        for player in ["ffplay", "mpg123", "mpv", "cvlc", "play"]:
             if shutil.which(player):
                 return player
         return None
@@ -192,6 +192,8 @@ class VoiceOutput:
             return ["mpv", "--no-video", "--really-quiet", path]
         if player == "cvlc":
             return ["cvlc", "--play-and-exit", "--quiet", path]
+        if player == "play":
+            return ["play", "-q", path]
         return None
 
     def _build_local_cmd(self, backend: str, text: str) -> list[str] | None:
