@@ -17,9 +17,13 @@ from cassandra.router import SkillRouter
 from cassandra.sounds import SoundPlayer
 from cassandra.timer_manager import TimerManager, format_duration
 from cassandra.voice import VoiceOutput
+from cassandra.alarm_manager import AlarmManager
+from skills.alarm.skill import AlarmSkill
 from skills.general_chat.skill import GeneralChatSkill
 from skills.schedule.skill import ScheduleSkill
+from skills.shopping_list.skill import ShoppingListSkill
 from skills.timer.skill import TimerSkill
+from skills.todo.skill import TodoSkill
 from skills.weather.skill import WeatherSkill
 
 
@@ -31,11 +35,21 @@ class CassandraAssistant:
             model=self.settings.openai_model,
         )
         self.memory = ConversationMemory()
+        self.sound_player = SoundPlayer()
         self._timer_interrupt = threading.Event()
         self.timer_manager = TimerManager(on_fire=self._timer_interrupt)
+        self.alarm_manager = AlarmManager(
+            ring_sound_path=self.settings.ring_sound_path,
+            sound_player=self.sound_player,
+        )
+        self.shopping_skill = ShoppingListSkill()
+        self.todo_skill = TodoSkill()
         self.router = SkillRouter(
             skills=[
+                AlarmSkill(self.alarm_manager),
                 ScheduleSkill(),
+                self.shopping_skill,
+                self.todo_skill,
                 WeatherSkill(),
                 TimerSkill(self.timer_manager),
                 GeneralChatSkill(self.llm, self.memory),
@@ -56,7 +70,6 @@ class CassandraAssistant:
             )
         else:
             self.input_source = TextInputSource()
-        self.sound_player = SoundPlayer()
         self.voice_output = VoiceOutput(
             enabled=self.settings.voice_enabled,
             llm=self.llm,
@@ -196,6 +209,28 @@ class CassandraAssistant:
             self._log_action_command(text, source=source)
             self._append_history(role="user", content=text, source=source, kind="chat")
 
+            lowered = text.lower().strip()
+            if self.alarm_manager.is_ringing() and lowered in {
+                "parar",
+                "pare",
+                "parar alarme",
+                "para alarme",
+                "desligar alarme",
+            }:
+                self.alarm_manager.stop_ringing()
+                response = "Alarme parado."
+                if speak_response:
+                    self.voice_output.speak(response)
+                self.memory.add_user(text)
+                self.memory.add_assistant(response)
+                self._append_history(
+                    role="assistant",
+                    content=response,
+                    source="assistant",
+                    kind="chat",
+                )
+                return {"response": response, "dismissed": False}
+
             if self._is_dismissal(text):
                 goodbye_text = self._dismiss_to_standby(speak_response=speak_response)
                 self._append_history(
@@ -306,6 +341,50 @@ class CassandraAssistant:
             self._conversation_history = []
             self._web_session_active = False
             self._persist_conversation_history()
+
+    def get_shopping_items(self) -> list[dict]:
+        return self.shopping_skill.list_items()
+
+    def add_shopping_item(self, name: str) -> dict:
+        return self.shopping_skill.add_item(name)
+
+    def remove_shopping_item(self, item_id: str) -> bool:
+        return self.shopping_skill.remove_item(item_id)
+
+    def get_todos(self) -> list[dict]:
+        return self.todo_skill.list_tasks()
+
+    def add_todo(self, title: str) -> dict:
+        return self.todo_skill.add_task(title)
+
+    def remove_todo(self, task_id: str) -> bool:
+        return self.todo_skill.remove_task(task_id)
+
+    def set_todo_completed(self, task_id: str, completed: bool) -> bool:
+        return self.todo_skill.set_task_completed(task_id, completed)
+
+    def list_alarms(self) -> list[dict]:
+        return self.alarm_manager.list_alarms()
+
+    def add_alarm(self, time_hhmm: str, recurring_daily: bool, label: str = "Alarme Cassandra") -> dict:
+        alarm = self.alarm_manager.add_alarm(time_hhmm=time_hhmm, recurring_daily=recurring_daily, label=label)
+        return {
+            "id": alarm.id,
+            "label": alarm.label,
+            "time_hhmm": alarm.time_hhmm,
+            "recurring_daily": alarm.recurring_daily,
+            "next_trigger_at": alarm.next_trigger_at,
+            "enabled": alarm.enabled,
+        }
+
+    def remove_alarm(self, alarm_id: str) -> bool:
+        return self.alarm_manager.remove_alarm(alarm_id)
+
+    def stop_alarm_ringing(self) -> bool:
+        return self.alarm_manager.stop_ringing()
+
+    def is_alarm_ringing(self) -> bool:
+        return self.alarm_manager.is_ringing()
 
     def _log_action_command(self, command: str, source: str) -> None:
         """Persist recognized post-wake commands for audit/debug."""

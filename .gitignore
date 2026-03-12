@@ -4,3 +4,6 @@ __pycache__/
 .env
 data/agenda.json
 data/conversation_history.json
+data/shopping_list.json
+data/todos.json
+data/alarms.json

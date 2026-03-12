@@ -9,6 +9,9 @@ Projeto base de uma assistente pessoal chamada **Cassandra**, inspirada em assis
 - Pode ouvir pelo microfone em modo continuo (`INPUT_MODE=mic`)
 - Consulta clima (via `wttr.in`)
 - Registra e lista agenda local em `data/agenda.json`
+- Alarmes programados (pontuais e recorrentes diarios)
+- Lista de compras persistente
+- Lista de tarefas persistente (com concluido/pendente)
 - Organiza cada habilidade em pastas dentro de `skills/`
 
 ## Estrutura
@@ -78,9 +81,14 @@ export VOICE_RATE="165"
 python main.py
 ```
 
-## Interface web (chat com historico e memoria)
+## Interface web (dashboard)
 
-Tambem e possivel conversar com a Cassandra pelo navegador, com historico persistente por sessao.
+Tambem e possivel usar a Cassandra pelo navegador com dashboard completo:
+
+- Chat
+- Lista de compras
+- Lista de tarefas
+- Alarmes
 
 ### Iniciar servidor web
 
@@ -112,6 +120,12 @@ Variaveis opcionais:
 - No modo voz, apos cada resposta da Cassandra, toca `on.mp3` para sinalizar que voltou a escutar
 - No modo voz, se o usuario nao responder por `WAKE_TIMEOUT_SECONDS`, toca `off.mp3` e entra em standby
 - No modo web, nao ha timeout de standby: a sessao ativa permanece ate reset/fechamento da conversa
+
+### Persistencia dos novos recursos
+
+- Compras: `data/shopping_list.json`
+- Tarefas: `data/todos.json`
+- Alarmes: `data/alarms.json`
 
 ## Exemplos de comando
 
