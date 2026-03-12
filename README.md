@@ -78,6 +78,30 @@ export VOICE_RATE="165"
 python main.py
 ```
 
+## Interface web (chat com historico e memoria)
+
+Tambem e possivel conversar com a Cassandra pelo navegador, com historico persistente por sessao.
+
+### Iniciar servidor web
+
+```bash
+python web_server.py
+```
+
+Servidor padrao: `http://localhost:8080`
+
+Variaveis opcionais:
+
+- `WEB_HOST` (padrao `0.0.0.0`)
+- `WEB_PORT` (padrao `8080`)
+
+### Como funciona a memoria no web chat
+
+- Cada sessao recebe um `session_id` unico
+- Historico de pedidos/respostas e salvo em `data/web_chat_history.json`
+- Ao recarregar a pagina, a sessao atual continua com contexto
+- Botao "Nova conversa" cria uma sessao nova limpa
+
 ## Exemplos de comando
 
 - `cassandra, que horas sao em toquio?`

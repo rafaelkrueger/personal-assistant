@@ -15,7 +15,8 @@ class InputEvent:
 
 
 class TextInputSource:
-    def read(self) -> InputEvent:
+    def read(self, wake_phase: bool = False) -> InputEvent:
+        _ = wake_phase
         raw_text = input("\nVoce: ").strip()
         if raw_text.lower() in {"sair", "exit", "quit"}:
             return InputEvent(text="", exit_requested=True)

@@ -1,0 +1,18 @@
+{
+  "sessions": {
+    "8b14a00daddf4b81b0e31e1690a7cb00": [
+      {
+        "role": "user",
+        "content": "me diga ola",
+        "timestamp": "2026-03-12 15:56:45",
+        "kind": "chat"
+      },
+      {
+        "role": "assistant",
+        "content": "Olá! Como posso ajudar você hoje?",
+        "timestamp": "2026-03-12 15:56:45",
+        "kind": "chat"
+      }
+    ]
+  }
+}
