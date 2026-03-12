@@ -100,6 +100,8 @@ Com isso, o terminal mostra:
 - Transcricao de cada trecho capturado do microfone
 - Texto recebido pelo roteador
 - Se a wake word (ex.: `cassandra`) foi detectada ou ignorada
+- Todo comando reconhecido apos ativacao em linha `[ACTION] ...` e em `data/action_commands.log`
+- Toda fala ouvida fora de modo ativo em linha `[PASSIVE] ...` e em `data/passive_heard.log`
 
 Quando detectar a wake word, toca `assets/on.mp3`. Se nao houver pedido em 10 segundos, toca `assets/off.mp3`.
 Depois da wake word, a captura de comando fica mais paciente: ela junta trechos por ate `COMMAND_CAPTURE_MAX_SECONDS` e so finaliza apos silencio suficiente (`COMMAND_SILENCE_CHUNKS` + `COMMAND_END_SILENCE_SECONDS`).
@@ -134,3 +136,36 @@ sudo apt-get update && sudo apt-get install -y alsa-utils
 3. Registre a skill em `cassandra/assistant.py` dentro da lista do `SkillRouter`
 
 Assim cada habilidade fica isolada e facil de evoluir.
+
+## CI/CD para Raspberry Pi (deploy automatico no push)
+
+Este projeto inclui workflow em `.github/workflows/deploy-raspberry.yml` para deploy automatico no `push` da branch `main`.
+
+### 1) Requisitos
+
+- Runner GitHub Actions `self-hosted` no mesmo ambiente de rede (ou VPN) da Raspberry Pi
+- SSH habilitado na Raspberry Pi
+
+### 2) Secrets no repositorio GitHub
+
+Configure estes secrets:
+
+- `RPI_HOST` (ex.: `192.168.100.49`)
+- `RPI_PORT` (ex.: `22`)
+- `RPI_USER`
+- `RPI_PASSWORD`
+- `RPI_REMOTE_PATH` (ex.: `~/Desktop/personal-assistant`)
+- `RPI_INPUT_MODE` (ex.: `mic` ou `text`)
+- `RPI_VOICE_ENABLED` (ex.: `true` ou `false`)
+- `RPI_INSTALL_SYSTEM_DEPS` (ex.: `false`; use `true` no primeiro deploy)
+
+### 3) Como funciona
+
+Ao fazer `git push` para `main`, o workflow:
+
+1. Faz checkout do codigo
+2. Instala `sshpass` e `rsync`
+3. Roda `scripts/deploy_raspberry.sh`
+4. Sincroniza arquivos para a Raspberry Pi (preserva `.env`, `data/` e `.venv/`)
+5. Instala/atualiza dependencias Python
+6. Reinicia `main.py` e mostra os ultimos logs

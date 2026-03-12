@@ -4,7 +4,9 @@ import re
 import threading
 import time
 import unicodedata
+from datetime import datetime
 from difflib import SequenceMatcher
+from pathlib import Path
 
 from cassandra.config import load_settings
 from cassandra.input_sources import InputEvent, MicrophoneInputSource, TextInputSource
@@ -62,6 +64,9 @@ class CassandraAssistant:
             fallback_lang=self.settings.voice_lang,
             fallback_rate=self.settings.voice_rate,
         )
+        self.action_log_path = Path("data/action_commands.log")
+        self.action_log_path.parent.mkdir(parents=True, exist_ok=True)
+        self.passive_log_path = Path("data/passive_heard.log")
 
     def run(self) -> None:
         aliases = self.settings.assistant_aliases or [self.settings.assistant_name]
@@ -119,6 +124,7 @@ class CassandraAssistant:
             wake_detected, wake_command = self._parse_wake(raw_text)
 
             if active_until is None and not wake_detected:
+                self._log_passive_heard(raw_text)
                 if self.settings.mic_debug and self.settings.input_mode == "mic":
                     print("[WAKE] Ignorado: wake word nao detectada.")
                 continue
@@ -126,6 +132,7 @@ class CassandraAssistant:
             if wake_detected:
                 self.sound_player.play(self.settings.on_sound_path)
                 command = wake_command
+                command_source = "wake_inline"
                 if not command:
                     # Wake word said alone — wait for the follow-up utterance.
                     follow_event = self.input_source.read()
@@ -133,13 +140,17 @@ class CassandraAssistant:
                         self._shutdown_with_goodbye()
                         break
                     command = follow_event.text.strip()
+                    command_source = "wake_followup"
             else:
                 # Active session: no wake word required.
                 command = raw_text
+                command_source = "active_session"
 
             if not command:
                 active_until = time.monotonic() + self.settings.wake_timeout_seconds
                 continue
+
+            self._log_action_command(command, source=command_source)
 
             if self._is_dismissal(command):
                 self._shutdown_with_goodbye()
@@ -156,6 +167,30 @@ class CassandraAssistant:
             print(f"Cassandra: {response}")
             self.sound_player.play(self.settings.on_sound_path)
             active_until = time.monotonic() + self.settings.wake_timeout_seconds
+
+    def _log_action_command(self, command: str, source: str) -> None:
+        """Persist recognized post-wake commands for audit/debug."""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        line = f"[{timestamp}] [{source}] {command}\n"
+        try:
+            with self.action_log_path.open("a", encoding="utf-8") as fp:
+                fp.write(line)
+        except OSError:
+            # Logging must never break assistant behavior.
+            pass
+        print(f"[ACTION] {command}")
+
+    def _log_passive_heard(self, text: str) -> None:
+        """Persist utterances heard outside active command mode."""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        line = f"[{timestamp}] [passive_ignored] {text}\n"
+        try:
+            with self.passive_log_path.open("a", encoding="utf-8") as fp:
+                fp.write(line)
+        except OSError:
+            # Logging must never break assistant behavior.
+            pass
+        print(f"[PASSIVE] {text}")
 
     def _shutdown_with_goodbye(self) -> None:
         self.memory.clear()

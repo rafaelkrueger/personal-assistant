@@ -1,0 +1,35 @@
+name: Deploy Personal Assistant to Raspberry Pi
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    # Use a self-hosted runner in the same network/VPN as Raspberry Pi.
+    runs-on: self-hosted
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install deploy tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sshpass rsync
+
+      - name: Make deploy script executable
+        run: chmod +x scripts/deploy_raspberry.sh
+
+      - name: Deploy over SSH
+        env:
+          RPI_HOST: 192.168.100.49
+          RPI_PORT: 22
+          RPI_USER: rafaelkrueger
+          RPI_PASSWORD: 975188
+          REMOTE_PATH: ~/Desktop/personal-assistant
+          INPUT_MODE: mic
+          VOICE_ENABLED: "true"
+          INSTALL_SYSTEM_DEPS: "false"
+        run: ./scripts/deploy_raspberry.sh
