@@ -19,11 +19,14 @@ from cassandra.timer_manager import TimerManager, format_duration
 from cassandra.voice import VoiceOutput
 from cassandra.alarm_manager import AlarmManager
 from skills.alarm.skill import AlarmSkill
+from skills.calculator.skill import CalculatorSkill
 from skills.general_chat.skill import GeneralChatSkill
+from skills.notes.skill import NotesSkill
 from skills.schedule.skill import ScheduleSkill
 from skills.shopping_list.skill import ShoppingListSkill
 from skills.timer.skill import TimerSkill
 from skills.todo.skill import TodoSkill
+from skills.volume.skill import VolumeSkill
 from skills.weather.skill import WeatherSkill
 
 
@@ -44,14 +47,18 @@ class CassandraAssistant:
         )
         self.shopping_skill = ShoppingListSkill()
         self.todo_skill = TodoSkill()
+        self.notes_skill = NotesSkill()
         self.router = SkillRouter(
             skills=[
                 AlarmSkill(self.alarm_manager),
+                TimerSkill(self.timer_manager),
+                self.notes_skill,
+                CalculatorSkill(),
+                VolumeSkill(),
                 ScheduleSkill(),
                 self.shopping_skill,
                 self.todo_skill,
                 WeatherSkill(),
-                TimerSkill(self.timer_manager),
                 GeneralChatSkill(self.llm, self.memory),
             ]
         )
@@ -366,16 +373,37 @@ class CassandraAssistant:
     def list_alarms(self) -> list[dict]:
         return self.alarm_manager.list_alarms()
 
-    def add_alarm(self, time_hhmm: str, recurring_daily: bool, label: str = "Alarme Cassandra") -> dict:
-        alarm = self.alarm_manager.add_alarm(time_hhmm=time_hhmm, recurring_daily=recurring_daily, label=label)
+    def add_alarm(
+        self,
+        time_hhmm: str,
+        recurring_daily: bool,
+        label: str = "Alarme Cassandra",
+        days_of_week: list[int] | None = None,
+    ) -> dict:
+        alarm = self.alarm_manager.add_alarm(
+            time_hhmm=time_hhmm,
+            recurring_daily=recurring_daily,
+            label=label,
+            days_of_week=days_of_week,
+        )
         return {
             "id": alarm.id,
             "label": alarm.label,
             "time_hhmm": alarm.time_hhmm,
             "recurring_daily": alarm.recurring_daily,
+            "days_of_week": alarm.days_of_week,
             "next_trigger_at": alarm.next_trigger_at,
             "enabled": alarm.enabled,
         }
+
+    def get_notes(self) -> list[dict]:
+        return self.notes_skill.list_items()
+
+    def add_note(self, content: str) -> dict:
+        return self.notes_skill.add_item(content)
+
+    def remove_note(self, note_id: str) -> bool:
+        return self.notes_skill.remove_item(note_id)
 
     def remove_alarm(self, alarm_id: str) -> bool:
         return self.alarm_manager.remove_alarm(alarm_id)

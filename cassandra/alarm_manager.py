@@ -1,4 +1,4 @@
-"""Persistent alarm manager with repeating ring playback."""
+"""Persistent alarm manager with repeating ring playback and weekday selection."""
 from __future__ import annotations
 
 import json
@@ -18,6 +18,7 @@ class Alarm:
     label: str
     time_hhmm: str
     recurring_daily: bool
+    days_of_week: list[int] | None  # 0=Mon..6=Sun; None = every day
     next_trigger_at: str
     enabled: bool = True
 
@@ -42,14 +43,23 @@ class AlarmManager:
         self._monitor.start()
         self._ringer.start()
 
-    def add_alarm(self, time_hhmm: str, recurring_daily: bool, label: str = "Alarme") -> Alarm:
+    def add_alarm(
+        self,
+        time_hhmm: str,
+        recurring_daily: bool,
+        label: str = "Alarme",
+        days_of_week: list[int] | None = None,
+    ) -> Alarm:
         normalized = self._normalize_time(time_hhmm)
-        next_trigger = self._compute_next_trigger(normalized)
+        # Normalize days_of_week: empty list → None (means every day)
+        dow = sorted(set(days_of_week)) if days_of_week else None
+        next_trigger = self._compute_next_trigger(normalized, dow)
         alarm = Alarm(
             id=uuid4().hex[:10],
             label=label.strip() or "Alarme",
             time_hhmm=normalized,
             recurring_daily=recurring_daily,
+            days_of_week=dow,
             next_trigger_at=next_trigger.isoformat(),
             enabled=True,
         )
@@ -94,10 +104,9 @@ class AlarmManager:
                     trigger = self._parse_dt(alarm.next_trigger_at)
                     if trigger <= now:
                         self._ringing_alarm_ids.add(alarm.id)
-                        if alarm.recurring_daily:
-                            next_dt = self._compute_next_trigger(alarm.time_hhmm)
-                            if next_dt <= now:
-                                next_dt = next_dt + timedelta(days=1)
+                        is_recurring = alarm.recurring_daily or (alarm.days_of_week is not None)
+                        if is_recurring:
+                            next_dt = self._compute_next_trigger(alarm.time_hhmm, alarm.days_of_week)
                             alarm.next_trigger_at = next_dt.isoformat()
                         else:
                             alarm.enabled = False
@@ -128,11 +137,14 @@ class AlarmManager:
             if not isinstance(row, dict):
                 continue
             try:
+                raw_days = row.get("days_of_week")
+                dow = [int(d) for d in raw_days] if isinstance(raw_days, list) else None
                 alarm = Alarm(
                     id=str(row["id"]),
                     label=str(row.get("label", "Alarme")),
                     time_hhmm=self._normalize_time(str(row["time_hhmm"])),
                     recurring_daily=bool(row.get("recurring_daily", False)),
+                    days_of_week=dow,
                     next_trigger_at=str(row["next_trigger_at"]),
                     enabled=bool(row.get("enabled", True)),
                 )
@@ -159,13 +171,22 @@ class AlarmManager:
         return f"{hour:02d}:{minute:02d}"
 
     @staticmethod
-    def _compute_next_trigger(time_hhmm: str) -> datetime:
+    def _compute_next_trigger(time_hhmm: str, days_of_week: list[int] | None = None) -> datetime:
         hour, minute = [int(p) for p in time_hhmm.split(":")]
         now = datetime.now()
-        target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        if target <= now:
-            target += timedelta(days=1)
-        return target
+        base = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        # Check today through the next 7 days
+        for offset in range(8):
+            candidate = base + timedelta(days=offset)
+            if candidate <= now:
+                continue
+            if not days_of_week or candidate.weekday() in days_of_week:
+                return candidate
+        # Fallback: walk forward until a matching weekday
+        candidate = base + timedelta(days=1)
+        while days_of_week and candidate.weekday() not in days_of_week:
+            candidate += timedelta(days=1)
+        return candidate
 
     @staticmethod
     def _parse_dt(value: str) -> datetime:
