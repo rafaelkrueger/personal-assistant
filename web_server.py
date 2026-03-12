@@ -39,7 +39,7 @@ HTML_PAGE = """<!doctype html>
       <h1>Cassandra - Chat Web</h1>
       <div id="history"></div>
       <div class="row">
-        <input id="message" type="text" placeholder="Digite sua mensagem..." />
+        <input id="message" type="text" placeholder="Digite: cassandra, ... para ativar" />
         <button id="send">Enviar</button>
         <button id="newSession" class="secondary">Nova conversa</button>
       </div>
@@ -162,11 +162,7 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                 data = self._read_json_body()
                 message = str(data.get("message", "")).strip()
                 try:
-                    result = assistant.process_text_command(
-                        message,
-                        source="web_chat",
-                        speak_response=False,
-                    )
+                    result = assistant.process_web_message(message)
                 except ValueError as exc:
                     self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
                     return
@@ -177,6 +173,7 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                     {
                         "reply": result["response"],
                         "dismissed": result["dismissed"],
+                        "activated": result["activated"],
                         "history": assistant.get_conversation_history(),
                     }
                 )

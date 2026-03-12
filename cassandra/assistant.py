@@ -71,6 +71,7 @@ class CassandraAssistant:
         self.conversation_history_path = Path("data/conversation_history.json")
         self._state_lock = threading.Lock()
         self._conversation_history: list[dict[str, str]] = []
+        self._web_active_until: float | None = None
         self._load_conversation_history()
 
     def run(self) -> None:
@@ -219,6 +220,78 @@ class CassandraAssistant:
                 kind="chat",
             )
             return {"response": response, "dismissed": False}
+
+    def process_web_message(self, message: str) -> dict[str, str | bool]:
+        """Handles web messages with wake-word flow similar to voice mode."""
+        text = (message or "").strip()
+        if not text:
+            raise ValueError("Message cannot be empty.")
+
+        with self._state_lock:
+            now = time.monotonic()
+            if self._web_active_until is not None and now >= self._web_active_until:
+                self._web_active_until = None
+                self.memory.clear()
+
+            wake_detected, wake_command = self._parse_wake(text)
+            if self._web_active_until is None and not wake_detected:
+                self._log_passive_heard(text)
+                wait_msg = (
+                    f"Diga '{self.settings.assistant_name}, ...' para me ativar no chat "
+                    "antes de enviar comandos."
+                )
+                self._append_history(
+                    role="user",
+                    content=text,
+                    source="web_passive",
+                    kind="passive",
+                )
+                self._append_history(
+                    role="assistant",
+                    content=wait_msg,
+                    source="assistant",
+                    kind="system",
+                )
+                return {"response": wait_msg, "dismissed": False, "activated": False}
+
+            if wake_detected:
+                command = (wake_command or "").strip()
+                if not command:
+                    self._web_active_until = now + self.settings.wake_timeout_seconds
+                    prompt = "Ativada. Pode mandar o pedido."
+                    self._append_history(
+                        role="user",
+                        content=text,
+                        source="web_wake_only",
+                        kind="system",
+                    )
+                    self._append_history(
+                        role="assistant",
+                        content=prompt,
+                        source="assistant",
+                        kind="system",
+                    )
+                    return {"response": prompt, "dismissed": False, "activated": True}
+                command_source = "web_wake_inline"
+            else:
+                command = text
+                command_source = "web_active_session"
+
+        result = self.process_text_command(
+            command,
+            source=command_source,
+            speak_response=False,
+        )
+        with self._state_lock:
+            if result["dismissed"]:
+                self._web_active_until = None
+            else:
+                self._web_active_until = time.monotonic() + self.settings.wake_timeout_seconds
+        return {
+            "response": result["response"],
+            "dismissed": result["dismissed"],
+            "activated": True,
+        }
 
     def get_conversation_history(self) -> list[dict[str, str]]:
         with self._state_lock:
