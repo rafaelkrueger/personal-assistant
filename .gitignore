@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 .env
 data/agenda.json
+data/conversation_history.json

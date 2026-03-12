@@ -85,22 +85,27 @@ Tambem e possivel conversar com a Cassandra pelo navegador, com historico persis
 ### Iniciar servidor web
 
 ```bash
-python web_server.py
+python main.py
 ```
 
-Servidor padrao: `http://localhost:8080`
+O `main.py` agora sobe:
+
+- escuta principal da Cassandra (voz/texto)
+- servidor web de chat no mesmo processo
+
+Servidor web padrao: `http://localhost:8080`
 
 Variaveis opcionais:
 
 - `WEB_HOST` (padrao `0.0.0.0`)
 - `WEB_PORT` (padrao `8080`)
 
-### Como funciona a memoria no web chat
+### Como funciona a memoria unificada (voz + web)
 
-- Cada sessao recebe um `session_id` unico
-- Historico de pedidos/respostas e salvo em `data/web_chat_history.json`
-- Ao recarregar a pagina, a sessao atual continua com contexto
-- Botao "Nova conversa" cria uma sessao nova limpa
+- O chat web usa a mesma instancia/memoria do assistente principal
+- Voce pode alternar entre voz e web mantendo o mesmo contexto
+- Historico unificado e salvo em `data/conversation_history.json`
+- No chat web, o botao "Nova conversa" limpa a memoria atual
 
 ## Exemplos de comando
 

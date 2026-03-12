@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import threading
 import time
@@ -67,6 +68,10 @@ class CassandraAssistant:
         self.action_log_path = Path("data/action_commands.log")
         self.action_log_path.parent.mkdir(parents=True, exist_ok=True)
         self.passive_log_path = Path("data/passive_heard.log")
+        self.conversation_history_path = Path("data/conversation_history.json")
+        self._state_lock = threading.Lock()
+        self._conversation_history: list[dict[str, str]] = []
+        self._load_conversation_history()
 
     def run(self) -> None:
         aliases = self.settings.assistant_aliases or [self.settings.assistant_name]
@@ -150,23 +155,78 @@ class CassandraAssistant:
                 active_until = time.monotonic() + self.settings.wake_timeout_seconds
                 continue
 
-            self._log_action_command(command, source=command_source)
-
-            if self._is_dismissal(command):
-                self._shutdown_with_goodbye()
+            result = self.process_text_command(
+                command,
+                source=command_source,
+                speak_response=True,
+            )
+            if result["dismissed"]:
                 break
 
-            skill = self.router.route(command)
-            if hasattr(skill, "handle_stream"):
-                response = self.voice_output.speak_stream(skill.handle_stream(command))
-            else:
-                response = skill.handle(command)
-                self.voice_output.speak(response)
-            self.memory.add_user(command)
-            self.memory.add_assistant(response)
+            response = result["response"]
             print(f"Cassandra: {response}")
             self.sound_player.play(self.settings.on_sound_path)
             active_until = time.monotonic() + self.settings.wake_timeout_seconds
+
+    def process_text_command(
+        self,
+        command: str,
+        source: str = "text",
+        speak_response: bool = False,
+    ) -> dict[str, str | bool]:
+        text = (command or "").strip()
+        if not text:
+            raise ValueError("Command cannot be empty.")
+
+        with self._state_lock:
+            self._log_action_command(text, source=source)
+            self._append_history(role="user", content=text, source=source, kind="chat")
+
+            if self._is_dismissal(text):
+                goodbye_text = "Ate logo! Encerrando escuta."
+                if speak_response:
+                    self._shutdown_with_goodbye()
+                else:
+                    self.memory.clear()
+                self._append_history(
+                    role="assistant",
+                    content=goodbye_text,
+                    source="assistant",
+                    kind="chat",
+                )
+                return {"response": goodbye_text, "dismissed": True}
+
+            skill = self.router.route(text)
+            if hasattr(skill, "handle_stream"):
+                stream = skill.handle_stream(text)
+                if speak_response:
+                    response = self.voice_output.speak_stream(stream)
+                else:
+                    response = "".join(stream)
+            else:
+                response = skill.handle(text)
+                if speak_response:
+                    self.voice_output.speak(response)
+
+            self.memory.add_user(text)
+            self.memory.add_assistant(response)
+            self._append_history(
+                role="assistant",
+                content=response,
+                source="assistant",
+                kind="chat",
+            )
+            return {"response": response, "dismissed": False}
+
+    def get_conversation_history(self) -> list[dict[str, str]]:
+        with self._state_lock:
+            return [dict(item) for item in self._conversation_history]
+
+    def clear_conversation(self) -> None:
+        with self._state_lock:
+            self.memory.clear()
+            self._conversation_history = []
+            self._persist_conversation_history()
 
     def _log_action_command(self, command: str, source: str) -> None:
         """Persist recognized post-wake commands for audit/debug."""
@@ -191,6 +251,66 @@ class CassandraAssistant:
             # Logging must never break assistant behavior.
             pass
         print(f"[PASSIVE] {text}")
+
+    def _append_history(self, role: str, content: str, source: str, kind: str) -> None:
+        entry = {
+            "role": role,
+            "content": content,
+            "source": source,
+            "kind": kind,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        self._conversation_history.append(entry)
+        self._persist_conversation_history()
+
+    def _load_conversation_history(self) -> None:
+        if not self.conversation_history_path.exists():
+            return
+        try:
+            raw = json.loads(self.conversation_history_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return
+        if not isinstance(raw, list):
+            return
+
+        cleaned: list[dict[str, str]] = []
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            role = str(item.get("role", "")).strip()
+            content = str(item.get("content", "")).strip()
+            source = str(item.get("source", "")).strip() or "unknown"
+            kind = str(item.get("kind", "")).strip() or "chat"
+            timestamp = str(item.get("timestamp", "")).strip() or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            if role not in {"user", "assistant"} or not content:
+                continue
+            cleaned.append(
+                {
+                    "role": role,
+                    "content": content,
+                    "source": source,
+                    "kind": kind,
+                    "timestamp": timestamp,
+                }
+            )
+
+        self._conversation_history = cleaned
+        for item in cleaned:
+            if item["kind"] != "chat":
+                continue
+            if item["role"] == "user":
+                self.memory.add_user(item["content"])
+            elif item["role"] == "assistant":
+                self.memory.add_assistant(item["content"])
+
+    def _persist_conversation_history(self) -> None:
+        try:
+            self.conversation_history_path.write_text(
+                json.dumps(self._conversation_history, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
 
     def _shutdown_with_goodbye(self) -> None:
         self.memory.clear()

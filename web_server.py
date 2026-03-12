@@ -4,11 +4,11 @@ import json
 import os
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlparse
+from threading import Thread
+from typing import Type
+from urllib.parse import urlparse
 
-from cassandra.chat_engine import ChatEngine
-
-engine = ChatEngine()
+from cassandra.assistant import CassandraAssistant
 
 HTML_PAGE = """<!doctype html>
 <html lang="pt-BR">
@@ -52,8 +52,6 @@ HTML_PAGE = """<!doctype html>
     const sendEl = document.getElementById("send");
     const newSessionEl = document.getElementById("newSession");
 
-    let sessionId = localStorage.getItem("cassandra_session_id");
-
     function escapeHtml(text) {
       return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
     }
@@ -74,18 +72,8 @@ HTML_PAGE = """<!doctype html>
       historyEl.scrollTop = historyEl.scrollHeight;
     }
 
-    async function ensureSession() {
-      if (sessionId) return sessionId;
-      const res = await fetch("/api/session", { method: "POST" });
-      const data = await res.json();
-      sessionId = data.session_id;
-      localStorage.setItem("cassandra_session_id", sessionId);
-      return sessionId;
-    }
-
     async function refreshHistory() {
-      const sid = await ensureSession();
-      const res = await fetch(`/api/history?session_id=${encodeURIComponent(sid)}`);
+      const res = await fetch("/api/history");
       const data = await res.json();
       render(data.history || []);
     }
@@ -94,11 +82,10 @@ HTML_PAGE = """<!doctype html>
       const text = messageEl.value.trim();
       if (!text) return;
       messageEl.value = "";
-      const sid = await ensureSession();
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: sid, message: text })
+        body: JSON.stringify({ message: text })
       });
       const data = await res.json();
       if (!res.ok) {
@@ -113,8 +100,7 @@ HTML_PAGE = """<!doctype html>
       if (e.key === "Enter") sendMessage();
     });
     newSessionEl.addEventListener("click", async () => {
-      sessionId = null;
-      localStorage.removeItem("cassandra_session_id");
+      await fetch("/api/reset", { method: "POST" });
       await refreshHistory();
     });
 
@@ -125,86 +111,100 @@ HTML_PAGE = """<!doctype html>
 """
 
 
-class CassandraWebHandler(BaseHTTPRequestHandler):
-    def _send_json(self, payload: dict, status: HTTPStatus = HTTPStatus.OK) -> None:
-        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        self.send_response(status.value)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
+    class CassandraWebHandler(BaseHTTPRequestHandler):
+        def _send_json(self, payload: dict, status: HTTPStatus = HTTPStatus.OK) -> None:
+            body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            self.send_response(status.value)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
 
-    def _send_html(self, html: str) -> None:
-        body = html.encode("utf-8")
-        self.send_response(HTTPStatus.OK.value)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        def _send_html(self, html: str) -> None:
+            body = html.encode("utf-8")
+            self.send_response(HTTPStatus.OK.value)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
 
-    def _read_json_body(self) -> dict:
-        length = int(self.headers.get("Content-Length", "0"))
-        raw = self.rfile.read(length) if length > 0 else b"{}"
-        try:
-            data = json.loads(raw.decode("utf-8"))
-        except json.JSONDecodeError:
-            return {}
-        return data if isinstance(data, dict) else {}
-
-    def do_GET(self) -> None:
-        parsed = urlparse(self.path)
-        if parsed.path == "/":
-            self._send_html(HTML_PAGE)
-            return
-
-        if parsed.path == "/api/history":
-            query = parse_qs(parsed.query)
-            session_id = (query.get("session_id") or [""])[0]
+        def _read_json_body(self) -> dict:
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length) if length > 0 else b"{}"
             try:
-                history = engine.get_history(session_id)
-            except ValueError as exc:
-                self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                data = json.loads(raw.decode("utf-8"))
+            except json.JSONDecodeError:
+                return {}
+            return data if isinstance(data, dict) else {}
+
+        def do_GET(self) -> None:
+            parsed = urlparse(self.path)
+            if parsed.path == "/":
+                self._send_html(HTML_PAGE)
                 return
-            self._send_json({"session_id": session_id, "history": history})
+
+            if parsed.path == "/api/history":
+                history = assistant.get_conversation_history()
+                self._send_json({"history": history})
+                return
+
+            self._send_json({"error": "Not found."}, status=HTTPStatus.NOT_FOUND)
+
+        def do_POST(self) -> None:
+            parsed = urlparse(self.path)
+            if parsed.path == "/api/reset":
+                assistant.clear_conversation()
+                self._send_json({"ok": True, "history": []})
+                return
+
+            if parsed.path == "/api/chat":
+                data = self._read_json_body()
+                message = str(data.get("message", "")).strip()
+                try:
+                    result = assistant.process_text_command(
+                        message,
+                        source="web_chat",
+                        speak_response=False,
+                    )
+                except ValueError as exc:
+                    self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                    return
+                except Exception as exc:  # noqa: BLE001
+                    self._send_json({"error": f"Internal error: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                    return
+                self._send_json(
+                    {
+                        "reply": result["response"],
+                        "dismissed": result["dismissed"],
+                        "history": assistant.get_conversation_history(),
+                    }
+                )
+                return
+
+            self._send_json({"error": "Not found."}, status=HTTPStatus.NOT_FOUND)
+
+        def log_message(self, format: str, *args) -> None:  # noqa: A003
             return
 
-        self._send_json({"error": "Not found."}, status=HTTPStatus.NOT_FOUND)
+    return CassandraWebHandler
 
-    def do_POST(self) -> None:
-        parsed = urlparse(self.path)
 
-        if parsed.path == "/api/session":
-            session_id = engine.create_session()
-            self._send_json({"session_id": session_id, "history": []})
-            return
-
-        if parsed.path == "/api/chat":
-            data = self._read_json_body()
-            session_id = str(data.get("session_id", "")).strip()
-            message = str(data.get("message", "")).strip()
-            try:
-                response = engine.chat(session_id=session_id, message=message)
-            except ValueError as exc:
-                self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
-                return
-            except Exception as exc:  # noqa: BLE001
-                self._send_json({"error": f"Internal error: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
-                return
-            self._send_json(response)
-            return
-
-        self._send_json({"error": "Not found."}, status=HTTPStatus.NOT_FOUND)
-
-    def log_message(self, format: str, *args) -> None:  # noqa: A003
-        return
+def start_web_server(assistant: CassandraAssistant) -> ThreadingHTTPServer:
+    host = os.getenv("WEB_HOST", "0.0.0.0")
+    port = int(os.getenv("WEB_PORT", "8080"))
+    handler = make_handler(assistant)
+    server = ThreadingHTTPServer((host, port), handler)
+    worker = Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    print(f"Web chat running at http://{host}:{port}")
+    return server
 
 
 def main() -> None:
-    host = os.getenv("WEB_HOST", "0.0.0.0")
-    port = int(os.getenv("WEB_PORT", "8080"))
-    server = ThreadingHTTPServer((host, port), CassandraWebHandler)
-    print(f"Web chat running at http://{host}:{port}")
-    server.serve_forever()
+    assistant = CassandraAssistant()
+    start_web_server(assistant)
+    assistant.run()
 
 
 if __name__ == "__main__":
