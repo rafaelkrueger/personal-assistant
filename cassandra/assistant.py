@@ -80,6 +80,8 @@ class CassandraAssistant:
             f"Diga/digite 'sair' para encerrar."
         )
         print(f"Alias ativos: {', '.join(aliases)} | Modo: {self.settings.input_mode}")
+        # Startup chime to quickly validate audio output when the system boots.
+        self.sound_player.play(self.settings.on_sound_path)
         if self.settings.input_mode == "mic" and self.settings.mic_debug:
             print(
                 f"[DEBUG] VAD threshold={self.settings.vad_energy_threshold} | "
