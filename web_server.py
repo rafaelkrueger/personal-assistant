@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import urllib.request
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
@@ -536,6 +537,24 @@ HTML_PAGE = """<!doctype html>
             </div>
           </div>
 
+          <!-- Agente Web -->
+          <div class="settings-card">
+            <div class="settings-card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20"/></svg>Agente Web</div>
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <div class="settings-row-label">Status da conexão</div>
+                <div class="settings-row-desc" id="web-agent-url" style="font-family:monospace;font-size:11px">—</div>
+              </div>
+              <div class="settings-row-control" style="gap:8px">
+                <span id="web-agent-badge" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:99px;font-size:12px;font-weight:600;border:1px solid var(--border);color:var(--text2)">
+                  <span id="web-agent-dot" style="width:9px;height:9px;border-radius:50%;background:#6b7280;flex-shrink:0;display:inline-block"></span>
+                  <span id="web-agent-label">Verificando…</span>
+                </span>
+                <button class="btn btn-ghost btn-sm" id="checkWebAgentBtn" title="Verificar agora"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg></button>
+              </div>
+            </div>
+          </div>
+
           <!-- Sistema (read-only) -->
           <div class="settings-card">
             <div class="settings-card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>Sistema</div>
@@ -934,14 +953,45 @@ document.getElementById("clearHistBtn").addEventListener("click",async()=>{
   alert("Histórico limpo.");
 });
 
+// ── Web-agent status ──
+async function checkWebAgentStatus(){
+  const dot=document.getElementById("web-agent-dot");
+  const lbl=document.getElementById("web-agent-label");
+  const badge=document.getElementById("web-agent-badge");
+  const urlEl=document.getElementById("web-agent-url");
+  dot.style.background="#a78bfa"; lbl.textContent="Verificando…";
+  badge.style.borderColor="var(--border)";
+  try{
+    const d=await api("/api/web-agent-status");
+    urlEl.textContent=d.url||"";
+    if(d.connected){
+      dot.style.background="#22c55e";
+      lbl.textContent="Conectado";
+      badge.style.borderColor="rgba(34,197,94,.3)";
+      badge.style.color="#4ade80";
+    } else {
+      dot.style.background="#ef4444";
+      lbl.textContent="Desconectado";
+      badge.style.borderColor="rgba(239,68,68,.3)";
+      badge.style.color="#f87171";
+    }
+  }catch(e){
+    dot.style.background="#ef4444"; lbl.textContent="Erro";
+    badge.style.color="#f87171";
+  }
+}
+document.getElementById("checkWebAgentBtn").addEventListener("click",checkWebAgentStatus);
+
 // ── Init ──
 async function init(){
   try{const s=await api("/api/settings");applySettingsToForm(s);}
   catch(e){console.error("Settings:",e);rebuildNavs();}
   await refresh();
+  checkWebAgentStatus();
 }
 init();
 setInterval(refresh,5000);
+setInterval(checkWebAgentStatus,30000);
 </script>
 </body>
 </html>"""
@@ -993,6 +1043,17 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                 return
             if parsed.path == "/api/settings":
                 self._send_json(assistant.get_ui_settings())
+                return
+            if parsed.path == "/api/web-agent-status":
+                web_url = os.getenv("WEB_AGENT_URL", "http://192.168.100.52:8000")
+                connected = False
+                try:
+                    req = urllib.request.Request(web_url, method="GET")
+                    with urllib.request.urlopen(req, timeout=3):
+                        connected = True
+                except Exception:
+                    connected = False
+                self._send_json({"connected": connected, "url": web_url})
                 return
             self._send_json({"error": "Not found."}, status=HTTPStatus.NOT_FOUND)
 
