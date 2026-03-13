@@ -29,9 +29,11 @@ class AlarmManager:
         ring_sound_path: str,
         sound_player: SoundPlayer,
         db_path: str = "data/alarms.json",
+        on_alarm_fire=None,
     ) -> None:
         self.ring_sound_path = ring_sound_path
         self.sound_player = sound_player
+        self._on_alarm_fire = on_alarm_fire
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
@@ -103,7 +105,13 @@ class AlarmManager:
                         continue
                     trigger = self._parse_dt(alarm.next_trigger_at)
                     if trigger <= now:
+                        just_fired = alarm.id not in self._ringing_alarm_ids
                         self._ringing_alarm_ids.add(alarm.id)
+                        if just_fired and self._on_alarm_fire:
+                            fired_id = alarm.id
+                            threading.Thread(
+                                target=self._on_alarm_fire, args=(fired_id,), daemon=True
+                            ).start()
                         is_recurring = alarm.recurring_daily or (alarm.days_of_week is not None)
                         if is_recurring:
                             next_dt = self._compute_next_trigger(alarm.time_hhmm, alarm.days_of_week)

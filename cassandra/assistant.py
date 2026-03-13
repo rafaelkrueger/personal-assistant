@@ -25,8 +25,10 @@ from skills.schedule.skill import ScheduleSkill
 from skills.shopping_list.skill import ShoppingListSkill
 from skills.timer.skill import TimerSkill
 from skills.todo.skill import TodoSkill
+from skills.routine.skill import RoutineSkill
 from skills.volume.skill import VolumeSkill
 from skills.web_search.skill import WebSearchSkill
+from cassandra.routine_manager import RoutineManager
 
 
 class CassandraAssistant:
@@ -41,9 +43,14 @@ class CassandraAssistant:
         self.sound_player = SoundPlayer()
         self._timer_interrupt = threading.Event()
         self.timer_manager = TimerManager(on_fire=self._timer_interrupt)
+        self.routine_manager = RoutineManager(
+            voice_output=None,  # preenchido abaixo após voice_output ser criado
+            llm=self.llm,
+        )
         self.alarm_manager = AlarmManager(
             ring_sound_path=self.settings.ring_sound_path,
             sound_player=self.sound_player,
+            on_alarm_fire=self.routine_manager.on_alarm_fire,
         )
         self.shopping_skill = ShoppingListSkill()
         self.todo_skill = TodoSkill()
@@ -55,6 +62,7 @@ class CassandraAssistant:
                 ScheduleSkill(),
                 self.shopping_skill,
                 self.todo_skill,
+                RoutineSkill(self.routine_manager, self.alarm_manager, self.llm),
                 WebSearchSkill(self.llm),
                 GeneralChatSkill(self.llm, self.memory),
             ]
@@ -82,6 +90,7 @@ class CassandraAssistant:
             fallback_lang=self.settings.voice_lang,
             fallback_rate=self.settings.voice_rate,
         )
+        self.routine_manager._voice = self.voice_output  # conecta após criação
         self.action_log_path = Path("data/action_commands.log")
         self.action_log_path.parent.mkdir(parents=True, exist_ok=True)
         self.passive_log_path = Path("data/passive_heard.log")
@@ -366,6 +375,26 @@ class CassandraAssistant:
 
     def set_todo_completed(self, task_id: str, completed: bool) -> bool:
         return self.todo_skill.set_task_completed(task_id, completed)
+
+    # ── Routines ──────────────────────────────────────────────────────────────
+
+    def get_routines(self) -> list[dict]:
+        return self.routine_manager.list_routines()
+
+    def add_routine(self, name: str, trigger: dict, actions: list[dict]) -> dict:
+        from cassandra.routine_manager import _to_dict
+        return _to_dict(self.routine_manager.add_routine(name, trigger, actions))
+
+    def remove_routine(self, routine_id: str) -> bool:
+        return self.routine_manager.remove_routine(routine_id)
+
+    def toggle_routine(self, routine_id: str, enabled: bool) -> bool:
+        return self.routine_manager.toggle_routine(routine_id, enabled)
+
+    def run_routine(self, routine_id: str) -> bool:
+        return self.routine_manager.run_routine(routine_id)
+
+    # ─────────────────────────────────────────────────────────────────────────
 
     def list_alarms(self) -> list[dict]:
         return self.alarm_manager.list_alarms()

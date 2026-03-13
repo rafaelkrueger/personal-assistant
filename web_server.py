@@ -430,6 +430,36 @@ HTML_PAGE = """<!doctype html>
         <div class="list" id="alarmList"></div>
       </div>
 
+      <!-- ══ ROUTINES ══ -->
+      <div class="tab-panel hidden" id="tab-routines">
+        <div class="sec-hdr"><span class="sec-title">Rotinas</span><span class="count-badge" id="routineCount">0 rotinas</span></div>
+        <div class="alarm-form" id="routineForm">
+          <div style="font-size:14px;font-weight:700;margin-bottom:16px">Nova rotina</div>
+          <div class="row"><input id="routineName" type="text" placeholder="Nome (ex.: Rotina matinal)"/></div>
+          <div class="form-label" style="margin-top:12px">Gatilho</div>
+          <div class="row" style="gap:12px;flex-wrap:wrap">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px"><input type="radio" name="rTrigType" value="alarm" checked onchange="rTrigChange()"/> Quando alarme tocar</label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px"><input type="radio" name="rTrigType" value="time" onchange="rTrigChange()"/> Horário fixo diário</label>
+          </div>
+          <div id="rTrigAlarmSel" style="margin-top:8px"><select id="routineAlarmId" class="settings-select" style="max-width:100%;width:280px"><option value="">-- selecione um alarme --</option></select></div>
+          <div id="rTrigTimeSel" style="margin-top:8px;display:none"><input id="routineTimeHhmm" type="time" style="max-width:140px"/></div>
+          <div class="form-label" style="margin-top:14px">Ações <span style="font-weight:400;opacity:.6">(em ordem)</span></div>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-top:6px">
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" class="rAct" value="noticias"/> Notícias do dia</label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" class="rAct" value="cotacao"/> Cotações do mercado</label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" class="rAct" value="clima"/> Previsão do tempo</label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" class="rAct" value="esporte"/> Resultados esportivos</label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" class="rAct" value="transito"/> Trânsito em tempo real</label>
+            <div style="display:flex;flex-direction:column;gap:4px">
+              <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" class="rAct" value="falar" id="rActFalar" onchange="document.getElementById('routineFalarText').style.display=this.checked?'block':'none'"/> Falar mensagem personalizada</label>
+              <input type="text" id="routineFalarText" placeholder="Texto a falar…" style="display:none;margin-left:26px;width:calc(100% - 26px)"/>
+            </div>
+          </div>
+          <div style="margin-top:14px"><button class="btn btn-primary" id="routineAdd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Criar rotina</button></div>
+        </div>
+        <div class="list" id="routineList"></div>
+      </div>
+
       <!-- ══ SETTINGS ══ -->
       <div class="tab-panel hidden" id="tab-settings">
         <div class="sec-hdr">
@@ -460,6 +490,10 @@ HTML_PAGE = """<!doctype html>
             <div class="settings-row">
               <div class="settings-row-info"><div class="settings-row-label">Alarmes</div><div class="settings-row-desc">Alarmes recorrentes por dia da semana</div></div>
               <div class="settings-row-control"><label class="toggle"><input type="checkbox" id="mod-alarms" checked/><span class="toggle-slider"></span></label></div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-info"><div class="settings-row-label">Rotinas</div><div class="settings-row-desc">Automações disparadas por alarme ou horário</div></div>
+              <div class="settings-row-control"><label class="toggle"><input type="checkbox" id="mod-routines" checked/><span class="toggle-slider"></span></label></div>
             </div>
           </div>
 
@@ -610,6 +644,7 @@ const IC = {
   shopping: `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg>`,
   todos:    `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>`,
   alarms:   `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>`,
+  routines: `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>`,
   settings: `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>`,
   trash:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>`,
   check:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`,
@@ -624,11 +659,12 @@ const ALL_TABS = [
   {id:"shopping",  label:"Compras"},
   {id:"todos",     label:"Tarefas"},
   {id:"alarms",    label:"Alarmes"},
+  {id:"routines",  label:"Rotinas"},
   {id:"settings",  label:"Config."},
 ];
 const PAGE_TITLES = {
   dashboard:"Dashboard",chat:"Chat",shopping:"Compras",
-  todos:"Tarefas",alarms:"Alarmes",settings:"Configurações",
+  todos:"Tarefas",alarms:"Alarmes",routines:"Rotinas",settings:"Configurações",
 };
 const DAY_NAMES = ["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"];
 let selDays = [];
@@ -829,6 +865,7 @@ function applySettingsToForm(s){
   document.getElementById("mod-shopping").checked=m.shopping!==false;
   document.getElementById("mod-todos").checked=m.todos!==false;
   document.getElementById("mod-alarms").checked=m.alarms!==false;
+  document.getElementById("mod-routines").checked=m.routines!==false;
   const v=s.voice||{};
   document.getElementById("voice-enabled").checked=v.enabled!==false;
   document.getElementById("voice-tts-model").value=v.tts_model||"tts-1";
@@ -855,6 +892,7 @@ function collectSettingsFromForm(){
       shopping:document.getElementById("mod-shopping").checked,
       todos:document.getElementById("mod-todos").checked,
       alarms:document.getElementById("mod-alarms").checked,
+      routines:document.getElementById("mod-routines").checked,
     },
     voice:{
       enabled:document.getElementById("voice-enabled").checked,
@@ -889,6 +927,99 @@ document.getElementById("resetSettingsBtn").addEventListener("click",async()=>{
   setTimeout(()=>{toast.classList.remove("show");toast.textContent="Salvo!";},2000);
 });
 
+// ── Routines ──
+const ACTION_LABELS={noticias:"Notícias",cotacao:"Cotações",clima:"Clima",esporte:"Esportes",transito:"Trânsito",falar:"Falar"};
+
+function rTrigChange(){
+  const v=document.querySelector('input[name="rTrigType"]:checked').value;
+  document.getElementById("rTrigAlarmSel").style.display=v==="alarm"?"block":"none";
+  document.getElementById("rTrigTimeSel").style.display=v==="time"?"block":"none";
+}
+
+function renderRoutines(routines,alarms){
+  const list=document.getElementById("routineList");
+  document.getElementById("routineCount").textContent=routines.length+" rotina"+(routines.length!==1?"s":"");
+  if(!routines.length){list.innerHTML='<div class="empty">Nenhuma rotina cadastrada.<br/>Crie a primeira acima.</div>';return;}
+  list.innerHTML=routines.map(r=>{
+    const trig=r.trigger;
+    let trigStr="";
+    if(trig.type==="alarm"){
+      const al=(alarms||[]).find(a=>a.id===trig.alarm_id);
+      trigStr=al?`Alarme: ${al.label} (${al.time_hhmm})`:`Alarme #${trig.alarm_id}`;
+    } else {
+      trigStr=`Diariamente às ${trig.time_hhmm}`;
+    }
+    const acts=r.actions.map(a=>ACTION_LABELS[a.type]||(a.type)).join(" → ");
+    return `<div class="list-item" style="flex-direction:column;align-items:flex-start;gap:6px">
+      <div style="display:flex;width:100%;align-items:center;gap:8px">
+        <label class="toggle" style="flex-shrink:0"><input type="checkbox" ${r.enabled?"checked":""} onchange="toggleRoutine('${r.id}',this.checked)"/><span class="toggle-slider"></span></label>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:14px">${esc(r.name)}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">${esc(trigStr)}</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" title="Executar agora" onclick="runRoutine('${r.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>
+        <button class="btn btn-danger btn-sm" onclick="removeRoutine('${r.id}')">${IC.trash}</button>
+      </div>
+      <div style="font-size:12px;color:var(--text2);padding-left:52px">${esc(acts)}</div>
+    </div>`;
+  }).join("");
+}
+
+async function loadRoutines(){
+  try{
+    const [rData, aData]=await Promise.all([api("/api/routines"),api("/api/dashboard")]);
+    renderRoutines(rData.routines||[],aData.alarms||[]);
+    // Preenche select de alarmes no form
+    const sel=document.getElementById("routineAlarmId");
+    const cur=sel.value;
+    sel.innerHTML='<option value="">-- selecione um alarme --</option>'+(aData.alarms||[]).map(a=>`<option value="${a.id}">${esc(a.label)} (${a.time_hhmm})</option>`).join("");
+    if(cur)sel.value=cur;
+  }catch(e){console.error("Routines:",e);}
+}
+
+async function toggleRoutine(id,enabled){
+  await api("/api/routines/toggle","POST",{id,enabled});
+  await loadRoutines();
+}
+async function removeRoutine(id){
+  if(!confirm("Remover esta rotina?"))return;
+  await api("/api/routines/remove","POST",{id});
+  await loadRoutines();
+}
+async function runRoutine(id){
+  await api("/api/routines/run","POST",{id});
+  alert("Rotina iniciada em background.");
+}
+
+document.getElementById("routineAdd").addEventListener("click",async()=>{
+  const name=document.getElementById("routineName").value.trim();
+  if(!name){alert("Digite um nome para a rotina.");return;}
+  const trigType=document.querySelector('input[name="rTrigType"]:checked').value;
+  const trigger={type:trigType};
+  if(trigType==="alarm"){
+    const aid=document.getElementById("routineAlarmId").value;
+    if(!aid){alert("Selecione um alarme.");return;}
+    trigger.alarm_id=aid;
+  } else {
+    const t=document.getElementById("routineTimeHhmm").value;
+    if(!t){alert("Escolha um horário.");return;}
+    trigger.time_hhmm=t;
+  }
+  const actions=[];
+  document.querySelectorAll(".rAct:checked").forEach(cb=>{
+    const act={type:cb.value};
+    if(cb.value==="falar") act.text=document.getElementById("routineFalarText").value.trim();
+    actions.push(act);
+  });
+  if(!actions.length){alert("Selecione pelo menos uma ação.");return;}
+  await api("/api/routines/add","POST",{name,trigger,actions});
+  document.getElementById("routineName").value="";
+  document.querySelectorAll(".rAct").forEach(cb=>{cb.checked=false;});
+  document.getElementById("routineFalarText").style.display="none";
+  document.getElementById("routineFalarText").value="";
+  await loadRoutines();
+});
+
 // ── Refresh ──
 async function refresh(){
   try{
@@ -899,6 +1030,7 @@ async function refresh(){
     renderTodos(data.todos||[]);
     renderAlarms(data.alarms||[]);
     renderAlarmStatus(Boolean(data.alarm_ringing));
+    loadRoutines();
   }catch(e){console.error("Refresh:",e);}
 }
 
@@ -1044,6 +1176,9 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
             if parsed.path == "/api/settings":
                 self._send_json(assistant.get_ui_settings())
                 return
+            if parsed.path == "/api/routines":
+                self._send_json({"routines": assistant.get_routines()})
+                return
             if parsed.path == "/api/web-agent-status":
                 web_url = os.getenv("WEB_AGENT_URL", "http://192.168.100.52:8000")
                 connected = False
@@ -1125,6 +1260,36 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                     return
                 assistant.set_todo_completed(task_id, completed)
                 self._send_json({"todos": assistant.get_todos()})
+                return
+
+            if parsed.path == "/api/routines/add":
+                data = self._read_json_body()
+                name = str(data.get("name", "")).strip()
+                trigger = data.get("trigger", {})
+                actions = data.get("actions", [])
+                if not name or not actions:
+                    self._send_json({"error": "name and actions are required"}, status=HTTPStatus.BAD_REQUEST)
+                    return
+                routine = assistant.add_routine(name, trigger, actions)
+                self._send_json({"routine": routine, "routines": assistant.get_routines()})
+                return
+
+            if parsed.path == "/api/routines/remove":
+                data = self._read_json_body()
+                assistant.remove_routine(str(data.get("id", "")))
+                self._send_json({"routines": assistant.get_routines()})
+                return
+
+            if parsed.path == "/api/routines/toggle":
+                data = self._read_json_body()
+                assistant.toggle_routine(str(data.get("id", "")), bool(data.get("enabled", True)))
+                self._send_json({"routines": assistant.get_routines()})
+                return
+
+            if parsed.path == "/api/routines/run":
+                data = self._read_json_body()
+                ok = assistant.run_routine(str(data.get("id", "")))
+                self._send_json({"ok": ok})
                 return
 
             if parsed.path == "/api/alarms/add":
