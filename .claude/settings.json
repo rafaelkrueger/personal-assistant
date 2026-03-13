@@ -3,7 +3,8 @@
     "allow": [
       "Bash(.venv/bin/python -c \":*)",
       "Bash(.venv/bin/python -c \"from cassandra.alarm_manager import AlarmManager; from skills.notes.skill import NotesSkill; from skills.calculator.skill import CalculatorSkill; from skills.volume.skill import VolumeSkill; from skills.alarm.skill import AlarmSkill; print\\(''OK''\\)\")",
-      "Bash(.venv/bin/python -c \"from cassandra.assistant import CassandraAssistant; print\\(''''assistant OK''''\\)\")"
+      "Bash(.venv/bin/python -c \"from cassandra.assistant import CassandraAssistant; print\\(''''assistant OK''''\\)\")",
+      "Bash(.venv/bin/python -c \"from web_server import HTML_PAGE; print\\(''OK'', len\\(HTML_PAGE\\), ''chars''\\)\")"
     ]
   }
 }
