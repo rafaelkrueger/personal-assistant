@@ -1210,24 +1210,32 @@ document.getElementById("calDisconnectBtn").addEventListener("click",async()=>{
   await loadCalendarStatus();
 });
 
+let currentCalProviderTemplate = "";
+function syncCalUrlFromTemplate(){
+  if(!currentCalProviderTemplate)return;
+  const emailEl=document.getElementById("calUsername");
+  const urlEl=document.getElementById("calUrl");
+  if(currentCalProviderTemplate.includes("{email}")){
+    const email=emailEl.value.trim();
+    urlEl.value=email?currentCalProviderTemplate.replace("{email}",email):currentCalProviderTemplate;
+  }
+}
+
 document.querySelectorAll(".cal-provider-btn").forEach(btn=>{
   btn.addEventListener("click",()=>{
     const url=btn.dataset.url||"";
     const emailEl=document.getElementById("calUsername");
     const urlEl=document.getElementById("calUrl");
+    currentCalProviderTemplate = url;
     if(url.includes("{email}")){
       const email=emailEl.value.trim();
       urlEl.value=email?url.replace("{email}",email):url;
     } else {
       urlEl.value=url;
     }
-    emailEl.addEventListener("input",()=>{
-      if(btn.dataset.url&&btn.dataset.url.includes("{email}")){
-        urlEl.value=btn.dataset.url.replace("{email}",emailEl.value.trim());
-      }
-    },{once:true});
   });
 });
+document.getElementById("calUsername").addEventListener("input", syncCalUrlFromTemplate);
 
 // ── Refresh ──
 async function refresh(){

@@ -40,6 +40,11 @@ class CalendarService:
     def configure(self, url: str, username: str, password: str) -> tuple[bool, str]:
         """Salva credenciais e testa a conexão. Retorna (sucesso, mensagem)."""
         url = self._normalize_caldav_url(url, username)
+        if "apidata.googleusercontent.com" in url and "@" not in (username or ""):
+            return (
+                False,
+                "Para Google Calendar, use o e-mail completo como usuário (ex: seu@gmail.com).",
+            )
         ok, msg = self._test(url, username, password)
         if ok:
             self._save_creds({"url": url, "username": username, "password": password})
@@ -241,6 +246,10 @@ class CalendarService:
         # If user picked Google host but forgot replacing placeholder/ID.
         if "{email}" in normalized:
             normalized = normalized.replace("{email}", username)
+
+        # Force canonical Google CalDAV endpoint with the full username.
+        if "apidata.googleusercontent.com/caldav/v2/" in normalized and "@" in (username or ""):
+            normalized = f"https://apidata.googleusercontent.com/caldav/v2/{username}/events"
         return normalized
 
     @staticmethod
