@@ -164,17 +164,19 @@ class WebAgentClient:
             async with websockets.connect(ws_url, open_timeout=10) as ws:
                 await ws.send(json.dumps({"type": "message", "content": query}))
 
-                deadline = asyncio.get_event_loop().time() + _TIMEOUT
+                loop = asyncio.get_running_loop()
+                deadline = loop.time() + _TIMEOUT
                 agent_message: str | None = None
-                got_title_update = False
+                # O web-agent manda um title_update imediato (renomear o chat)
+                # ANTES de começar, e outro ao terminar. Só consideramos "done"
+                # quando title_update chega depois de pelo menos um browser_action.
+                seen_browser_action = False
 
-                while asyncio.get_event_loop().time() < deadline:
-                    remaining = deadline - asyncio.get_event_loop().time()
+                while loop.time() < deadline:
+                    remaining = deadline - loop.time()
                     try:
                         raw = await asyncio.wait_for(ws.recv(), timeout=min(remaining, 5))
                     except asyncio.TimeoutError:
-                        if got_title_update:
-                            break
                         continue
 
                     try:
@@ -185,21 +187,20 @@ class WebAgentClient:
                     etype = event.get("type")
 
                     if etype == "agent_message":
-                        # Resposta rápida: retorna imediatamente
+                        # Resposta rápida (fast-path): retorna imediatamente
                         agent_message = event.get("content", "").strip()
                         break
 
-                    if etype == "title_update":
-                        # Agente terminou; busca a última mensagem via REST
-                        got_title_update = True
-                        # Aguarda um instante para garantir que a mensagem foi salva
-                        await asyncio.sleep(0.3)
+                    if etype in ("browser_action", "status", "plan", "agent_start"):
+                        seen_browser_action = True
+
+                    if etype == "title_update" and seen_browser_action:
+                        # Segunda title_update: agente terminou de fato
+                        await asyncio.sleep(0.5)  # garante que save_chats foi commitado
                         break
 
                     if etype == "error":
                         return None
-
-                    # browser_action, status, plan, etc. — só aguardar
 
                 return agent_message
         except Exception:
