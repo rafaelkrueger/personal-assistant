@@ -26,6 +26,7 @@ from skills.shopping_list.skill import ShoppingListSkill
 from skills.timer.skill import TimerSkill
 from skills.todo.skill import TodoSkill
 from skills.volume.skill import VolumeSkill
+from skills.web_search.skill import WebSearchSkill
 
 
 class CassandraAssistant:
@@ -54,6 +55,7 @@ class CassandraAssistant:
                 ScheduleSkill(),
                 self.shopping_skill,
                 self.todo_skill,
+                WebSearchSkill(self.llm),
                 GeneralChatSkill(self.llm, self.memory),
             ]
         )
