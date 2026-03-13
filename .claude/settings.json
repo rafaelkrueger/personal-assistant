@@ -6,7 +6,8 @@
       "Bash(.venv/bin/python -c \"from cassandra.assistant import CassandraAssistant; print\\(''''assistant OK''''\\)\")",
       "Bash(.venv/bin/python -c \"from web_server import HTML_PAGE; print\\(''OK'', len\\(HTML_PAGE\\), ''chars''\\)\")",
       "Bash(.venv/bin/python -c \"from cassandra.assistant import CassandraAssistant; print\\(''assistant OK''\\)\")",
-      "Bash(.venv/bin/python -c \"from web_server import HTML_PAGE; print\\(''web OK'', len\\(HTML_PAGE\\), ''chars''\\)\")"
+      "Bash(.venv/bin/python -c \"from web_server import HTML_PAGE; print\\(''web OK'', len\\(HTML_PAGE\\), ''chars''\\)\")",
+      "Bash(python3 -c \"from web_server import HTML_PAGE; print\\(''OK'', len\\(HTML_PAGE\\), ''chars''\\)\")"
     ]
   }
 }

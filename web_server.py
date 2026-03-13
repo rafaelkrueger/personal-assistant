@@ -251,34 +251,32 @@ HTML_PAGE = """<!doctype html>
     /* ═══ SETTINGS ═══ */
     .settings-layout{display:flex;flex-direction:column;gap:16px}
     @media(min-width:900px){.settings-layout{display:grid;grid-template-columns:1fr 1fr;gap:16px}}
-    .settings-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--rx);padding:20px}
-    .settings-card-title{font-size:13px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.07em;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+    .settings-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--rx);padding:14px}
+    @media(min-width:640px){.settings-card{padding:20px}}
+    .settings-card-title{font-size:13px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.07em;margin-bottom:14px;display:flex;align-items:center;gap:8px}
     .settings-card-title svg{width:15px;height:15px;opacity:.6}
-    .settings-row{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)}
+    /* Row: label left, control right. Wraps to two lines on very small screens */
+    .settings-row{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;padding:12px 0;border-bottom:1px solid var(--border)}
     .settings-row:last-child{border-bottom:none;padding-bottom:0}
-    .settings-row:first-of-type{padding-top:0}
-    .settings-row-info{flex:1;min-width:0}
+    .settings-row-info{flex:1;min-width:140px}
     .settings-row-label{font-size:13.5px;font-weight:500}
-    .settings-row-desc{font-size:12px;color:var(--text2);margin-top:2px}
-    .settings-row-control{margin-left:16px;flex-shrink:0}
+    .settings-row-desc{font-size:12px;color:var(--text2);margin-top:2px;line-height:1.4}
+    .settings-row-control{flex-shrink:0;display:flex;align-items:center}
     /* Toggle switch */
-    .toggle{position:relative;width:44px;height:25px;flex-shrink:0}
+    .toggle{position:relative;width:44px;height:25px;flex-shrink:0;display:block}
     .toggle input{opacity:0;width:0;height:0;position:absolute}
-    .toggle-slider{position:absolute;inset:0;background:var(--surface3);border-radius:99px;cursor:pointer;transition:.2s;border:1px solid var(--border)}
+    .toggle-slider{position:absolute;inset:0;background:var(--surface3);border-radius:99px;cursor:pointer;transition:.2s;border:1px solid var(--border2)}
     .toggle-slider::before{content:"";position:absolute;width:19px;height:19px;border-radius:50%;background:#fff;bottom:2px;left:2px;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.3)}
     .toggle input:checked + .toggle-slider{background:var(--brand);border-color:var(--brand)}
     .toggle input:checked + .toggle-slider::before{transform:translateX(19px)}
     /* Range */
-    .settings-range{display:flex;align-items:center;gap:10px;width:100%}
-    .settings-range input[type=range]{flex:1;accent-color:var(--brand);cursor:pointer;height:4px;background:var(--surface3)}
-    .settings-range-val{font-size:12px;font-weight:600;color:var(--brand2);min-width:36px;text-align:right}
+    .settings-range{display:flex;align-items:center;gap:8px;min-width:130px;max-width:190px}
+    .settings-range input[type=range]{flex:1;accent-color:var(--brand);cursor:pointer}
+    .settings-range-val{font-size:12px;font-weight:600;color:var(--brand2);min-width:30px;text-align:right}
     /* Select in settings */
-    .settings-select{padding:7px 12px;min-width:140px;flex:none}
+    .settings-select{padding:7px 10px;min-width:0;max-width:160px;width:auto}
     /* Info chip */
-    .info-chip{display:inline-flex;align-items:center;padding:4px 12px;border-radius:99px;background:var(--surface2);border:1px solid var(--border);font-size:12px;color:var(--text2);font-weight:500}
-    /* Divider */
-    .divider{height:1px;background:var(--border);margin:16px 0}
-    /* Settings full-width */
+    .info-chip{display:inline-flex;align-items:center;padding:4px 10px;border-radius:99px;background:var(--surface2);border:1px solid var(--border);font-size:12px;color:var(--text2);font-weight:500;white-space:nowrap}
     .settings-card.full{grid-column:1/-1}
     .save-bar{display:flex;align-items:center;gap:10px;padding-top:4px}
     .save-toast{font-size:12px;color:var(--green);font-weight:500;opacity:0;transition:opacity .3s}
@@ -505,7 +503,7 @@ HTML_PAGE = """<!doctype html>
             </div>
             <div class="settings-row">
               <div class="settings-row-info"><div class="settings-row-label">Velocidade da fala</div><div class="settings-row-desc">Palavras por minuto no fallback local</div></div>
-              <div class="settings-row-control" style="min-width:160px">
+              <div class="settings-row-control">
                 <div class="settings-range">
                   <input type="range" id="voice-rate" min="80" max="280" step="10" value="160"/>
                   <span class="settings-range-val" id="voice-rate-val">160</span>
