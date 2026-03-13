@@ -8,9 +8,10 @@ from pathlib import Path
 class SoundPlayer:
     def __init__(self) -> None:
         self._backend = self._detect_backend()
+        self.enabled = True
 
     def play(self, sound_path: str) -> None:
-        if not self._backend:
+        if not self.enabled or not self._backend:
             return
 
         path = Path(sound_path)

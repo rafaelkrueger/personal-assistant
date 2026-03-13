@@ -14,25 +14,24 @@ from cassandra.input_sources import InputEvent, MicrophoneInputSource, TextInput
 from cassandra.memory import ConversationMemory
 from cassandra.openai_client import LLMService
 from cassandra.router import SkillRouter
+from cassandra.settings_store import SettingsStore
 from cassandra.sounds import SoundPlayer
 from cassandra.timer_manager import TimerManager, format_duration
 from cassandra.voice import VoiceOutput
 from cassandra.alarm_manager import AlarmManager
 from skills.alarm.skill import AlarmSkill
-from skills.calculator.skill import CalculatorSkill
 from skills.general_chat.skill import GeneralChatSkill
-from skills.notes.skill import NotesSkill
 from skills.schedule.skill import ScheduleSkill
 from skills.shopping_list.skill import ShoppingListSkill
 from skills.timer.skill import TimerSkill
 from skills.todo.skill import TodoSkill
 from skills.volume.skill import VolumeSkill
-from skills.weather.skill import WeatherSkill
 
 
 class CassandraAssistant:
     def __init__(self) -> None:
         self.settings = load_settings()
+        self.settings_store = SettingsStore()
         self.llm = LLMService(
             api_key=self.settings.openai_api_key,
             model=self.settings.openai_model,
@@ -47,18 +46,14 @@ class CassandraAssistant:
         )
         self.shopping_skill = ShoppingListSkill()
         self.todo_skill = TodoSkill()
-        self.notes_skill = NotesSkill()
         self.router = SkillRouter(
             skills=[
                 AlarmSkill(self.alarm_manager),
                 TimerSkill(self.timer_manager),
-                self.notes_skill,
-                CalculatorSkill(),
                 VolumeSkill(),
                 ScheduleSkill(),
                 self.shopping_skill,
                 self.todo_skill,
-                WeatherSkill(),
                 GeneralChatSkill(self.llm, self.memory),
             ]
         )
@@ -396,14 +391,39 @@ class CassandraAssistant:
             "enabled": alarm.enabled,
         }
 
-    def get_notes(self) -> list[dict]:
-        return self.notes_skill.list_items()
+    def get_ui_settings(self) -> dict:
+        s = self.settings_store.get()
+        # Augment with read-only runtime info from .env/config
+        s["_runtime"] = {
+            "assistant_name": self.settings.assistant_name,
+            "input_mode": self.settings.input_mode,
+            "openai_model": self.settings.openai_model,
+            "tts_model_env": self.settings.tts_model,
+            "tts_voice_env": self.settings.tts_voice,
+        }
+        return s
 
-    def add_note(self, content: str) -> dict:
-        return self.notes_skill.add_item(content)
+    def save_ui_settings(self, patch: dict) -> dict:
+        updated = self.settings_store.update(patch)
+        # Apply voice settings dynamically without restart
+        v = updated.get("voice", {})
+        self.voice_output.enabled = bool(v.get("enabled", True))
+        if hasattr(self.voice_output, "tts_voice"):
+            self.voice_output.tts_voice = str(v.get("tts_voice", self.settings.tts_voice))
+        if hasattr(self.voice_output, "tts_model"):
+            self.voice_output.tts_model = str(v.get("tts_model", self.settings.tts_model))
+        if hasattr(self.voice_output, "fallback_lang"):
+            self.voice_output.fallback_lang = str(v.get("fallback_lang", self.settings.voice_lang))
+        if hasattr(self.voice_output, "fallback_rate"):
+            self.voice_output.fallback_rate = int(v.get("fallback_rate", self.settings.voice_rate))
+        # Apply sounds toggle dynamically
+        sounds_on = bool(updated.get("sounds", {}).get("enabled", True))
+        self.sound_player.enabled = sounds_on
+        return self.get_ui_settings()
 
-    def remove_note(self, note_id: str) -> bool:
-        return self.notes_skill.remove_item(note_id)
+    def reset_ui_settings(self) -> dict:
+        self.settings_store.reset()
+        return self.get_ui_settings()
 
     def remove_alarm(self, alarm_id: str) -> bool:
         return self.alarm_manager.remove_alarm(alarm_id)
