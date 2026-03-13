@@ -629,12 +629,12 @@ HTML_PAGE = """<!doctype html>
             <div id="calConnForm">
               <div class="form-label" style="margin-top:14px;margin-bottom:8px">Provedor</div>
               <div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:10px">
-                <button class="btn btn-ghost btn-sm cal-provider-btn" data-url="https://apidata.google.com/caldav/v2/{email}/user">Google Calendar</button>
+                <button class="btn btn-ghost btn-sm cal-provider-btn" data-url="https://apidata.googleusercontent.com/caldav/v2/{email}/events">Google Calendar</button>
                 <button class="btn btn-ghost btn-sm cal-provider-btn" data-url="https://caldav.icloud.com">Apple iCloud</button>
                 <button class="btn btn-ghost btn-sm cal-provider-btn" data-url="">Outro (manual)</button>
               </div>
               <div class="row" style="flex-direction:column;gap:8px">
-                <input id="calUrl" type="text" placeholder="URL CalDAV (ex: https://apidata.google.com/caldav/v2/seu@gmail.com/user)"/>
+                <input id="calUrl" type="text" placeholder="URL CalDAV (ex: https://apidata.googleusercontent.com/caldav/v2/seu@gmail.com/events)"/>
                 <input id="calUsername" type="email" placeholder="E-mail (ex: seu@gmail.com)"/>
                 <input id="calPassword" type="password" placeholder="Senha de app (Google: conta → Segurança → Senhas de app)"/>
               </div>

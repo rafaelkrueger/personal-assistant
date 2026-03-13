@@ -13,7 +13,7 @@ _CREDS_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 # URLs CalDAV pré-configuradas por provedor (para facilitar o usuário)
 PROVIDER_URLS: dict[str, str] = {
-    "google": "https://apidata.google.com/caldav/v2/{email}/user",
+    "google": "https://apidata.googleusercontent.com/caldav/v2/{email}/events",
     "icloud": "https://caldav.icloud.com",
     "nextcloud": "",  # usuário preenche manualmente
 }
@@ -39,6 +39,7 @@ class CalendarService:
 
     def configure(self, url: str, username: str, password: str) -> tuple[bool, str]:
         """Salva credenciais e testa a conexão. Retorna (sucesso, mensagem)."""
+        url = self._normalize_caldav_url(url, username)
         ok, msg = self._test(url, username, password)
         if ok:
             self._save_creds({"url": url, "username": username, "password": password})
@@ -218,7 +219,29 @@ class CalendarService:
             cals = principal.calendars()
             return True, f"Conectado! {len(cals)} calendário(s) encontrado(s)."
         except Exception as exc:
-            return False, f"Falha na conexão: {exc}"
+            msg = str(exc)
+            if "apidata.google.com" in msg:
+                msg += (
+                    " | Dica: para Google use "
+                    "https://apidata.googleusercontent.com/caldav/v2/SEU_EMAIL/events"
+                )
+            return False, f"Falha na conexão: {msg}"
+
+    @staticmethod
+    def _normalize_caldav_url(url: str, username: str) -> str:
+        normalized = (url or "").strip()
+        if not normalized:
+            return normalized
+
+        # Legacy/typo compatibility for old Google examples.
+        normalized = normalized.replace("https://apidata.google.com", "https://apidata.googleusercontent.com")
+        if "apidata.googleusercontent.com/caldav/v2/" in normalized and normalized.endswith("/user"):
+            normalized = normalized[: -len("/user")] + "/events"
+
+        # If user picked Google host but forgot replacing placeholder/ID.
+        if "{email}" in normalized:
+            normalized = normalized.replace("{email}", username)
+        return normalized
 
     @staticmethod
     def _load_creds() -> dict:
