@@ -430,6 +430,41 @@ HTML_PAGE = """<!doctype html>
         <div class="list" id="alarmList"></div>
       </div>
 
+      <!-- ══ AGENDA ══ -->
+      <div class="tab-panel hidden" id="tab-agenda">
+        <div class="sec-hdr">
+          <span class="sec-title">Agenda</span>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select id="agendaDays" style="padding:5px 8px;font-size:12px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text)">
+              <option value="1">Hoje</option><option value="2">Amanhã</option><option value="7" selected>7 dias</option><option value="30">30 dias</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" onclick="loadAgenda()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg></button>
+          </div>
+        </div>
+
+        <!-- Status da conexão -->
+        <div id="agendaConnBanner" style="display:none;margin-bottom:16px;padding:12px 14px;border-radius:8px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);font-size:13px;color:#f87171">
+          Agenda não conectada. Vá em <strong>Configurações → Conta de Agenda</strong> para conectar.
+        </div>
+
+        <!-- Novo evento -->
+        <div class="alarm-form" id="agendaNewForm">
+          <div style="font-size:14px;font-weight:700;margin-bottom:14px">Novo compromisso</div>
+          <div class="row" style="flex-wrap:wrap;gap:8px">
+            <input id="evTitle" type="text" placeholder="Título do compromisso" style="flex:2;min-width:180px"/>
+            <input id="evDate" type="date" style="flex:none;width:150px"/>
+          </div>
+          <div class="row" style="flex-wrap:wrap;gap:8px;margin-top:8px">
+            <div style="display:flex;align-items:center;gap:6px;font-size:13px"><label>Início</label><input id="evStart" type="time" value="09:00" style="width:110px"/></div>
+            <div style="display:flex;align-items:center;gap:6px;font-size:13px"><label>Fim</label><input id="evEnd" type="time" value="10:00" style="width:110px"/></div>
+          </div>
+          <div class="row" style="margin-top:8px"><input id="evDesc" type="text" placeholder="Descrição (opcional)"/></div>
+          <div style="margin-top:12px"><button class="btn btn-primary" id="evAdd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Criar compromisso</button></div>
+        </div>
+
+        <div class="list" id="agendaList"></div>
+      </div>
+
       <!-- ══ ROUTINES ══ -->
       <div class="tab-panel hidden" id="tab-routines">
         <div class="sec-hdr"><span class="sec-title">Rotinas</span><span class="count-badge" id="routineCount">0 rotinas</span></div>
@@ -494,6 +529,10 @@ HTML_PAGE = """<!doctype html>
             <div class="settings-row">
               <div class="settings-row-info"><div class="settings-row-label">Rotinas</div><div class="settings-row-desc">Automações disparadas por alarme ou horário</div></div>
               <div class="settings-row-control"><label class="toggle"><input type="checkbox" id="mod-routines" checked/><span class="toggle-slider"></span></label></div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-info"><div class="settings-row-label">Agenda</div><div class="settings-row-desc">Calendário via CalDAV (Google, iCloud, Nextcloud)</div></div>
+              <div class="settings-row-control"><label class="toggle"><input type="checkbox" id="mod-agenda" checked/><span class="toggle-slider"></span></label></div>
             </div>
           </div>
 
@@ -567,6 +606,45 @@ HTML_PAGE = """<!doctype html>
               <div class="settings-row-info"><div class="settings-row-label">Timeout de sessão</div><div class="settings-row-desc">Segundos sem comando até a sessão expirar automaticamente</div></div>
               <div class="settings-row-control">
                 <input type="number" id="session-timeout" min="10" max="300" step="5" value="30" style="width:80px;flex:none;text-align:center"/>
+              </div>
+            </div>
+          </div>
+
+          <!-- Conta de Agenda (CalDAV) -->
+          <div class="settings-card full">
+            <div class="settings-card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Conta de Agenda</div>
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <div class="settings-row-label">Status</div>
+                <div class="settings-row-desc" id="cal-user-label" style="font-size:11px">—</div>
+              </div>
+              <div class="settings-row-control" style="gap:8px">
+                <span id="cal-badge" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:99px;font-size:12px;font-weight:600;border:1px solid var(--border);color:var(--text2)">
+                  <span id="cal-dot" style="width:9px;height:9px;border-radius:50%;background:#6b7280;flex-shrink:0;display:inline-block"></span>
+                  <span id="cal-badge-label">Não conectada</span>
+                </span>
+                <button class="btn btn-danger btn-sm" id="calDisconnectBtn" style="display:none">Desconectar</button>
+              </div>
+            </div>
+            <div id="calConnForm">
+              <div class="form-label" style="margin-top:14px;margin-bottom:8px">Provedor</div>
+              <div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:10px">
+                <button class="btn btn-ghost btn-sm cal-provider-btn" data-url="https://apidata.google.com/caldav/v2/{email}/user">Google Calendar</button>
+                <button class="btn btn-ghost btn-sm cal-provider-btn" data-url="https://caldav.icloud.com">Apple iCloud</button>
+                <button class="btn btn-ghost btn-sm cal-provider-btn" data-url="">Outro (manual)</button>
+              </div>
+              <div class="row" style="flex-direction:column;gap:8px">
+                <input id="calUrl" type="text" placeholder="URL CalDAV (ex: https://apidata.google.com/caldav/v2/seu@gmail.com/user)"/>
+                <input id="calUsername" type="email" placeholder="E-mail (ex: seu@gmail.com)"/>
+                <input id="calPassword" type="password" placeholder="Senha de app (Google: conta → Segurança → Senhas de app)"/>
+              </div>
+              <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+                <button class="btn btn-primary btn-sm" id="calConnectBtn">Conectar e testar</button>
+                <span id="calTestMsg" style="font-size:12px;color:var(--text2)"></span>
+              </div>
+              <div style="margin-top:10px;font-size:11px;color:var(--text2);line-height:1.5">
+                <strong>Google:</strong> ative a verificação em 2 etapas → Google Account → Segurança → Senhas de app → crie uma para "Cassandra".<br/>
+                <strong>iCloud:</strong> Apple ID → Segurança → Senhas de app específicas do app.
               </div>
             </div>
           </div>
@@ -645,6 +723,7 @@ const IC = {
   todos:    `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>`,
   alarms:   `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>`,
   routines: `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>`,
+  agenda:   `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`,
   settings: `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>`,
   trash:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>`,
   check:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`,
@@ -660,11 +739,12 @@ const ALL_TABS = [
   {id:"todos",     label:"Tarefas"},
   {id:"alarms",    label:"Alarmes"},
   {id:"routines",  label:"Rotinas"},
+  {id:"agenda",    label:"Agenda"},
   {id:"settings",  label:"Config."},
 ];
 const PAGE_TITLES = {
   dashboard:"Dashboard",chat:"Chat",shopping:"Compras",
-  todos:"Tarefas",alarms:"Alarmes",routines:"Rotinas",settings:"Configurações",
+  todos:"Tarefas",alarms:"Alarmes",routines:"Rotinas",agenda:"Agenda",settings:"Configurações",
 };
 const DAY_NAMES = ["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"];
 let selDays = [];
@@ -866,6 +946,7 @@ function applySettingsToForm(s){
   document.getElementById("mod-todos").checked=m.todos!==false;
   document.getElementById("mod-alarms").checked=m.alarms!==false;
   document.getElementById("mod-routines").checked=m.routines!==false;
+  document.getElementById("mod-agenda").checked=m.agenda!==false;
   const v=s.voice||{};
   document.getElementById("voice-enabled").checked=v.enabled!==false;
   document.getElementById("voice-tts-model").value=v.tts_model||"tts-1";
@@ -893,6 +974,7 @@ function collectSettingsFromForm(){
       todos:document.getElementById("mod-todos").checked,
       alarms:document.getElementById("mod-alarms").checked,
       routines:document.getElementById("mod-routines").checked,
+      agenda:document.getElementById("mod-agenda").checked,
     },
     voice:{
       enabled:document.getElementById("voice-enabled").checked,
@@ -1020,6 +1102,133 @@ document.getElementById("routineAdd").addEventListener("click",async()=>{
   await loadRoutines();
 });
 
+// ── Agenda ──
+function renderAgenda(events, configured){
+  const list=document.getElementById("agendaList");
+  const banner=document.getElementById("agendaConnBanner");
+  const form=document.getElementById("agendaNewForm");
+  if(!configured){
+    banner.style.display="block";
+    form.style.display="none";
+    list.innerHTML="";
+    return;
+  }
+  banner.style.display="none";
+  form.style.display="";
+  if(!events.length){list.innerHTML='<div class="empty">Nenhum compromisso no período.</div>';return;}
+  list.innerHTML=events.map(ev=>`<div class="list-item" style="flex-direction:column;align-items:flex-start;gap:4px">
+    <div style="display:flex;width:100%;align-items:center;gap:8px">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:14px">${esc(ev.title)}</div>
+        <div style="font-size:12px;color:var(--brand2);margin-top:2px">${esc(ev.start)}${ev.end?" → "+esc(ev.end):""}</div>
+        ${ev.description?`<div style="font-size:12px;color:var(--text2);margin-top:2px">${esc(ev.description)}</div>`:""}
+      </div>
+      <button class="btn btn-danger btn-sm" onclick="deleteEvent('${esc(ev.id)}')">${IC.trash}</button>
+    </div>
+  </div>`).join("");
+}
+
+async function loadAgenda(){
+  try{
+    const days=parseInt(document.getElementById("agendaDays").value)||7;
+    const data=await api("/api/agenda/events?days="+days);
+    renderAgenda(data.events||[],data.configured);
+  }catch(e){console.error("Agenda:",e);}
+}
+
+async function deleteEvent(eventId){
+  if(!confirm("Remover este compromisso do calendário?"))return;
+  try{
+    await api("/api/agenda/events/delete","POST",{event_id:eventId});
+    await loadAgenda();
+  }catch(e){alert("Erro ao remover: "+e.message);}
+}
+
+document.getElementById("evAdd").addEventListener("click",async()=>{
+  const title=document.getElementById("evTitle").value.trim();
+  const date=document.getElementById("evDate").value;
+  const start=document.getElementById("evStart").value;
+  const end=document.getElementById("evEnd").value;
+  const desc=document.getElementById("evDesc").value.trim();
+  if(!title||!date||!start||!end){alert("Preencha título, data, início e fim.");return;}
+  try{
+    await api("/api/agenda/events/add","POST",{title,date,start,end,description:desc});
+    document.getElementById("evTitle").value="";
+    document.getElementById("evDesc").value="";
+    await loadAgenda();
+  }catch(e){alert("Erro ao criar: "+e.message);}
+});
+
+document.getElementById("agendaDays").addEventListener("change",loadAgenda);
+
+// Calendar settings
+async function loadCalendarStatus(){
+  try{
+    const d=await api("/api/calendar/status");
+    const dot=document.getElementById("cal-dot");
+    const lbl=document.getElementById("cal-badge-label");
+    const userLbl=document.getElementById("cal-user-label");
+    const disBtn=document.getElementById("calDisconnectBtn");
+    const form=document.getElementById("calConnForm");
+    if(d.configured){
+      dot.style.background="var(--green)";dot.style.boxShadow="0 0 6px var(--green)";
+      lbl.textContent="Conectada";
+      userLbl.textContent=d.username+(d.url?" · "+d.url:"");
+      disBtn.style.display="";
+      form.style.display="none";
+    } else {
+      dot.style.background="#6b7280";dot.style.boxShadow="none";
+      lbl.textContent="Não conectada";
+      userLbl.textContent="—";
+      disBtn.style.display="none";
+      form.style.display="";
+    }
+  }catch(e){console.error("Cal status:",e);}
+}
+
+document.getElementById("calConnectBtn").addEventListener("click",async()=>{
+  const url=document.getElementById("calUrl").value.trim();
+  const username=document.getElementById("calUsername").value.trim();
+  const password=document.getElementById("calPassword").value;
+  const msg=document.getElementById("calTestMsg");
+  if(!url||!username||!password){alert("Preencha URL, e-mail e senha.");return;}
+  msg.textContent="Testando conexão…";msg.style.color="var(--text2)";
+  try{
+    const d=await api("/api/calendar/configure","POST",{url,username,password});
+    if(d.ok){
+      msg.textContent=d.message;msg.style.color="var(--green)";
+      await loadCalendarStatus();
+    } else {
+      msg.textContent=d.message;msg.style.color="var(--red)";
+    }
+  }catch(e){msg.textContent="Erro: "+e.message;msg.style.color="var(--red)";}
+});
+
+document.getElementById("calDisconnectBtn").addEventListener("click",async()=>{
+  if(!confirm("Desconectar a conta de agenda?"))return;
+  await api("/api/calendar/disconnect","POST",{});
+  await loadCalendarStatus();
+});
+
+document.querySelectorAll(".cal-provider-btn").forEach(btn=>{
+  btn.addEventListener("click",()=>{
+    const url=btn.dataset.url||"";
+    const emailEl=document.getElementById("calUsername");
+    const urlEl=document.getElementById("calUrl");
+    if(url.includes("{email}")){
+      const email=emailEl.value.trim();
+      urlEl.value=email?url.replace("{email}",email):url;
+    } else {
+      urlEl.value=url;
+    }
+    emailEl.addEventListener("input",()=>{
+      if(btn.dataset.url&&btn.dataset.url.includes("{email}")){
+        urlEl.value=btn.dataset.url.replace("{email}",emailEl.value.trim());
+      }
+    },{once:true});
+  });
+});
+
 // ── Refresh ──
 async function refresh(){
   try{
@@ -1031,6 +1240,7 @@ async function refresh(){
     renderAlarms(data.alarms||[]);
     renderAlarmStatus(Boolean(data.alarm_ringing));
     loadRoutines();
+    loadAgenda();
   }catch(e){console.error("Refresh:",e);}
 }
 
@@ -1120,6 +1330,7 @@ async function init(){
   catch(e){console.error("Settings:",e);rebuildNavs();}
   await refresh();
   checkWebAgentStatus();
+  loadCalendarStatus();
 }
 init();
 setInterval(refresh,5000);
@@ -1178,6 +1389,20 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                 return
             if parsed.path == "/api/routines":
                 self._send_json({"routines": assistant.get_routines()})
+                return
+            if parsed.path == "/api/calendar/status":
+                self._send_json(assistant.get_calendar_status())
+                return
+            if parsed.path == "/api/agenda/events":
+                from urllib.parse import parse_qs
+                qs = parse_qs(parsed.query)
+                days = int((qs.get("days", ["7"])[0]))
+                status = assistant.get_calendar_status()
+                if not status.get("configured"):
+                    self._send_json({"configured": False, "events": []})
+                    return
+                events = assistant.list_calendar_events(days=days)
+                self._send_json({"configured": True, "events": events})
                 return
             if parsed.path == "/api/web-agent-status":
                 web_url = os.getenv("WEB_AGENT_URL", "http://192.168.100.52:8000")
@@ -1328,6 +1553,55 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
 
             if parsed.path == "/api/settings/reset":
                 self._send_json(assistant.reset_ui_settings())
+                return
+
+            if parsed.path == "/api/calendar/configure":
+                data = self._read_json_body()
+                url = str(data.get("url", "")).strip()
+                username = str(data.get("username", "")).strip()
+                password = str(data.get("password", ""))
+                if not url or not username or not password:
+                    self._send_json({"error": "url, username and password are required"}, status=HTTPStatus.BAD_REQUEST)
+                    return
+                result = assistant.configure_calendar(url, username, password)
+                self._send_json(result)
+                return
+
+            if parsed.path == "/api/calendar/disconnect":
+                assistant.disconnect_calendar()
+                self._send_json({"ok": True})
+                return
+
+            if parsed.path == "/api/agenda/events/add":
+                data = self._read_json_body()
+                title = str(data.get("title", "")).strip()
+                date_str = str(data.get("date", "")).strip()
+                start_str = str(data.get("start", "")).strip()
+                end_str = str(data.get("end", "")).strip()
+                description = str(data.get("description", "")).strip()
+                if not title or not date_str or not start_str or not end_str:
+                    self._send_json({"error": "title, date, start and end are required"}, status=HTTPStatus.BAD_REQUEST)
+                    return
+                try:
+                    start_iso = f"{date_str}T{start_str}"
+                    end_iso = f"{date_str}T{end_str}"
+                    event = assistant.create_calendar_event(title, start_iso, end_iso, description)
+                    if event is None:
+                        self._send_json({"error": "Falha ao criar evento no calendário"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                        return
+                    self._send_json({"event": event})
+                except Exception as exc:
+                    self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+
+            if parsed.path == "/api/agenda/events/delete":
+                data = self._read_json_body()
+                event_id = str(data.get("event_id", "")).strip()
+                if not event_id:
+                    self._send_json({"error": "event_id is required"}, status=HTTPStatus.BAD_REQUEST)
+                    return
+                ok = assistant.delete_calendar_event(event_id)
+                self._send_json({"ok": ok})
                 return
 
             self._send_json({"error": "Not found."}, status=HTTPStatus.NOT_FOUND)

@@ -29,6 +29,7 @@ from skills.routine.skill import RoutineSkill
 from skills.volume.skill import VolumeSkill
 from skills.web_search.skill import WebSearchSkill
 from cassandra.routine_manager import RoutineManager
+from cassandra.calendar_service import CalendarService
 
 
 class CassandraAssistant:
@@ -52,6 +53,7 @@ class CassandraAssistant:
             sound_player=self.sound_player,
             on_alarm_fire=self.routine_manager.on_alarm_fire,
         )
+        self.calendar = CalendarService()
         self.shopping_skill = ShoppingListSkill()
         self.todo_skill = TodoSkill()
         self.router = SkillRouter(
@@ -59,7 +61,7 @@ class CassandraAssistant:
                 AlarmSkill(self.alarm_manager),
                 TimerSkill(self.timer_manager),
                 VolumeSkill(),
-                ScheduleSkill(),
+                ScheduleSkill(self.calendar, self.llm),
                 self.shopping_skill,
                 self.todo_skill,
                 RoutineSkill(self.routine_manager, self.alarm_manager, self.llm),
@@ -375,6 +377,37 @@ class CassandraAssistant:
 
     def set_todo_completed(self, task_id: str, completed: bool) -> bool:
         return self.todo_skill.set_task_completed(task_id, completed)
+
+    # ── Calendar ─────────────────────────────────────────────────────────────
+
+    def get_calendar_status(self) -> dict:
+        return self.calendar.get_status()
+
+    def configure_calendar(self, url: str, username: str, password: str) -> dict:
+        ok, msg = self.calendar.configure(url, username, password)
+        return {"ok": ok, "message": msg}
+
+    def disconnect_calendar(self) -> None:
+        self.calendar.disconnect()
+
+    def list_calendar_events(self, days: int = 7) -> list[dict]:
+        from datetime import datetime, timedelta
+        start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        return self.calendar.list_events(start, start + timedelta(days=days))
+
+    def create_calendar_event(
+        self, title: str, start_iso: str, end_iso: str, description: str = ""
+    ) -> dict | None:
+        from datetime import datetime
+        try:
+            start_dt = datetime.fromisoformat(start_iso)
+            end_dt = datetime.fromisoformat(end_iso)
+        except ValueError:
+            return None
+        return self.calendar.create_event(title, start_dt, end_dt, description)
+
+    def delete_calendar_event(self, event_id: str) -> bool:
+        return self.calendar.delete_event(event_id)
 
     # ── Routines ──────────────────────────────────────────────────────────────
 
