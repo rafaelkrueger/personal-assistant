@@ -1490,9 +1490,20 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                 web_url = os.getenv("WEB_AGENT_URL", "http://192.168.100.52:8000")
                 connected = False
                 try:
-                    req = urllib.request.Request(web_url, method="GET")
-                    with urllib.request.urlopen(req, timeout=3):
-                        connected = True
+                    # Testa o endpoint real de autenticação — evita falso positivo
+                    import json as _json
+                    data = _json.dumps({"email": "test", "password": "test"}).encode()
+                    req = urllib.request.Request(
+                        f"{web_url.rstrip('/')}/api/auth/login",
+                        data=data,
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    with urllib.request.urlopen(req, timeout=3) as resp:
+                        # 200 (ok) ou 401/422 (errado mas servidor responde) = online
+                        connected = resp.status in (200, 401, 422)
+                except urllib.error.HTTPError as e:
+                    connected = e.code in (200, 401, 422)
                 except Exception:
                     connected = False
                 self._send_json({"connected": connected, "url": web_url})
