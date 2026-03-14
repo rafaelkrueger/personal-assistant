@@ -39,17 +39,12 @@ class CalendarService:
 
     def configure(self, url: str, username: str, password: str) -> tuple[bool, str]:
         """Salva credenciais e testa a conexão. Retorna (sucesso, mensagem)."""
-        username = (username or "").strip()
-        password = (password or "").strip()
         url = self._normalize_caldav_url(url, username)
         if "apidata.googleusercontent.com" in url and "@" not in (username or ""):
             return (
                 False,
                 "Para Google Calendar, use o e-mail completo como usuário (ex: seu@gmail.com).",
             )
-        # Google App Password is usually shown grouped with spaces; normalize it.
-        if "apidata.googleusercontent.com" in url:
-            password = password.replace(" ", "")
         ok, msg = self._test(url, username, password)
         if ok:
             self._save_creds({"url": url, "username": username, "password": password})
@@ -234,15 +229,6 @@ class CalendarService:
                 msg += (
                     " | Dica: para Google use "
                     "https://apidata.googleusercontent.com/caldav/v2/SEU_EMAIL/events"
-                )
-            if (
-                "apidata.googleusercontent.com" in (url or "")
-                and ("Unauthorized" in msg or "AuthorizationError" in msg)
-            ):
-                msg += (
-                    " | Dica: no Google use e-mail completo e SENHA DE APP "
-                    "(16 caracteres, sem espacos). "
-                    "Ative 2 etapas e gere em Conta Google > Seguranca > Senhas de app."
                 )
             return False, f"Falha na conexão: {msg}"
 

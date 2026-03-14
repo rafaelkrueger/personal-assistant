@@ -16,6 +16,7 @@ from cassandra.openai_client import LLMService
 from cassandra.router import SkillRouter
 from cassandra.settings_store import SettingsStore
 from cassandra.sounds import SoundPlayer
+from cassandra.speaker_keepalive import SpeakerKeepAlive
 from cassandra.timer_manager import TimerManager, format_duration
 from cassandra.voice import VoiceOutput
 from cassandra.alarm_manager import AlarmManager
@@ -93,6 +94,8 @@ class CassandraAssistant:
             fallback_rate=self.settings.voice_rate,
         )
         self.routine_manager._voice = self.voice_output  # conecta após criação
+        self.speaker_keepalive = SpeakerKeepAlive(interval_seconds=240)
+        self.speaker_keepalive.start()
         self.action_log_path = Path("data/action_commands.log")
         self.action_log_path.parent.mkdir(parents=True, exist_ok=True)
         self.passive_log_path = Path("data/passive_heard.log")
