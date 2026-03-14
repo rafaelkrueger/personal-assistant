@@ -3,11 +3,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
 import threading
 import time
 from datetime import datetime
+
+log = logging.getLogger("web_search")
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 
 import requests
 import websockets
@@ -199,51 +203,66 @@ class _WebAgentClient:
 
     def _ensure_token(self) -> str | None:
         if self._token and time.time() < self._token_expires:
+            log.debug("Token em cache válido")
             return self._token
+        log.debug("Fazendo login no web-agent: %s", self._base("/api/auth/login"))
         try:
             r = self._session.post(
                 self._base("/api/auth/login"),
                 json={"email": WEB_AGENT_EMAIL, "password": WEB_AGENT_PASSWORD},
                 timeout=10,
             )
+            log.debug("Login status: %d | body: %s", r.status_code, r.text[:200])
             if r.status_code == 200:
                 self._token = r.json().get("token")
                 self._token_expires = time.time() + 23 * 3600
+                log.debug("Token obtido com sucesso")
                 return self._token
             if r.status_code not in (401, 422):
+                log.error("Login falhou com status inesperado: %d", r.status_code)
                 return None
-        except Exception:
+        except Exception as e:
+            log.error("Erro na requisição de login: %s", e)
             return None
+        log.debug("Login falhou (401/422), tentando registrar...")
         try:
-            self._session.post(
+            r2 = self._session.post(
                 self._base("/api/auth/register"),
                 json={"email": WEB_AGENT_EMAIL, "password": WEB_AGENT_PASSWORD},
                 timeout=10,
             )
+            log.debug("Register status: %d | body: %s", r2.status_code, r2.text[:200])
             r = self._session.post(
                 self._base("/api/auth/login"),
                 json={"email": WEB_AGENT_EMAIL, "password": WEB_AGENT_PASSWORD},
                 timeout=10,
             )
+            log.debug("Login pós-register status: %d", r.status_code)
             if r.status_code == 200:
                 self._token = r.json().get("token")
                 self._token_expires = time.time() + 23 * 3600
+                log.debug("Token obtido após registro")
                 return self._token
-        except Exception:
-            pass
+        except Exception as e:
+            log.error("Erro no registro/login: %s", e)
+        log.error("Não foi possível obter token do web-agent")
         return None
 
     def _create_chat(self, token: str) -> str | None:
+        log.debug("Criando chat...")
         try:
             r = self._session.post(
                 self._base("/api/chats"),
                 headers={"Authorization": f"Bearer {token}"},
                 timeout=10,
             )
+            log.debug("Criar chat status: %d | body: %s", r.status_code, r.text[:200])
             if r.status_code == 200:
-                return r.json().get("id")
-        except Exception:
-            pass
+                chat_id = r.json().get("id")
+                log.debug("Chat criado: %s", chat_id)
+                return chat_id
+        except Exception as e:
+            log.error("Erro ao criar chat: %s", e)
         return None
 
     def _get_last_assistant_message(self, token: str, chat_id: str) -> str | None:
@@ -263,8 +282,10 @@ class _WebAgentClient:
 
     async def _ws_query(self, token: str, chat_id: str, query: str) -> str | None:
         ws_url = f"{_WS_URL}/ws/{chat_id}?token={token}"
+        log.debug("Conectando WebSocket: %s", ws_url)
         try:
             async with websockets.connect(ws_url, open_timeout=10) as ws:
+                log.debug("WebSocket conectado, enviando query: %s", query[:100])
                 await ws.send(json.dumps({"type": "message", "content": query}))
 
                 loop = asyncio.get_running_loop()
@@ -276,30 +297,39 @@ class _WebAgentClient:
                     try:
                         raw = await asyncio.wait_for(ws.recv(), timeout=min(remaining, 5))
                     except asyncio.TimeoutError:
+                        log.debug("WS recv timeout (aguardando evento...)")
                         continue
 
                     try:
                         event = json.loads(raw)
                     except Exception:
+                        log.debug("WS mensagem não-JSON: %s", raw[:100])
                         continue
 
                     etype = event.get("type")
+                    log.debug("WS evento: type=%s | keys=%s", etype, list(event.keys()))
 
                     if etype == "agent_message":
-                        return event.get("content", "").strip()
+                        content = event.get("content", "").strip()
+                        log.debug("agent_message recebido (%d chars)", len(content))
+                        return content
 
                     if etype in ("browser_action", "status", "plan", "agent_start"):
+                        log.debug("Atividade do agente detectada: %s", etype)
                         seen_agent_activity = True
 
                     if etype == "title_update" and seen_agent_activity:
+                        log.debug("title_update pós-atividade → buscando via REST")
                         await asyncio.sleep(0.5)
-                        return None  # busca via REST abaixo
-
-                    if etype == "error":
                         return None
 
-        except Exception:
-            pass
+                    if etype == "error":
+                        log.error("WS retornou error: %s", event)
+                        return None
+
+                log.warning("WS timeout atingido (%ds) sem resposta", _TIMEOUT)
+        except Exception as e:
+            log.error("Erro WebSocket: %s", e)
         return None
 
     def query(self, query: str) -> str | None:
@@ -324,13 +354,20 @@ class _WebAgentClient:
             finally:
                 loop.close()
 
+        log.debug("Iniciando thread WS para chat_id=%s | query=%s", chat_id, query[:80])
         t = threading.Thread(target=_run, daemon=True)
         t.start()
         t.join(timeout=_TIMEOUT + 10)
 
-        if container[0] is not None:
-            return container[0]
-        return self._get_last_assistant_message(token, chat_id)
+        ws_result = container[0]
+        log.debug("Thread WS finalizado | resultado WS: %s", repr(ws_result)[:80] if ws_result else None)
+
+        if ws_result is not None:
+            return ws_result
+        log.debug("Buscando última mensagem via REST para chat_id=%s", chat_id)
+        rest_result = self._get_last_assistant_message(token, chat_id)
+        log.debug("Resultado REST: %s", repr(rest_result)[:80] if rest_result else None)
+        return rest_result
 
 
 _client = _WebAgentClient()
@@ -374,15 +411,18 @@ class WebSearchSkill(Skill):
 
     def handle(self, text: str) -> str:
         today = datetime.now().strftime("%d/%m/%Y")
+        log.debug("handle() chamado | text=%s", text[:100])
 
         # ── 1. Senso crítico: classificar intenção e otimizar query ────────────
         intent = _classify(self.llm, text, today)
         category = intent.get("category", "web_geral")
         query = (intent.get("query") or text).strip()
         direct = bool(intent.get("direct_answer", False))
+        log.debug("Classificação: category=%s | direct=%s | query=%s", category, direct, query[:100])
 
         # ── 2. Se não precisa de web, responde diretamente ─────────────────────
         if direct:
+            log.debug("Resposta direta (sem web)")
             return self.llm.answer(
                 user_text=text,
                 system_prompt=_FORMAT_PROMPTS["direto"],
@@ -390,7 +430,9 @@ class WebSearchSkill(Skill):
             )
 
         # ── 3. Consulta o web-agent com a query otimizada ──────────────────────
+        log.debug("Consultando web-agent com query: %s", query)
         raw = _client.query(query)
+        log.debug("Resposta do web-agent: %s", repr(raw)[:120] if raw else "NENHUMA")
         if not raw:
             return (
                 "Tentei buscar essa informação na internet, mas não obtive resposta "
