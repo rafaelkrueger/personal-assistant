@@ -5,6 +5,7 @@ import asyncio
 import json
 import os
 import re
+import threading
 import time
 from datetime import datetime
 
@@ -308,9 +309,27 @@ class _WebAgentClient:
         chat_id = self._create_chat(token)
         if not chat_id:
             return None
-        result = asyncio.run(self._ws_query(token, chat_id, query))
-        if result is not None:
-            return result
+
+        # Roda o WebSocket em thread dedicada com loop próprio para evitar
+        # "This event loop is already running" quando chamado de contexto com loop ativo.
+        container: list[str | None] = [None]
+
+        def _run() -> None:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                container[0] = loop.run_until_complete(
+                    self._ws_query(token, chat_id, query)
+                )
+            finally:
+                loop.close()
+
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
+        t.join(timeout=_TIMEOUT + 10)
+
+        if container[0] is not None:
+            return container[0]
         return self._get_last_assistant_message(token, chat_id)
 
 
