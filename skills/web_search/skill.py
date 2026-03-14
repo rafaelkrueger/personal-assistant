@@ -405,9 +405,26 @@ class WebSearchSkill(Skill):
     def __init__(self, llm: LLMService) -> None:
         self.llm = llm
 
+    # Padrões que indicam conversa pura — não precisam de web, bypass rápido
+    _CHAT_ONLY = [
+        "obrigado", "valeu", "tchau", "olá", "oi ", "tudo bem",
+        "me conta uma piada", "conta uma piada", "piada",
+        "me ajuda", "o que você", "quem é você", "você pode",
+        "como você", "qual seu nome", "seu nome",
+    ]
+
     def can_handle(self, text: str) -> bool:
-        """Detecção rápida por palavras-chave como gate de entrada."""
-        return _needs_web(text)
+        """
+        Retorna True para tudo exceto conversa claramente sem web.
+        O LLM faz o filtro fino via direct_answer em handle().
+        """
+        t = text.lower()
+        # Fast-path: conversa pura → deixa para GeneralChatSkill
+        if any(p in t for p in self._CHAT_ONLY) and not _needs_web(t):
+            log.debug("can_handle: bypass (conversa pura) | text=%s", text[:60])
+            return False
+        log.debug("can_handle: True | keyword_match=%s | text=%s", _needs_web(t), text[:60])
+        return True
 
     def handle(self, text: str) -> str:
         today = datetime.now().strftime("%d/%m/%Y")
