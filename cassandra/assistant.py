@@ -43,6 +43,9 @@ class CassandraAssistant:
         )
         self.memory = ConversationMemory()
         self.sound_player = SoundPlayer()
+        _ui_sounds = self.settings_store.get().get("sounds", {})
+        self.sound_player.enabled = bool(_ui_sounds.get("enabled", True))
+        self.sound_player.play(self.settings.startup_sound_path)
         self._timer_interrupt = threading.Event()
         self.timer_manager = TimerManager(on_fire=self._timer_interrupt)
         self.routine_manager = RoutineManager(

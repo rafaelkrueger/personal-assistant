@@ -26,6 +26,7 @@ class Settings:
     on_sound_path: str = "assets/on.mp3"
     off_sound_path: str = "assets/off.mp3"
     ring_sound_path: str = "assets/ring.mp3"
+    startup_sound_path: str = "assets/turn-on.mp3"
     voice_enabled: bool = True
     tts_voice: str = "nova"
     tts_model: str = "tts-1"
@@ -70,6 +71,9 @@ def load_settings() -> Settings:
     on_sound_path = os.getenv("ON_SOUND_PATH", "assets/on.mp3").strip() or "assets/on.mp3"
     off_sound_path = os.getenv("OFF_SOUND_PATH", "assets/off.mp3").strip() or "assets/off.mp3"
     ring_sound_path = os.getenv("RING_SOUND_PATH", "assets/ring.mp3").strip() or "assets/ring.mp3"
+    startup_sound_path = (
+        os.getenv("STARTUP_SOUND_PATH", "assets/turn-on.mp3").strip() or "assets/turn-on.mp3"
+    )
     voice_enabled = os.getenv("VOICE_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
     tts_voice = os.getenv("TTS_VOICE", "nova").strip() or "nova"
     tts_model = os.getenv("TTS_MODEL", "tts-1").strip() or "tts-1"
@@ -117,6 +121,7 @@ def load_settings() -> Settings:
         on_sound_path=on_sound_path,
         off_sound_path=off_sound_path,
         ring_sound_path=ring_sound_path,
+        startup_sound_path=startup_sound_path,
         voice_enabled=voice_enabled,
         tts_voice=tts_voice,
         tts_model=tts_model,
