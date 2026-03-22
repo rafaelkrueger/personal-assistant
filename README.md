@@ -218,3 +218,4 @@ Ao fazer `git push` para `main`, o workflow:
 4. Sincroniza arquivos para a Raspberry Pi (preserva `.env`, `data/` e `.venv/`)
 5. Instala/atualiza dependencias Python
 6. Reinicia `main.py` e mostra os ultimos logs
+7.Reiniciar servidor: systemctl --user restart cassandra-assistant.service
