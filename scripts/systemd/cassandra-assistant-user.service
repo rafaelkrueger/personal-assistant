@@ -1,0 +1,26 @@
+# Serviço systemd do USUÁRIO — costuma ser melhor para microfone / Bluetooth / PulseAudio.
+#
+# 1) Ajuste WorkingDirectory e ExecStart (use caminhos absolutos).
+# 2) mkdir -p ~/.config/systemd/user
+# 3) cp este arquivo para ~/.config/systemd/user/cassandra-assistant.service
+# 4) systemctl --user daemon-reload
+# 5) systemctl --user enable --now cassandra-assistant.service
+#
+# Para subir no boot SEM precisar fazer login na interface gráfica:
+#   sudo loginctl enable-linger SEU_USUARIO
+#
+# Logs: journalctl --user -u cassandra-assistant -f
+
+[Unit]
+Description=Cassandra assistente pessoal (usuário)
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/rafaelkrueger/Desktop/personal-assistant
+ExecStart=/home/rafaelkrueger/Desktop/personal-assistant/.venv/bin/python main.py
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=default.target

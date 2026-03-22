@@ -1,0 +1,26 @@
+# Serviço systemd (nível sistema) — inicia no boot, roda como seu usuário.
+#
+# 1) Ajuste User, WorkingDirectory e ExecStart para os caminhos reais da Pi.
+# 2) sudo cp scripts/systemd/cassandra-assistant.service /etc/systemd/system/
+# 3) sudo systemctl daemon-reload
+# 4) sudo systemctl enable --now cassandra-assistant.service
+#
+# Logs: journalctl -u cassandra-assistant -f
+# O app carrega o .env a partir do WorkingDirectory (python-dotenv).
+
+[Unit]
+Description=Cassandra assistente pessoal
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rafaelkrueger
+Group=rafaelkrueger
+WorkingDirectory=/home/rafaelkrueger/Desktop/personal-assistant
+ExecStart=/home/rafaelkrueger/Desktop/personal-assistant/.venv/bin/python main.py
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target
