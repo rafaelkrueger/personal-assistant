@@ -32,6 +32,8 @@ class Settings:
     tts_model: str = "tts-1"
     voice_lang: str = "pt-br"
     voice_rate: int = 165
+    # Busca na internet via web-agent (skill + ações de rotina que usam o agente)
+    web_search_enabled: bool = False
 
 
 def load_settings() -> Settings:
@@ -79,6 +81,12 @@ def load_settings() -> Settings:
     tts_model = os.getenv("TTS_MODEL", "tts-1").strip() or "tts-1"
     voice_lang = os.getenv("VOICE_LANG", "pt-br").strip().lower() or "pt-br"
     voice_rate = int(os.getenv("VOICE_RATE", "165").strip() or "165")
+    web_search_enabled = os.getenv("WEB_SEARCH_ENABLED", "false").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
     if not api_key:
         raise RuntimeError(
@@ -127,4 +135,5 @@ def load_settings() -> Settings:
         tts_model=tts_model,
         voice_lang=voice_lang,
         voice_rate=voice_rate,
+        web_search_enabled=web_search_enabled,
     )

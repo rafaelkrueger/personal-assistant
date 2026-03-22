@@ -53,9 +53,17 @@ class Routine:
 
 
 class RoutineManager:
-    def __init__(self, voice_output, llm, db_path: str = "data/routines.json") -> None:
+    def __init__(
+        self,
+        voice_output,
+        llm,
+        db_path: str = "data/routines.json",
+        *,
+        web_search_enabled: bool = False,
+    ) -> None:
         self._voice = voice_output
         self._llm = llm
+        self._web_search_enabled = web_search_enabled
         self._db_path = Path(db_path)
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
@@ -134,11 +142,16 @@ class RoutineManager:
         from skills.web_search.skill import _client as web_client, _FORMAT_PROMPTS
 
         today = datetime.now().strftime("%d/%m/%Y")
+        skipped_web = False
         for action in routine.actions:
             try:
                 if action.type == "falar":
                     if action.text:
                         self._voice.speak(action.text)
+                    continue
+
+                if not self._web_search_enabled:
+                    skipped_web = True
                     continue
 
                 query = _CATEGORY_QUERIES.get(action.type, "").format(date=today)
@@ -158,6 +171,12 @@ class RoutineManager:
                 self._voice.speak(response)
             except Exception as exc:
                 print(f"[ROUTINE] Erro na ação '{action.type}': {exc}")
+
+        if skipped_web:
+            print(
+                "[ROUTINE] Ações que dependem da internet ignoradas "
+                "(WEB_SEARCH_ENABLED não está ativo)."
+            )
 
     # ── Monitor de horários ───────────────────────────────────────────────────
 

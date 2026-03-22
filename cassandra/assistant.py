@@ -51,6 +51,7 @@ class CassandraAssistant:
         self.routine_manager = RoutineManager(
             voice_output=None,  # preenchido abaixo após voice_output ser criado
             llm=self.llm,
+            web_search_enabled=self.settings.web_search_enabled,
         )
         self.alarm_manager = AlarmManager(
             ring_sound_path=self.settings.ring_sound_path,
@@ -60,19 +61,19 @@ class CassandraAssistant:
         self.calendar = CalendarService()
         self.shopping_skill = ShoppingListSkill()
         self.todo_skill = TodoSkill()
-        self.router = SkillRouter(
-            skills=[
-                AlarmSkill(self.alarm_manager),
-                TimerSkill(self.timer_manager),
-                VolumeSkill(),
-                ScheduleSkill(self.calendar, self.llm),
-                self.shopping_skill,
-                self.todo_skill,
-                RoutineSkill(self.routine_manager, self.alarm_manager, self.llm),
-                WebSearchSkill(self.llm),
-                GeneralChatSkill(self.llm, self.memory),
-            ]
-        )
+        _skills: list = [
+            AlarmSkill(self.alarm_manager),
+            TimerSkill(self.timer_manager),
+            VolumeSkill(),
+            ScheduleSkill(self.calendar, self.llm),
+            self.shopping_skill,
+            self.todo_skill,
+            RoutineSkill(self.routine_manager, self.alarm_manager, self.llm),
+        ]
+        if self.settings.web_search_enabled:
+            _skills.append(WebSearchSkill(self.llm))
+        _skills.append(GeneralChatSkill(self.llm, self.memory))
+        self.router = SkillRouter(skills=_skills)
         if self.settings.input_mode == "mic":
             self.input_source = MicrophoneInputSource(
                 llm=self.llm,
