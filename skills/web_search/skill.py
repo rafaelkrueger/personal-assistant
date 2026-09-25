@@ -11,6 +11,8 @@ from datetime import datetime
 
 log = logging.getLogger("web_search")
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
+# a checagem do web-agent a cada 15 s geraria uma linha DEBUG do urllib3 por vez no log
+logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 import requests
 
