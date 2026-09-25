@@ -87,6 +87,11 @@ class CassandraAssistant:
                 vad_max_duration=self.settings.vad_max_duration,
                 interrupt_event=self._timer_interrupt,
                 debug=self.settings.mic_debug,
+                assistant_name=self.settings.assistant_name,
+                wake_words=self.settings.assistant_aliases or [self.settings.assistant_name],
+                wake_word_engine=self.settings.wake_word_engine,
+                transcription_provider=self.settings.transcription_provider,
+                vosk_model_path=self.settings.vosk_model_path,
             )
         else:
             self.input_source = TextInputSource()

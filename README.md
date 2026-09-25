@@ -90,6 +90,22 @@ OpenAI ou DeepSeek, com modelo e chave de cada um. A troca vale na hora, sem rei
 A DeepSeek so faz texto. Voz (TTS) e microfone (transcricao) continuam na OpenAI: com a DeepSeek ativa e
 sem chave da OpenAI, a Cassandra fala com a voz local (espeak) e o modo microfone nao transcreve.
 
+## Detecção do nome sem internet (modo microfone)
+
+No modo microfone, a Cassandra reconhece o próprio nome **no aparelho**, com o Vosk (offline, grátis, modelo
+pequeno em português de ~50 MB, baixado sozinho na primeira vez para `models/`). Fala sem o nome é
+descartada ali mesmo: nada vai para a OpenAI. Só a fala que começa com "Cassandra" (e o que for dito
+durante a sessão ativa) é transcrita.
+
+```bash
+WAKE_WORD_ENGINE=local        # local (padrão) | openai (transcreve toda fala na OpenAI, gasta créditos)
+TRANSCRIPTION_PROVIDER=auto   # auto (OpenAI se houver chave; se falhar, local) | openai | local
+```
+
+Com `local` (ou `auto` sem chave/créditos), o comando também é transcrito pelo Vosk: grátis, mas leva
+alguns segundos por frase num Raspberry Pi 3 e erra mais que a OpenAI. Se a OpenAI falhar (ex.: sem
+créditos), a Cassandra usa só o local pelos 10 minutos seguintes.
+
 ## Busca na internet (web-agent)
 
 Perguntas que precisam de informacao atual (noticias, cotacoes, clima, esportes, transito, busca geral) vao

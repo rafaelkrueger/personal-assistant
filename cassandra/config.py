@@ -11,6 +11,13 @@ class Settings:
     assistant_aliases: list[str] | None = None
     input_mode: str = "text"
     transcription_model: str = "gpt-4o-mini-transcribe"
+    # Modo microfone: "local" detecta o nome no próprio Pi (Vosk, sem API); "openai" transcreve toda fala
+    # na OpenAI e procura o nome no texto (comportamento antigo, gasta créditos o tempo todo).
+    wake_word_engine: str = "local"
+    # Transcrição do comando depois do nome: "auto" (OpenAI se houver chave, senão/ao falhar local),
+    # "openai" ou "local" (Vosk, grátis e offline, mais lento e menos preciso).
+    transcription_provider: str = "auto"
+    vosk_model_path: str = "models/vosk-model-small-pt-0.3"
     transcription_language: str = "pt"
     transcription_prompt: str = (
         "A fala principal e em portugues do Brasil. "
@@ -53,6 +60,12 @@ def load_settings() -> Settings:
         or "gpt-4o-mini-transcribe"
     )
     transcription_language = os.getenv("TRANSCRIPTION_LANGUAGE", "pt").strip().lower() or "pt"
+    wake_word_engine = os.getenv("WAKE_WORD_ENGINE", "local").strip().lower() or "local"
+    transcription_provider = os.getenv("TRANSCRIPTION_PROVIDER", "auto").strip().lower() or "auto"
+    vosk_model_path = (
+        os.getenv("VOSK_MODEL_PATH", "models/vosk-model-small-pt-0.3").strip()
+        or "models/vosk-model-small-pt-0.3"
+    )
     transcription_prompt = (
         os.getenv(
             "TRANSCRIPTION_PROMPT",
@@ -91,6 +104,10 @@ def load_settings() -> Settings:
 
     if input_mode not in {"text", "mic"}:
         raise RuntimeError("INPUT_MODE invalido. Use 'text' ou 'mic'.")
+    if wake_word_engine not in {"local", "openai"}:
+        raise RuntimeError("WAKE_WORD_ENGINE invalido. Use 'local' ou 'openai'.")
+    if transcription_provider not in {"auto", "openai", "local"}:
+        raise RuntimeError("TRANSCRIPTION_PROVIDER invalido. Use 'auto', 'openai' ou 'local'.")
     if len(transcription_language) != 2:
         raise RuntimeError("TRANSCRIPTION_LANGUAGE invalido. Use codigo ISO-639-1, ex: 'pt'.")
     if not assistant_aliases:
@@ -115,6 +132,9 @@ def load_settings() -> Settings:
         assistant_aliases=assistant_aliases,
         input_mode=input_mode,
         transcription_model=transcription_model,
+        wake_word_engine=wake_word_engine,
+        transcription_provider=transcription_provider,
+        vosk_model_path=vosk_model_path,
         transcription_language=transcription_language,
         transcription_prompt=transcription_prompt,
         vad_energy_threshold=vad_energy_threshold,
