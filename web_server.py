@@ -9,6 +9,7 @@ from threading import Thread
 from typing import Type
 from urllib.parse import urlparse
 
+from cassandra import llm_settings
 from cassandra.assistant import CassandraAssistant
 
 HTML_PAGE = """<!doctype html>
@@ -355,6 +356,11 @@ HTML_PAGE = """<!doctype html>
     .save-bar{display:flex;align-items:center;gap:10px;padding-top:4px}
     .save-toast{font-size:12px;color:var(--green);font-weight:600;opacity:0;transition:opacity .3s}
     .save-toast.show{opacity:1}
+    /* Modelo de IA */
+    .llm-input{width:230px;max-width:100%}
+    .llm-note{font-size:12px;line-height:1.45;color:var(--text2);padding:10px 12px;border-radius:var(--r);background:rgba(255,255,255,.03);border:1px solid var(--border);margin-top:12px}
+    .llm-note.warn{color:var(--amber);background:var(--amber-dim);border-color:rgba(251,191,36,.25)}
+    .llm-active{color:var(--green);font-weight:700}
   </style>
 </head>
 <body>
@@ -580,6 +586,36 @@ HTML_PAGE = """<!doctype html>
         </div>
 
         <div class="settings-layout">
+
+          <!-- Modelo de IA (LLM) -->
+          <div class="settings-card full">
+            <div class="settings-card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>Modelo de IA</div>
+            <div class="settings-row">
+              <div class="settings-row-info"><div class="settings-row-label">Provedor</div><div class="settings-row-desc">Quem responde as conversas e as habilidades. Vale na hora, sem reiniciar.</div></div>
+              <div class="settings-row-control"><select id="llm-provider" class="settings-select"><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option></select></div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-info"><div class="settings-row-label">OpenAI <span class="llm-active" id="llm-openai-active"></span></div><div class="settings-row-desc" id="llm-openai-desc">Modelo e chave da OpenAI</div></div>
+              <div class="settings-row-control" style="gap:8px;flex-wrap:wrap">
+                <input type="text" id="llm-openai-model" class="llm-input" list="llm-openai-models" placeholder="gpt-4o-mini"/>
+                <input type="password" id="llm-openai-key" class="llm-input" placeholder="Chave (sk-...)" autocomplete="off"/>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-info"><div class="settings-row-label">DeepSeek <span class="llm-active" id="llm-deepseek-active"></span></div><div class="settings-row-desc" id="llm-deepseek-desc">Modelo e chave da DeepSeek</div></div>
+              <div class="settings-row-control" style="gap:8px;flex-wrap:wrap">
+                <input type="text" id="llm-deepseek-model" class="llm-input" list="llm-deepseek-models" placeholder="deepseek-flash"/>
+                <input type="password" id="llm-deepseek-key" class="llm-input" placeholder="Chave (sk-...)" autocomplete="off"/>
+              </div>
+            </div>
+            <datalist id="llm-openai-models"><option value="gpt-4o-mini"/><option value="gpt-4o"/></datalist>
+            <datalist id="llm-deepseek-models"><option value="deepseek-flash"/><option value="deepseek-v4-pro"/></datalist>
+            <div class="llm-note" id="llm-audio-note">A DeepSeek só faz texto. Voz (fala da Cassandra) e microfone usam sempre a OpenAI.</div>
+            <div class="save-bar" style="margin-top:12px">
+              <button class="btn btn-primary btn-sm" id="saveLlmBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>Salvar modelo</button>
+              <span class="save-toast" id="llmToast">Salvo!</span>
+            </div>
+          </div>
 
           <!-- Módulos -->
           <div class="settings-card">
@@ -1037,7 +1073,7 @@ function applySettingsToForm(s){
   const rt=s._runtime||{};
   document.getElementById("info-name").textContent=rt.assistant_name||"cassandra";
   document.getElementById("info-input").textContent=rt.input_mode||"text";
-  document.getElementById("info-model").textContent=rt.openai_model||"—";
+  document.getElementById("info-model").textContent=rt.llm||rt.openai_model||"—";
   rebuildNavs();
 }
 
@@ -1082,6 +1118,53 @@ document.getElementById("resetSettingsBtn").addEventListener("click",async()=>{
   const toast=document.getElementById("saveToast");
   toast.textContent="Restaurado!";toast.classList.add("show");
   setTimeout(()=>{toast.classList.remove("show");toast.textContent="Salvo!";},2000);
+});
+
+// ── Modelo de IA (LLM) ──
+function applyLlm(l){
+  document.getElementById("llm-provider").value=l.llm_provider||"openai";
+  document.getElementById("llm-openai-model").value=l.openai_model||"";
+  document.getElementById("llm-deepseek-model").value=l.deepseek_model||"";
+  for(const p of ["openai","deepseek"]){
+    const key=document.getElementById(`llm-${p}-key`);
+    key.value="";
+    key.placeholder=l[`${p}_api_key_set`]?`Configurada (${l[`${p}_api_key_preview`]}) — vazio mantém`:"Cole a chave (sk-...)";
+    document.getElementById(`llm-${p}-active`).textContent=l.llm_provider===p?"· em uso":"";
+  }
+  const note=document.getElementById("llm-audio-note");
+  if(l.audio_available){
+    note.className="llm-note";
+    note.textContent="A DeepSeek só faz texto. Voz (fala da Cassandra) e microfone usam sempre a OpenAI — sua chave da OpenAI continua sendo usada para isso.";
+  }else{
+    note.className="llm-note warn";
+    note.textContent="Sem chave da OpenAI: a Cassandra fala com a voz local (espeak) e o modo microfone não transcreve. A DeepSeek só faz texto.";
+  }
+  const name=l.llm_provider==="deepseek"?`DeepSeek · ${l.deepseek_model}`:`OpenAI · ${l.openai_model}`;
+  document.getElementById("info-model").textContent=name;
+}
+
+async function loadLlm(){
+  try{applyLlm(await api("/api/llm"));}catch(e){console.error("LLM:",e);}
+}
+
+document.getElementById("saveLlmBtn").addEventListener("click",async()=>{
+  const body={
+    llm_provider:document.getElementById("llm-provider").value,
+    openai_model:document.getElementById("llm-openai-model").value.trim(),
+    deepseek_model:document.getElementById("llm-deepseek-model").value.trim(),
+  };
+  const ok=document.getElementById("llm-openai-key").value.trim();
+  const dk=document.getElementById("llm-deepseek-key").value.trim();
+  if(ok) body.openai_api_key=ok;
+  if(dk) body.deepseek_api_key=dk;
+  const toast=document.getElementById("llmToast");
+  try{
+    const l=await api("/api/llm","POST",body);
+    applyLlm(l);
+    if(!l[`${l.llm_provider}_api_key_set`]){toast.textContent="Salvo — falta a chave desse provedor";}
+    else toast.textContent="Salvo!";
+  }catch(e){toast.textContent=`Erro: ${e.message}`;}
+  toast.classList.add("show");setTimeout(()=>{toast.classList.remove("show");toast.textContent="Salvo!";},3000);
 });
 
 // ── Routines ──
@@ -1410,6 +1493,7 @@ document.getElementById("checkWebAgentBtn").addEventListener("click",checkWebAge
 async function init(){
   try{const s=await api("/api/settings");applySettingsToForm(s);}
   catch(e){console.error("Settings:",e);rebuildNavs();}
+  await loadLlm();
   await refresh();
   checkWebAgentStatus();
   loadCalendarStatus();
@@ -1468,6 +1552,9 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                 return
             if parsed.path == "/api/settings":
                 self._send_json(assistant.get_ui_settings())
+                return
+            if parsed.path == "/api/llm":
+                self._send_json(llm_settings.get_public())
                 return
             if parsed.path == "/api/routines":
                 self._send_json({"routines": assistant.get_routines()})
@@ -1697,6 +1784,21 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                 self._send_json({"ok": ok})
                 return
 
+            if parsed.path == "/api/llm":
+                # Mesmo formato do orchestrator/editor: campos parciais; chave vazia/omitida nunca apaga a salva.
+                try:
+                    self._send_json(llm_settings.update(self._read_json_body()))
+                except ValueError as exc:
+                    self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+
+            self._send_json({"error": "Not found."}, status=HTTPStatus.NOT_FOUND)
+
+        def do_PUT(self) -> None:
+            # PUT /api/llm, como nos outros sistemas (orchestrator, editor, web-agent).
+            if urlparse(self.path).path == "/api/llm":
+                self.do_POST()
+                return
             self._send_json({"error": "Not found."}, status=HTTPStatus.NOT_FOUND)
 
         def log_message(self, format: str, *args) -> None:  # noqa: A003

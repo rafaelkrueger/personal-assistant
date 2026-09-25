@@ -57,8 +57,8 @@ class RoutineSkill(Skill):
             for a in alarms
         ) or "  (nenhum alarme cadastrado)"
 
-        raw = self._llm.client.chat.completions.create(
-            model="gpt-4o-mini",
+        raw = self._llm.create_completion(
+            fast=True,
             temperature=0,
             max_tokens=300,
             messages=[

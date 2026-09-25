@@ -170,8 +170,8 @@ _CLASSIFY_SYSTEM = (
 
 def _classify(llm: LLMService, text: str, today: str) -> dict:
     """Usa gpt-4o-mini para classificar intenção e otimizar a query."""
-    raw = llm.client.chat.completions.create(
-        model="gpt-4o-mini",
+    raw = llm.create_completion(
+        fast=True,
         temperature=0,
         max_tokens=120,
         messages=[

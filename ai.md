@@ -78,7 +78,8 @@ As regras abaixo definem o comportamento esperado do produto.
   - `assistant.py`: loop principal, wake word, sessao ativa, timeout, execucao de skills.
   - `config.py`: leitura/validacao de configuracoes via `.env`.
   - `input_sources.py`: adaptadores de entrada (`text` e `mic`).
-  - `openai_client.py`: cliente OpenAI para chat e transcricao.
+  - `openai_client.py`: `LLMService`, fachada unica do LLM (chat, voz e transcricao).
+  - `llm_settings.py`: provider ativo (OpenAI ou DeepSeek), modelo e chaves; editavel pela UI.
   - `router.py`: roteador de skills.
   - `sounds.py`: player para sons de ativacao/desativacao.
   - `voice.py`: saida de voz local (TTS).
@@ -94,7 +95,10 @@ As regras abaixo definem o comportamento esperado do produto.
 
 - **Assistant**: orquestra todo o ciclo de vida.
 - **InputSource**: encapsula origem de entrada.
-- **LLMService**: integra com OpenAI.
+- **LLMService**: integra com o LLM. A cada chamada pergunta ao `llm_settings` qual provider usar
+  (OpenAI ou DeepSeek), entao trocar pela UI vale na hora. Texto usa o provider ativo; voz (TTS) e
+  transcricao (STT) usam sempre a OpenAI, porque a DeepSeek nao tem audio. Com DeepSeek, as chamadas
+  vao com raciocinio desligado (`thinking: disabled`) para responder rapido.
 - **SkillRouter**: desacopla decisao de skill.
 - **Skill**: contrato padrao para extensibilidade.
 - **SoundPlayer/VoiceOutput**: feedback sonoro e fala.
@@ -127,9 +131,12 @@ Boas praticas:
 
 Principais variaveis:
 
-- OpenAI:
-  - `OPENAI_API_KEY`
-  - `OPENAI_MODEL`
+- Modelo de IA (tambem trocavel pela UI em Configuracoes > Modelo de IA; o que for salvo la vai para
+  `data/llm_settings.json`, fora do git, e tem prioridade sobre o `.env`):
+  - `LLM_PROVIDER` (`openai` | `deepseek`, padrao `openai`)
+  - `OPENAI_API_KEY`, `OPENAI_MODEL` — a chave da OpenAI tambem e usada para voz e microfone
+  - `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL` (padrao `deepseek-flash`)
+  - Nenhuma chave e obrigatoria para iniciar; sem a chave do provider ativo o chat responde com erro.
 - Wake word:
   - `ASSISTANT_NAME`
   - `ASSISTANT_ALIASES`

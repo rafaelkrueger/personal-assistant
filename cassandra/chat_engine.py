@@ -31,10 +31,7 @@ class ChatEngine:
 
     def __init__(self, history_path: str = "data/web_chat_history.json") -> None:
         self.settings = load_settings()
-        self.llm = LLMService(
-            api_key=self.settings.openai_api_key,
-            model=self.settings.openai_model,
-        )
+        self.llm = LLMService()  # provider/modelo vêm do llm_settings (trocáveis pela UI)
         self._timer_interrupt = threading.Event()
         self.timer_manager = TimerManager(on_fire=self._timer_interrupt)
         self._sessions: dict[str, ConversationMemory] = {}

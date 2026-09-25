@@ -88,16 +88,24 @@ class VoiceOutput:
         sentence_q: queue.Queue[str | None] = queue.Queue()
         audio_q: queue.Queue[tuple[str, bytes | None] | None] = queue.Queue(maxsize=2)
 
+        errors: list[BaseException] = []
+
         def collect() -> None:
-            buf = ""
-            for token in token_iter:
-                buf += token
-                sentences, buf = _split_sentences(buf)
-                for s in sentences:
-                    sentence_q.put(s)
-            if buf.strip():
-                sentence_q.put(buf.strip())
-            sentence_q.put(None)
+            # Sempre sinaliza o fim (None), mesmo se o LLM falhar no meio (sem crédito, rede...). Sem isso o
+            # loop abaixo espera para sempre e trava o assistente inteiro (quem chamou segura o _state_lock).
+            try:
+                buf = ""
+                for token in token_iter:
+                    buf += token
+                    sentences, buf = _split_sentences(buf)
+                    for s in sentences:
+                        sentence_q.put(s)
+                if buf.strip():
+                    sentence_q.put(buf.strip())
+            except BaseException as exc:  # noqa: BLE001 — repassado para quem chamou, depois do loop
+                errors.append(exc)
+            finally:
+                sentence_q.put(None)
 
         def generate_tts() -> None:
             while True:
@@ -131,6 +139,8 @@ class VoiceOutput:
             else:
                 self._speak_local(sentence)
 
+        if errors:
+            raise errors[0]
         return " ".join(parts)
 
     def _play_audio_bytes(self, audio: bytes) -> None:

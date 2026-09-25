@@ -88,10 +88,6 @@ def load_settings() -> Settings:
         "on",
     }
 
-    if not api_key:
-        raise RuntimeError(
-            "OPENAI_API_KEY nao configurada. Defina a variavel de ambiente antes de iniciar."
-        )
     if input_mode not in {"text", "mic"}:
         raise RuntimeError("INPUT_MODE invalido. Use 'text' ou 'mic'.")
     if len(transcription_language) != 2:

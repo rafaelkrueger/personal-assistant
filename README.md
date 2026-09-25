@@ -81,6 +81,15 @@ export VOICE_RATE="165"
 python main.py
 ```
 
+## Modelo de IA (OpenAI ou DeepSeek)
+
+Em **Configuracoes > Modelo de IA** (ou `GET`/`POST /api/llm`) da para escolher quem responde a Cassandra:
+OpenAI ou DeepSeek, com modelo e chave de cada um. A troca vale na hora, sem reiniciar. As chaves ficam em
+`data/llm_settings.json` (fora do git) e a API nunca devolve a chave, so um preview.
+
+A DeepSeek so faz texto. Voz (TTS) e microfone (transcricao) continuam na OpenAI: com a DeepSeek ativa e
+sem chave da OpenAI, a Cassandra fala com a voz local (espeak) e o modo microfone nao transcreve.
+
 ## Interface web (dashboard)
 
 Tambem e possivel usar a Cassandra pelo navegador com dashboard completo:

@@ -2,13 +2,51 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from openai import OpenAI
+from cassandra import llm_settings
 
 
 class LLMService:
-    def __init__(self, api_key: str, model: str) -> None:
-        self.client = OpenAI(api_key=api_key)
-        self.model = model
+    """Fachada única para o LLM. A cada chamada pergunta ao llm_settings qual provider está ativo
+    (OpenAI ou DeepSeek), então trocar o modelo pela UI vale na hora, sem reiniciar.
+
+    Texto (answer, answer_stream, is_dismissal, create_completion) usa o provider ativo.
+    Voz (synthesize_speech) e transcrição (transcribe_audio_file) usam sempre a OpenAI — a DeepSeek não tem
+    áudio. Sem chave da OpenAI essas duas levantam RuntimeError e a voz cai no TTS local (ver voice.py).
+    """
+
+    @property
+    def client(self):
+        return llm_settings.chat_client()[0]
+
+    @property
+    def model(self) -> str:
+        return llm_settings.chat_client()[1]
+
+    def create_completion(self, messages: list[dict], *, fast: bool = False, **kwargs):
+        """chat.completions.create no provider ativo. fast=True usa o modelo rápido/barato do provider
+        (gpt-4o-mini na OpenAI) — para classificações curtas das skills."""
+        client, model, fast_model, extra = llm_settings.chat_client()
+        if extra:
+            kwargs["extra_body"] = {**extra, **kwargs.get("extra_body", {})}
+        return client.chat.completions.create(
+            model=fast_model if fast else model,
+            messages=messages,
+            **kwargs,
+        )
+
+    @staticmethod
+    def _messages(
+        user_text: str,
+        system_prompt: str | None,
+        history: list[dict[str, str]] | None,
+    ) -> list[dict]:
+        messages: list[dict] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        if history:
+            messages.extend(history)
+        messages.append({"role": "user", "content": user_text})
+        return messages
 
     def answer(
         self,
@@ -16,16 +54,8 @@ class LLMService:
         system_prompt: str | None = None,
         history: list[dict[str, str]] | None = None,
     ) -> str:
-        messages: list[dict] = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        if history:
-            messages.extend(history)
-        messages.append({"role": "user", "content": user_text})
-
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
+        response = self.create_completion(
+            self._messages(user_text, system_prompt, history),
             temperature=0.5,
         )
         return response.choices[0].message.content or "Nao consegui responder agora."
@@ -36,20 +66,14 @@ class LLMService:
         system_prompt: str | None = None,
         history: list[dict[str, str]] | None = None,
     ) -> Iterator[str]:
-        messages: list[dict] = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        if history:
-            messages.extend(history)
-        messages.append({"role": "user", "content": user_text})
-
-        stream = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
+        stream = self.create_completion(
+            self._messages(user_text, system_prompt, history),
             temperature=0.5,
             stream=True,
         )
         for chunk in stream:
+            if not chunk.choices:
+                continue
             delta = chunk.choices[0].delta.content
             if delta:
                 yield delta
@@ -57,11 +81,11 @@ class LLMService:
     def is_dismissal(self, text: str) -> bool:
         """Returns True if the user's utterance signals they want to end the session.
 
-        Uses gpt-4o-mini with temperature=0 and max_tokens=3 for speed and
+        Uses the provider's fast model with temperature=0 and max_tokens=3 for speed and
         minimal cost. The model responds with 'yes' or 'no' only.
         """
-        response = self.client.chat.completions.create(
-            model="gpt-4o-mini",
+        response = self.create_completion(
+            fast=True,
             temperature=0,
             max_tokens=3,
             messages=[
@@ -90,7 +114,7 @@ class LLMService:
         model: str = "tts-1",
         voice: str = "nova",
     ) -> bytes:
-        response = self.client.audio.speech.create(
+        response = llm_settings.audio_client().audio.speech.create(
             model=model,
             voice=voice,
             input=text,
@@ -105,7 +129,7 @@ class LLMService:
         prompt: str | None = None,
     ) -> str:
         with open(audio_path, "rb") as audio_file:
-            response = self.client.audio.transcriptions.create(
+            response = llm_settings.audio_client().audio.transcriptions.create(
                 model=model,
                 file=audio_file,
                 language=language,

@@ -32,8 +32,8 @@ Responda SOMENTE com o JSON."""
 
 
 def _parse_intent(llm: LLMService, text: str, today: str) -> dict:
-    raw = llm.client.chat.completions.create(
-        model="gpt-4o-mini",
+    raw = llm.create_completion(
+        fast=True,
         temperature=0,
         max_tokens=150,
         messages=[

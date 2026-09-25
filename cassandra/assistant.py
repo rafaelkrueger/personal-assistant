@@ -12,6 +12,7 @@ from pathlib import Path
 from cassandra.config import load_settings
 from cassandra.input_sources import InputEvent, MicrophoneInputSource, TextInputSource
 from cassandra.memory import ConversationMemory
+from cassandra import llm_settings
 from cassandra.openai_client import LLMService
 from cassandra.router import SkillRouter
 from cassandra.settings_store import SettingsStore
@@ -37,10 +38,7 @@ class CassandraAssistant:
     def __init__(self) -> None:
         self.settings = load_settings()
         self.settings_store = SettingsStore()
-        self.llm = LLMService(
-            api_key=self.settings.openai_api_key,
-            model=self.settings.openai_model,
-        )
+        self.llm = LLMService()  # provider/modelo vêm do llm_settings (trocáveis pela UI)
         self.memory = ConversationMemory()
         self.sound_player = SoundPlayer()
         _ui_sounds = self.settings_store.get().get("sounds", {})
@@ -468,7 +466,8 @@ class CassandraAssistant:
         s["_runtime"] = {
             "assistant_name": self.settings.assistant_name,
             "input_mode": self.settings.input_mode,
-            "openai_model": self.settings.openai_model,
+            "openai_model": llm_settings.describe_active(),
+            "llm": llm_settings.describe_active(),
             "tts_model_env": self.settings.tts_model,
             "tts_voice_env": self.settings.tts_voice,
         }
