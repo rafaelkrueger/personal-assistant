@@ -1,7 +1,6 @@
 """Integração com o web-agent: senso crítico + 5 skills especializadas."""
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
@@ -14,17 +13,24 @@ log = logging.getLogger("web_search")
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 
 import requests
-import websockets
 
 from cassandra.openai_client import LLMService
 from skills.base import Skill
 
 # ── Configuração ──────────────────────────────────────────────────────────────
-WEB_AGENT_URL = os.getenv("WEB_AGENT_URL", "http://192.168.100.52:8000")
-WEB_AGENT_EMAIL = os.getenv("WEB_AGENT_EMAIL", "cassandra@assistant.local")
-WEB_AGENT_PASSWORD = os.getenv("WEB_AGENT_PASSWORD", "CassandraAgent123!")
-_WS_URL = WEB_AGENT_URL.replace("http://", "ws://").replace("https://", "wss://")
+# WEB_AGENT_URL aceita várias URLs separadas por vírgula, tentadas em ordem. O ideal é o nome .local do PC
+# onde o web-agent roda (resolvido por mDNS, continua valendo se o roteador trocar o IP) e o IP como reserva:
+#   WEB_AGENT_URL=http://desktop-cc6nlck.local:8001,http://192.168.100.52:8001
+# O web-agent não tem login (API sem autenticação) e nem sempre está ligado: a Cassandra só o usa quando ele
+# responde (checado em segundo plano, ver _WebAgentClient).
+WEB_AGENT_URLS = [
+    u.strip().rstrip("/")
+    for u in os.getenv("WEB_AGENT_URL", "http://192.168.100.52:8001").split(",")
+    if u.strip()
+]
 _TIMEOUT = int(os.getenv("WEB_AGENT_TIMEOUT", "90"))
+_PROBE_INTERVAL = 15  # segundos entre checagens de disponibilidade
+_PROBE_PATH = "/api/settings/browser"  # leve e só existe no web-agent
 
 # ── Categorias ────────────────────────────────────────────────────────────────
 # Cada categoria define: gatilhos para can_handle e prompt de formatação da resposta.
@@ -193,181 +199,86 @@ def _classify(llm: LLMService, text: str, today: str) -> dict:
 # ── Cliente web-agent ─────────────────────────────────────────────────────────
 
 class _WebAgentClient:
+    """Cliente do web-agent (API REST, sem login).
+
+    A disponibilidade é checada numa thread em segundo plano a cada _PROBE_INTERVAL s: com o PC desligado,
+    cada tentativa leva de 3 a 5 s até desistir (mDNS + conexão), e isso não pode atrasar as respostas.
+    Quem usa só lê o último resultado (available()), sem esperar a rede.
+    """
+
     def __init__(self) -> None:
-        self._token: str | None = None
-        self._token_expires: float = 0.0
         self._session = requests.Session()
+        self._lock = threading.Lock()
+        self._base: str | None = None  # URL que respondeu na última checagem; None = indisponível
+        self._checked = threading.Event()
+        self._monitor: threading.Thread | None = None
 
-    def _base(self, path: str) -> str:
-        return f"{WEB_AGENT_URL.rstrip('/')}{path}"
-
-    def _ensure_token(self) -> str | None:
-        if self._token and time.time() < self._token_expires:
-            log.debug("Token em cache válido")
-            return self._token
-        log.debug("Fazendo login no web-agent: %s", self._base("/api/auth/login"))
-        try:
-            r = self._session.post(
-                self._base("/api/auth/login"),
-                json={"email": WEB_AGENT_EMAIL, "password": WEB_AGENT_PASSWORD},
-                timeout=10,
-            )
-            log.debug("Login status: %d | body: %s", r.status_code, r.text[:200])
-            if r.status_code == 200:
-                self._token = r.json().get("token")
-                self._token_expires = time.time() + 23 * 3600
-                log.debug("Token obtido com sucesso")
-                return self._token
-            if r.status_code not in (401, 422):
-                log.error("Login falhou com status inesperado: %d", r.status_code)
-                return None
-        except Exception as e:
-            log.error("Erro na requisição de login: %s", e)
-            return None
-        log.debug("Login falhou (401/422), tentando registrar...")
-        try:
-            r2 = self._session.post(
-                self._base("/api/auth/register"),
-                json={"email": WEB_AGENT_EMAIL, "password": WEB_AGENT_PASSWORD},
-                timeout=10,
-            )
-            log.debug("Register status: %d | body: %s", r2.status_code, r2.text[:200])
-            r = self._session.post(
-                self._base("/api/auth/login"),
-                json={"email": WEB_AGENT_EMAIL, "password": WEB_AGENT_PASSWORD},
-                timeout=10,
-            )
-            log.debug("Login pós-register status: %d", r.status_code)
-            if r.status_code == 200:
-                self._token = r.json().get("token")
-                self._token_expires = time.time() + 23 * 3600
-                log.debug("Token obtido após registro")
-                return self._token
-        except Exception as e:
-            log.error("Erro no registro/login: %s", e)
-        log.error("Não foi possível obter token do web-agent")
+    def _probe(self) -> str | None:
+        for url in WEB_AGENT_URLS:
+            try:
+                if requests.get(f"{url}{_PROBE_PATH}", timeout=3).status_code == 200:
+                    return url
+            except requests.RequestException:
+                continue
         return None
 
-    def _create_chat(self, token: str) -> str | None:
-        log.debug("Criando chat...")
-        try:
-            r = self._session.post(
-                self._base("/api/chats"),
-                headers={"Authorization": f"Bearer {token}"},
-                timeout=10,
-            )
-            log.debug("Criar chat status: %d | body: %s", r.status_code, r.text[:200])
-            if r.status_code == 200:
-                chat_id = r.json().get("id")
-                log.debug("Chat criado: %s", chat_id)
-                return chat_id
-        except Exception as e:
-            log.error("Erro ao criar chat: %s", e)
-        return None
+    def _refresh(self) -> str | None:
+        base = self._probe()
+        with self._lock:
+            changed = base != self._base
+            self._base = base
+        self._checked.set()
+        if changed:
+            print(f"[WEB-AGENT] {'disponível em ' + base if base else 'indisponível'}", flush=True)
+        return base
 
-    def _get_last_assistant_message(self, token: str, chat_id: str) -> str | None:
-        try:
-            r = self._session.get(
-                self._base(f"/api/chats/{chat_id}"),
-                headers={"Authorization": f"Bearer {token}"},
-                timeout=10,
-            )
-            if r.status_code == 200:
-                for msg in reversed(r.json().get("display_messages", [])):
-                    if msg.get("role") == "assistant":
-                        return msg.get("content", "").strip()
-        except Exception:
-            pass
-        return None
+    def _run_monitor(self) -> None:
+        while True:
+            self._refresh()
+            time.sleep(_PROBE_INTERVAL)
 
-    async def _ws_query(self, token: str, chat_id: str, query: str) -> str | None:
-        ws_url = f"{_WS_URL}/ws/{chat_id}?token={token}"
-        log.debug("Conectando WebSocket: %s", ws_url)
-        try:
-            async with websockets.connect(ws_url, open_timeout=10) as ws:
-                log.debug("WebSocket conectado, enviando query: %s", query[:100])
-                await ws.send(json.dumps({"type": "message", "content": query}))
+    def start(self) -> None:
+        with self._lock:
+            if self._monitor is None:
+                self._monitor = threading.Thread(target=self._run_monitor, name="web-agent-monitor", daemon=True)
+                self._monitor.start()
 
-                loop = asyncio.get_running_loop()
-                deadline = loop.time() + _TIMEOUT
-                seen_agent_activity = False
+    def available(self) -> str | None:
+        """URL do web-agent se ele respondeu na última checagem, senão None. Não bloqueia (só na 1ª vez,
+        até a primeira checagem terminar, no máximo alguns segundos)."""
+        self.start()
+        self._checked.wait(timeout=10)
+        with self._lock:
+            return self._base
 
-                while loop.time() < deadline:
-                    remaining = deadline - loop.time()
-                    try:
-                        raw = await asyncio.wait_for(ws.recv(), timeout=min(remaining, 5))
-                    except asyncio.TimeoutError:
-                        log.debug("WS recv timeout (aguardando evento...)")
-                        continue
-
-                    try:
-                        event = json.loads(raw)
-                    except Exception:
-                        log.debug("WS mensagem não-JSON: %s", raw[:100])
-                        continue
-
-                    etype = event.get("type")
-                    log.debug("WS evento: type=%s | keys=%s", etype, list(event.keys()))
-
-                    if etype == "agent_message":
-                        content = event.get("content", "").strip()
-                        log.debug("agent_message recebido (%d chars)", len(content))
-                        return content
-
-                    if etype in ("browser_action", "status", "plan", "agent_start"):
-                        log.debug("Atividade do agente detectada: %s", etype)
-                        seen_agent_activity = True
-
-                    if etype == "title_update" and seen_agent_activity:
-                        log.debug("title_update pós-atividade → buscando via REST")
-                        await asyncio.sleep(0.5)
-                        return None
-
-                    if etype == "error":
-                        log.error("WS retornou error: %s", event)
-                        return None
-
-                log.warning("WS timeout atingido (%ds) sem resposta", _TIMEOUT)
-        except Exception as e:
-            log.error("Erro WebSocket: %s", e)
-        return None
+    def status(self) -> dict:
+        """Para a tela de Configurações: checa agora (pode levar alguns segundos com o PC desligado)."""
+        base = self._refresh()
+        return {"connected": bool(base), "url": base or ", ".join(WEB_AGENT_URLS)}
 
     def query(self, query: str) -> str | None:
-        token = self._ensure_token()
-        if not token:
+        base = self.available()
+        if not base:
             return None
-        chat_id = self._create_chat(token)
-        if not chat_id:
+        try:
+            r = self._session.post(f"{base}/api/chats", timeout=10)
+            r.raise_for_status()
+            chat_id = r.json().get("id")
+            log.debug("Chat criado no web-agent: %s", chat_id)
+            # max_seconds: o agente para de navegar e responde com o que coletou antes do nosso timeout
+            r = self._session.post(
+                f"{base}/api/chats/{chat_id}/message",
+                json={"content": query, "max_seconds": max(30, _TIMEOUT - 15)},
+                timeout=_TIMEOUT,
+            )
+            if r.status_code != 200:
+                log.error("web-agent respondeu %d: %s", r.status_code, r.text[:200])
+                return None
+            return (r.json().get("content") or "").strip() or None
+        except requests.RequestException as e:
+            log.error("Erro falando com o web-agent: %s", e)
+            self._refresh()  # talvez tenha sido desligado agora
             return None
-
-        # Roda o WebSocket em thread dedicada com loop próprio para evitar
-        # "This event loop is already running" quando chamado de contexto com loop ativo.
-        container: list[str | None] = [None]
-
-        def _run() -> None:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                container[0] = loop.run_until_complete(
-                    self._ws_query(token, chat_id, query)
-                )
-            finally:
-                loop.close()
-
-        log.debug("Iniciando thread WS para chat_id=%s | query=%s", chat_id, query[:80])
-        t = threading.Thread(target=_run, daemon=True)
-        t.start()
-        t.join(timeout=_TIMEOUT + 10)
-
-        ws_result = container[0]
-        log.debug("Thread WS finalizado | resultado WS: %s", repr(ws_result)[:80] if ws_result else None)
-
-        if ws_result is not None:
-            return ws_result
-        log.debug("Buscando última mensagem via REST para chat_id=%s", chat_id)
-        rest_result = self._get_last_assistant_message(token, chat_id)
-        log.debug("Resultado REST: %s", repr(rest_result)[:80] if rest_result else None)
-        return rest_result
 
 
 _client = _WebAgentClient()
@@ -418,6 +329,9 @@ class WebSearchSkill(Skill):
         Retorna True para tudo exceto conversa claramente sem web.
         O LLM faz o filtro fino via direct_answer em handle().
         """
+        if not _client.available():
+            log.debug("can_handle: web-agent indisponível → deixa para as outras skills")
+            return False
         t = text.lower()
         # Fast-path: conversa pura → deixa para GeneralChatSkill
         if any(p in t for p in self._CHAT_ONLY) and not _needs_web(t):

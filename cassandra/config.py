@@ -32,8 +32,8 @@ class Settings:
     tts_model: str = "tts-1"
     voice_lang: str = "pt-br"
     voice_rate: int = 165
-    # Busca na internet via web-agent (skill + ações de rotina que usam o agente)
-    web_search_enabled: bool = False
+    # Busca na internet via web-agent (skill + ações de rotina), usada só quando ele está disponível
+    web_search_enabled: bool = True
 
 
 def load_settings() -> Settings:
@@ -81,11 +81,12 @@ def load_settings() -> Settings:
     tts_model = os.getenv("TTS_MODEL", "tts-1").strip() or "tts-1"
     voice_lang = os.getenv("VOICE_LANG", "pt-br").strip().lower() or "pt-br"
     voice_rate = int(os.getenv("VOICE_RATE", "165").strip() or "165")
-    web_search_enabled = os.getenv("WEB_SEARCH_ENABLED", "false").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
+    # auto (padrão) = usa o web-agent só quando ele responde; false/0/no/off desliga de vez.
+    web_search_enabled = os.getenv("WEB_SEARCH_ENABLED", "auto").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
     }
 
     if input_mode not in {"text", "mic"}:

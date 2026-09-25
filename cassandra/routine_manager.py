@@ -150,7 +150,7 @@ class RoutineManager:
                         self._voice.speak(action.text)
                     continue
 
-                if not self._web_search_enabled:
+                if not self._web_search_enabled or not web_client.available():
                     skipped_web = True
                     continue
 
@@ -175,7 +175,7 @@ class RoutineManager:
         if skipped_web:
             print(
                 "[ROUTINE] Ações que dependem da internet ignoradas "
-                "(WEB_SEARCH_ENABLED não está ativo)."
+                "(web-agent desligado/indisponível ou WEB_SEARCH_ENABLED=false)."
             )
 
     # ── Monitor de horários ───────────────────────────────────────────────────

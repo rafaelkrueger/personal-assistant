@@ -137,6 +137,12 @@ Principais variaveis:
   - `OPENAI_API_KEY`, `OPENAI_MODEL` — a chave da OpenAI tambem e usada para voz e microfone
   - `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL` (padrao `deepseek-flash`)
   - Nenhuma chave e obrigatoria para iniciar; sem a chave do provider ativo o chat responde com erro.
+- Busca na internet (web-agent, opcional):
+  - `WEB_SEARCH_ENABLED` (`auto` padrao: usa so quando o web-agent responde, checado a cada 15 s em
+    segundo plano; `false` desliga)
+  - `WEB_AGENT_URL` (uma ou mais URLs separadas por virgula, tentadas em ordem; ex.:
+    `http://desktop-cc6nlck.local:8001,http://192.168.100.52:8001`)
+  - `WEB_AGENT_TIMEOUT` (segundos, padrao 90)
 - Wake word:
   - `ASSISTANT_NAME`
   - `ASSISTANT_ALIASES`

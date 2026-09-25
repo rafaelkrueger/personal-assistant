@@ -90,6 +90,23 @@ OpenAI ou DeepSeek, com modelo e chave de cada um. A troca vale na hora, sem rei
 A DeepSeek so faz texto. Voz (TTS) e microfone (transcricao) continuam na OpenAI: com a DeepSeek ativa e
 sem chave da OpenAI, a Cassandra fala com a voz local (espeak) e o modo microfone nao transcreve.
 
+## Busca na internet (web-agent)
+
+Perguntas que precisam de informacao atual (noticias, cotacoes, clima, esportes, transito, busca geral) vao
+para o **web-agent**, que roda em outro computador e nem sempre esta ligado. A Cassandra checa a cada 15 s,
+em segundo plano, se ele responde: ligado, ela usa; desligado, ela responde so com o LLM, sem esperar.
+O status aparece em Configuracoes.
+
+```bash
+WEB_SEARCH_ENABLED=auto   # auto (padrao) = usa quando disponivel; false = nunca usa
+WEB_AGENT_URL=http://desktop-cc6nlck.local:8001,http://192.168.100.52:8001
+WEB_AGENT_TIMEOUT=90
+```
+
+`WEB_AGENT_URL` aceita varias URLs, tentadas em ordem. Prefira o nome `.local` do PC (resolvido por mDNS
+na rede local): ele continua valendo quando o roteador troca o IP. O IP fica de reserva. O web-agent nao
+tem login.
+
 ## Interface web (dashboard)
 
 Tambem e possivel usar a Cassandra pelo navegador com dashboard completo:
