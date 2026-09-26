@@ -265,7 +265,7 @@ HTML_PAGE = """<!doctype html>
       backdrop-filter:blur(12px);
     }
     .chat-bar:focus-within{border-color:rgba(91,154,255,.4);box-shadow:0 0 0 3px rgba(91,154,255,.08)}
-    .chat-bar textarea{flex:1;background:transparent;border:none;padding:6px 0;font-size:15px;line-height:1.45;outline:none;color:var(--text);resize:none;max-height:140px;min-height:24px;box-shadow:none!important;font-family:inherit}
+    .chat-bar textarea{flex:1;overflow-y:hidden;background:transparent;border:none;padding:6px 0;font-size:15px;line-height:1.45;outline:none;color:var(--text);resize:none;max-height:140px;min-height:24px;box-shadow:none!important;font-family:inherit}
     .chat-bar textarea:focus{background:transparent;box-shadow:none}
     .chat-bar textarea::placeholder{color:var(--text3)}
     @media(max-width:640px){.msg{max-width:88%}.bubble{font-size:15px;padding:10px 14px}.messages{padding:14px}}
@@ -1768,7 +1768,7 @@ async function sendMsg(){
 document.getElementById("sendBtn").addEventListener("click",sendMsg);
 (function(){ // caixa de mensagem: cresce com o texto; Enter envia, Shift+Enter quebra a linha
   const box=document.getElementById("msgInput");
-  const fit=()=>{box.style.height="auto";box.style.height=Math.min(box.scrollHeight,140)+"px";};
+  const fit=()=>{box.style.height="auto";box.style.height=Math.min(box.scrollHeight,140)+"px";box.style.overflowY=box.scrollHeight>140?"auto":"hidden";};
   box.addEventListener("input",fit);
   box.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing){e.preventDefault();sendMsg().then?.(fit);setTimeout(fit,0);}});
   box.addEventListener("focus",()=>setTimeout(()=>{const m=document.getElementById("messages");m.scrollTop=m.scrollHeight;},300));

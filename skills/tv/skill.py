@@ -50,11 +50,11 @@ class TvSkill(Skill):
         return bool(_APP_WORDS.search(t) and _OPEN.search(t))
 
     def handle(self, text: str) -> str:
-        device = self.devices.pick(text)
-        if not device:
+        if not self.devices.pick(text):
             return "Nenhuma TV conectada ainda. Conecte a sua na aba Aparelhos."
         intent = self._quick(_norm(text)) or self._parse(text)
         action = intent.get("action") or "help"
+        device = self.devices.pick_for(text, action)
         if action == "help":
             return ("Posso ligar e desligar a TV, mudar o volume, abrir Netflix, YouTube e outros apps, trocar o "
                     "HDMI e navegar com as setas.")

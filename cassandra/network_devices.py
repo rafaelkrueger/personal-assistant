@@ -685,6 +685,18 @@ class DeviceManager:
         tvs = self._controllable(TV_LIKE)
         return next((d for d in tvs if d.get("default")), tvs[0] if tvs else None)
 
+    def pick_for(self, text: str, action: str) -> dict[str, Any] | None:
+        """Como pick(), mas se o escolhido não aceita a ação (ex.: "desliga a TV" numa TV que só abre apps) e o
+        pedido não citou um aparelho, usa outro de TV que aceite (ex.: o Fire TV plugado nela, pelo HDMI-CEC)."""
+        chosen = self.pick(text)
+        if not chosen or action in DRIVERS[chosen["control"]].capabilities:
+            return chosen
+        t = _slug(text).replace("-", " ")
+        named = any(_slug(d.get("name", "")).replace("-", " ") in t for d in self._controllable() if d.get("name"))
+        if named or "fire" in t:
+            return chosen
+        return next((d for d in self._controllable(TV_LIKE) if action in DRIVERS[d["control"]].capabilities), chosen)
+
     def pick(self, text: str = "") -> dict[str, Any] | None:
         """O aparelho citado no pedido ("na TV da sala", "no fire tv"); sem citação, o padrão."""
         t = _slug(text).replace("-", " ")
