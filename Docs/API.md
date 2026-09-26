@@ -409,7 +409,16 @@ categoria (`remote: "tv"` = controle remoto de TV). Conectados em `data/devices.
 | `samsung` | Samsung Tizen 2016+: tudo (ligar = Wake-on-LAN) |
 | `roku` | Roku: tudo, sem pareamento |
 | `dial` | aparelhos que só anunciam DIAL (ex.: TV Multilaser): só abrir/fechar apps |
-| `null` | ainda sem controle (roteador, computador...): fica na lista, com online/offline |
+| `maestro_pc` | o computador onde o Maestro roda: bloquear, suspender, desligar/reiniciar (com 1 min, cancelável), apagar a tela, volume, mídia |
+| `wiz` / `yeelight` | lâmpadas Wi-Fi com controle local: acender/apagar, brilho, tom (K), cor |
+| `spotify` | caixa de som Spotify Connect: tocar aqui, volume, mídia |
+| `basic` (ou `null`) | sem controle próprio: página de configuração do aparelho e ligar pela rede (Wake-on-LAN) |
+
+Cada aparelho conectado tem `panel` (`tv`, `computer`, `light`, `speaker`, `generic`) — a tela que a UI mostra em
+**Controlar** — e, quando dá, `mac` (para ligar pela rede, ação `wake`) e `page_url` (página de configuração).
+Ações novas em `/command`: `lock`, `sleep`, `shutdown`/`restart` (`value`: segundos, mín. 30), `cancel_shutdown`,
+`screen_off`, `next`, `previous`, `light_on`, `light_off`, `brightness` (1-100), `color_temp` (K), `color`
+(`#rrggbb`), `play_here`, `volume` (0-100), `wake`. `GET /api/devices/{id}/state` = estado da lâmpada.
 
 ### `GET /api/devices`
 `{ "devices": [ { "id": "firetvstick-de-dandara-54", "name": "...", "host": "192.168.100.54", "category": "streaming",
