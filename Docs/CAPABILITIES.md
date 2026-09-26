@@ -26,20 +26,23 @@ técnicos e exemplos de API estão em [`API.md`](./API.md) — este arquivo é s
   listar, criar e apagar eventos.
 - **Rotinas**: sequências de ações disparadas por um horário ou por um
   alarme — falar um texto fixo, ou ler notícias, cotações, clima, esportes e
-  trânsito (essas cinco pesquisam na internet via web-agent).
+  trânsito (essas cinco pesquisam na internet via orchestrator).
 - **Pesquisar na internet** (notícias, cotações, clima, esportes, trânsito,
-  busca geral) **delegando ao web-agent**, mas só quando ele está ligado e
-  respondendo. Se ele estiver desligado ou falhar, ela responde só com o
-  próprio LLM.
+  busca geral) **pedindo ao orchestrator** (que despacha para o web-agent),
+  mas só quando ele está ligado e respondendo. Se ele estiver desligado ou o
+  pedido falhar, ela responde só com o próprio LLM.
+- **Pedir coisas a outros agentes, sempre através do orchestrator** (nunca
+  direto): ela é origem de pedidos em `POST /orchestrator/request`, pelo
+  plug-in `orchestrator_link`.
 - **Ouvir pelo microfone** (quando houver um plugado): detecta o nome
   "Cassandra" no próprio aparelho, sem mandar nada para a internet, e só então
   transcreve o comando.
 
 ## Não pode / não faz
 
-- **Não navega na web por conta própria.** Toda pesquisa na internet é feita
-  pelo **web-agent**; sem ele, ela não tem informação atual (notícias,
-  preços, clima de hoje).
+- **Não navega na web por conta própria.** Toda pesquisa na internet é pedida
+  ao **orchestrator** (que usa o web-agent); sem ele, ela não tem informação
+  atual (notícias, preços, clima de hoje).
 - **Não edita vídeo nem publica em redes sociais** (isso é o **editor**) e
   **não escreve nem roda código** (isso é o **ide**).
 - **Não é uma fila de tarefas longas.** Cada pedido é respondido na hora, em
@@ -52,7 +55,7 @@ técnicos e exemplos de API estão em [`API.md`](./API.md) — este arquivo é s
 - **Sem autenticação**: é um sistema de uma casa só.
 - **Não dá previsão do tempo sozinha**: clima, notas e calculadora existem como
   skills no código, mas **não estão ativos** no assistente principal; clima só
-  funciona via web-agent (ou como resposta genérica do LLM).
+  funciona via orchestrator (ou como resposta genérica do LLM).
 - **Não ajusta o volume da caixa de som** hoje: a skill de volume usa `pactl`
   ou `amixer`, e no Raspberry Pi atual (sem `pactl`) o `amixer` mexe na saída
   de hardware do Pi, não na soundbar Bluetooth. O volume se ajusta no controle

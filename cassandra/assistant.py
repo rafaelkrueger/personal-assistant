@@ -69,9 +69,9 @@ class CassandraAssistant:
             RoutineSkill(self.routine_manager, self.alarm_manager, self.llm),
         ]
         if self.settings.web_search_enabled:
-            from skills.web_search.skill import _client as web_agent_client
+            from skills.web_search.skill import _client as orchestrator_client
 
-            web_agent_client.start()  # checa em segundo plano se o web-agent está ligado
+            orchestrator_client.start()  # checa em segundo plano se o orchestrator está ligado
             _skills.append(WebSearchSkill(self.llm))
         _skills.append(GeneralChatSkill(self.llm, self.memory))
         self.router = SkillRouter(skills=_skills)

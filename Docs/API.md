@@ -39,7 +39,7 @@ A Cassandra é um processo só (`main.py`) com duas entradas que compartilham o
 - **Web** (esta API + a UI): texto.
 
 Cada pedido passa por um roteador de **skills** (alarme, timer, agenda, compras,
-tarefas, rotinas, busca na internet via web-agent) e, se nenhuma servir, pelo
+tarefas, rotinas, busca na internet via orchestrator) e, se nenhuma servir, pelo
 **chat geral** com o LLM (OpenAI ou DeepSeek — seção 9). A resposta é
 **falada em voz alta** na caixa de som da casa.
 
@@ -91,7 +91,7 @@ detectado, toca também o som de ativação.
 `"Internal error: Error code: 429 ... insufficient_quota"`).
 
 Tempo típico: 2–5 s com DeepSeek/OpenAI. Perguntas que caem na busca da
-internet dependem do web-agent (dezenas de segundos) — pela URL pública, acima
+internet dependem do orchestrator e do web-agent (dezenas de segundos) — pela URL pública, acima
 de ~26 s o Netlify devolve `504` (a Cassandra ainda responde e fala, mas o
 cliente perde o texto; use a URL da rede local para pedidos longos).
 
@@ -184,7 +184,7 @@ Uma rotina executa uma lista de ações quando um gatilho acontece.
 - `trigger.type`: `"time"` (usa `time_hhmm`, ex. `"07:00"`) ou `"alarm"` (usa
   `alarm_id` — roda quando aquele alarme dispara).
 - `actions[].type`: `falar` (fala `text`), `noticias`, `cotacao`, `clima`,
-  `esporte`, `transito`. As cinco últimas pesquisam via **web-agent** e são
+  `esporte`, `transito`. As cinco últimas pesquisam via **orchestrator** e são
   puladas se ele estiver indisponível.
 
 | Endpoint | Body | Resposta |
@@ -270,16 +270,28 @@ Campos parciais — só o que muda. Chave vazia/omitida **nunca apaga** a salva.
 
 ---
 
-## 10. Web-agent
+## 10. Orchestrator (a ponte para os outros agentes)
 
-### `GET /api/web-agent-status`
-`{ "connected": true, "url": "http://desktop-cc6nlck.local:8001" }`
+A Cassandra nunca chama outro agente direto: pede ao orchestrator
+(`POST /orchestrator/request` com `from_agent: "personal-assistant"`), pelo
+plug-in `cassandra/orchestrator_link.py` (cópia de
+`orchestrator/plugin/orchestrator_link.py`). Hoje: pesquisas na internet
+(skill de busca e ações de rotina), que o orchestrator despacha para o
+web-agent.
 
-Checa agora (pode levar alguns segundos se ele estiver desligado). A Cassandra
-checa sozinha a cada 15 s e só usa o web-agent enquanto ele responde; depois de
-uma falha numa tarefa, fica 5 min sem usá-lo. Configuração: `WEB_AGENT_URL`
-(uma ou mais URLs separadas por vírgula), `WEB_SEARCH_ENABLED` (`auto` |
-`false`), `WEB_AGENT_TIMEOUT`.
+### `GET /api/orchestrator-status`
+```json
+{ "connected": true, "url": "http://desktop-cc6nlck.local:8090", "agent_name": "personal-assistant",
+  "token_set": true, "version": "1.0",
+  "agents": [ { "name": "web-agent", "status": "online", "enabled": true, "tagline": "..." } ] }
+```
+Checa agora (pode levar alguns segundos se ele estiver desligado); `agents` é o
+que o orchestrator controla. `GET /api/web-agent-status` é o nome antigo da
+mesma rota. A Cassandra checa sozinha a cada 15 s e só usa o orchestrator
+enquanto ele responde; depois de uma falha num pedido, fica 5 min sem usá-lo.
+Configuração: `ORCHESTRATOR_URL` (uma ou mais URLs separadas por vírgula),
+`ORCHESTRATOR_TOKEN`, `ORCHESTRATOR_AGENT_NAME`, `ORCHESTRATOR_TIMEOUT`,
+`WEB_SEARCH_ENABLED` (`auto` | `false`).
 
 ---
 
@@ -299,7 +311,7 @@ O orchestrator tem o adapter `personal-assistant`
 1. **Pedido em linguagem natural** → `POST /api/chat` com
    `{"message": "cassandra, <pedido>"}` (sempre com o nome na frente — a sessão
    pode ter sido encerrada por outra pessoa, por voz). Resultado: `reply`.
-   Timeout de cliente de ~120 s cobre inclusive buscas via web-agent.
+   Timeout de cliente de ~120 s cobre inclusive buscas via orchestrator.
 2. **Aviso falado** (texto exato, sem o LLM reinterpretar) → `POST /api/speak`.
 3. **Pedido estruturado** (quando o orchestrator já sabe exatamente o que
    fazer) → endpoints diretos: `POST /api/shopping/add`, `/api/todos/add`,
@@ -312,8 +324,8 @@ Cuidados para quem despacha:
 - A conversa é **única** e compartilhada com a voz e a UI — um despacho entra no
   mesmo histórico que o usuário vê.
 - Não há conceito de tarefa/`job_id`: a resposta já é o resultado final.
-- Não há callback para o orchestrator (a Cassandra não inicia pedidos para
-  outros agentes pelo orchestrator; ela chama o web-agent direto).
+- Não há callback para a Cassandra: quando ela pede algo ao orchestrator, ela
+  mesma acompanha o pedido (`GET /orchestrator/request/{id}`) até o fim.
 
 ### Exemplo (curl)
 ```bash

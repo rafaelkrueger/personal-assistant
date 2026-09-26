@@ -1,4 +1,4 @@
-"""Integração com o web-agent: senso crítico + 5 skills especializadas."""
+"""Busca na internet via orchestrator (que despacha para o web-agent): senso crítico + 5 skills especializadas."""
 from __future__ import annotations
 
 import json
@@ -11,30 +11,23 @@ from datetime import datetime
 
 log = logging.getLogger("web_search")
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
-# a checagem do web-agent a cada 15 s geraria uma linha DEBUG do urllib3 por vez no log
-logging.getLogger("urllib3").setLevel(logging.WARNING)
 
-import requests
+from cassandra.orchestrator_link import OrchestratorLink
 
 from cassandra.openai_client import LLMService
 from skills.base import Skill
 
 # ── Configuração ──────────────────────────────────────────────────────────────
-# WEB_AGENT_URL aceita várias URLs separadas por vírgula, tentadas em ordem. O ideal é o nome .local do PC
-# onde o web-agent roda (resolvido por mDNS, continua valendo se o roteador trocar o IP) e o IP como reserva:
-#   WEB_AGENT_URL=http://desktop-cc6nlck.local:8001,http://192.168.100.52:8001
-# O web-agent não tem login (API sem autenticação) e nem sempre está ligado: a Cassandra só o usa quando ele
-# responde (checado em segundo plano, ver _WebAgentClient).
-WEB_AGENT_URLS = [
-    u.strip().rstrip("/")
-    for u in os.getenv("WEB_AGENT_URL", "http://192.168.100.52:8001").split(",")
-    if u.strip()
-]
-_TIMEOUT = int(os.getenv("WEB_AGENT_TIMEOUT", "90"))
-_PROBE_INTERVAL = 15  # segundos entre checagens de disponibilidade
-_PROBE_PATH = "/api/settings/browser"  # leve e só existe no web-agent
-# Quando o web-agent responde à checagem mas falha na tarefa (ex.: o LLM dele está fora do ar), fica de lado
-# por um tempo — senão cada pergunta perde ~15 s esperando ele falhar de novo.
+# A Cassandra não fala com outros agentes direto: pede ao ORCHESTRATOR (a ponte entre os agentes), que
+# escolhe quem executa — pesquisas na internet vão para o web-agent. Plug-in: cassandra/orchestrator_link.py
+# (cópia de orchestrator/plugin/orchestrator_link.py). Configuração no .env:
+#   ORCHESTRATOR_URL=http://desktop-cc6nlck.local:8090,http://192.168.100.52:8090   (tentadas em ordem)
+#   ORCHESTRATOR_TOKEN=<ORCHESTRATOR_SHARED_SECRET do orchestrator>
+# O orchestrator roda no PC e nem sempre está ligado: a Cassandra só o usa quando ele responde (checado em
+# segundo plano pelo plug-in).
+_TIMEOUT = int(os.getenv("ORCHESTRATOR_TIMEOUT", "120"))
+# Quando o orchestrator responde mas o pedido falha (ex.: o LLM do web-agent fora do ar), fica de lado por
+# um tempo — senão cada pergunta perde dezenas de segundos esperando falhar de novo.
 _FAILURE_COOLDOWN = 300
 
 # ── Categorias ────────────────────────────────────────────────────────────────
@@ -201,103 +194,56 @@ def _classify(llm: LLMService, text: str, today: str) -> dict:
     return {"category": "web_geral", "query": text, "direct_answer": False}
 
 
-# ── Cliente web-agent ─────────────────────────────────────────────────────────
+# ── Cliente do orchestrator ───────────────────────────────────────────────────
 
-class _WebAgentClient:
-    """Cliente do web-agent (API REST, sem login).
+class _OrchestratorClient:
+    """Pedidos a outros agentes, sempre através do orchestrator (plug-in orchestrator_link).
 
-    A disponibilidade é checada numa thread em segundo plano a cada _PROBE_INTERVAL s: com o PC desligado,
-    cada tentativa leva de 3 a 5 s até desistir (mDNS + conexão), e isso não pode atrasar as respostas.
-    Quem usa só lê o último resultado (available()), sem esperar a rede.
+    A disponibilidade é checada em segundo plano pelo plug-in: com o PC desligado, cada tentativa leva alguns
+    segundos até desistir, e isso não pode atrasar as respostas. Quem usa só lê o último resultado.
     """
 
     def __init__(self) -> None:
-        self._session = requests.Session()
-        self._lock = threading.Lock()
-        self._base: str | None = None  # URL que respondeu na última checagem; None = indisponível
-        self._checked = threading.Event()
-        self._monitor: threading.Thread | None = None
+        self._link = OrchestratorLink.from_env(
+            agent_name=os.getenv("ORCHESTRATOR_AGENT_NAME", "personal-assistant"),
+            request_timeout=_TIMEOUT,
+        )
         self._failed_until = 0.0
 
-    def _probe(self) -> str | None:
-        for url in WEB_AGENT_URLS:
-            try:
-                if requests.get(f"{url}{_PROBE_PATH}", timeout=3).status_code == 200:
-                    return url
-            except requests.RequestException:
-                continue
-        return None
-
-    def _refresh(self) -> str | None:
-        base = self._probe()
-        with self._lock:
-            changed = base != self._base
-            self._base = base
-        self._checked.set()
-        if changed:
-            print(f"[WEB-AGENT] {'disponível em ' + base if base else 'indisponível'}", flush=True)
-        return base
-
-    def _run_monitor(self) -> None:
-        while True:
-            self._refresh()
-            time.sleep(_PROBE_INTERVAL)
-
     def start(self) -> None:
-        with self._lock:
-            if self._monitor is None:
-                self._monitor = threading.Thread(target=self._run_monitor, name="web-agent-monitor", daemon=True)
-                self._monitor.start()
+        self._link.start()
 
-    def available(self) -> str | None:
-        """URL do web-agent se ele respondeu na última checagem, senão None. Não bloqueia (só na 1ª vez,
-        até a primeira checagem terminar, no máximo alguns segundos)."""
-        self.start()
-        self._checked.wait(timeout=10)
+    def available(self) -> bool:
         if time.monotonic() < self._failed_until:
-            return None
-        with self._lock:
-            return self._base
-
-    def _mark_failed(self) -> None:
-        self._failed_until = time.monotonic() + _FAILURE_COOLDOWN
-        print(f"[WEB-AGENT] falhou na tarefa; sem usar por {_FAILURE_COOLDOWN // 60} min", flush=True)
+            return False
+        return self._link.available()
 
     def status(self) -> dict:
         """Para a tela de Configurações: checa agora (pode levar alguns segundos com o PC desligado)."""
-        base = self._refresh()
-        return {"connected": bool(base), "url": base or ", ".join(WEB_AGENT_URLS)}
+        return self._link.status()
+
+    def _mark_failed(self, reason: str) -> None:
+        self._failed_until = time.monotonic() + _FAILURE_COOLDOWN
+        print(f"[ORCHESTRATOR] pedido falhou ({reason[:150]}); sem usar por {_FAILURE_COOLDOWN // 60} min", flush=True)
 
     def query(self, query: str) -> str | None:
-        base = self.available()
-        if not base:
+        """Pesquisa na internet via orchestrator (que despacha para o web-agent). None se não houver resposta."""
+        if not self.available():
             return None
-        try:
-            r = self._session.post(f"{base}/api/chats", timeout=10)
-            r.raise_for_status()
-            chat_id = r.json().get("id")
-            log.debug("Chat criado no web-agent: %s", chat_id)
-            # max_seconds: o agente para de navegar e responde com o que coletou antes do nosso timeout
-            r = self._session.post(
-                f"{base}/api/chats/{chat_id}/message",
-                json={"content": query, "max_seconds": max(30, _TIMEOUT - 15)},
-                timeout=_TIMEOUT,
-            )
-            if r.status_code != 200:
-                log.error("web-agent respondeu %d: %s", r.status_code, r.text[:200])
-                self._mark_failed()
-                return None
-            content = (r.json().get("content") or "").strip()
-            if not content:
-                self._mark_failed()
-            return content or None
-        except requests.RequestException as e:
-            log.error("Erro falando com o web-agent: %s", e)
-            self._refresh()  # talvez tenha sido desligado agora
+        result = self._link.ask(
+            f"Pesquise na internet e responda em português, de forma objetiva: {query}",
+            # orçamento de tempo do web-agent: ele para de navegar e responde com o que coletou antes do nosso prazo
+            parameters={"max_seconds": max(30, _TIMEOUT - 20)},
+            timeout=_TIMEOUT,
+        )
+        if not result.ok:
+            self._mark_failed(result.error or result.status or "sem resposta")
             return None
+        log.debug("orchestrator despachou para %s", result.target_agent)
+        return (result.result or "").strip() or None
 
 
-_client = _WebAgentClient()
+_client = _OrchestratorClient()
 
 # ── Prompts de formatação por categoria ───────────────────────────────────────
 _BASE_FORMAT = (
@@ -323,7 +269,7 @@ _FORMAT_PROMPTS["direto"] = (
 class WebSearchSkill(Skill):
     """
     Skill com senso crítico: usa LLM para detectar quando uma pergunta requer
-    informações da web e roteia para o web-agent com uma query otimizada.
+    informações da web e pede ao orchestrator (que usa o web-agent) com uma query otimizada.
     Sub-skills: notícias, cotações, clima, esportes, trânsito, busca geral.
     """
 
@@ -346,7 +292,7 @@ class WebSearchSkill(Skill):
         O LLM faz o filtro fino via direct_answer em handle().
         """
         if not _client.available():
-            log.debug("can_handle: web-agent indisponível → deixa para as outras skills")
+            log.debug("can_handle: orchestrator indisponível → deixa para as outras skills")
             return False
         t = text.lower()
         # Fast-path: conversa pura → deixa para GeneralChatSkill
@@ -376,13 +322,13 @@ class WebSearchSkill(Skill):
                 history=[],
             )
 
-        # ── 3. Consulta o web-agent com a query otimizada ──────────────────────
-        log.debug("Consultando web-agent com query: %s", query)
+        # ── 3. Pede a pesquisa ao orchestrator (que despacha para o web-agent) ──
+        log.debug("Pedindo ao orchestrator: %s", query)
         raw = _client.query(query)
-        log.debug("Resposta do web-agent: %s", repr(raw)[:120] if raw else "NENHUMA")
+        log.debug("Resposta via orchestrator: %s", repr(raw)[:120] if raw else "NENHUMA")
         if not raw:
-            # web-agent falhou: responde com o próprio LLM em vez de só pedir desculpas
-            log.debug("web-agent sem resposta → respondendo direto com o LLM")
+            # o orchestrator (ou o agente que ele escolheu) falhou: responde com o próprio LLM
+            log.debug("orchestrator sem resposta → respondendo direto com o LLM")
             return self.llm.answer(
                 user_text=text,
                 system_prompt=_FORMAT_PROMPTS["direto"],

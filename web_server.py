@@ -410,7 +410,7 @@ HTML_PAGE = """<!doctype html>
           <div class="dash-date" id="dashDate"></div>
           <div class="dash-status-row">
             <span class="dash-status-badge"><svg width="7" height="7" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" fill="#34d399"/></svg>Cassandra ativa</span>
-            <span id="heroWebAgentBadge" style="display:none;align-items:center;gap:6px;padding:5px 13px;border-radius:99px;font-size:12px;font-weight:600;background:rgba(91,154,255,.08);border:1px solid rgba(91,154,255,.2);color:var(--brand2)"><svg width="7" height="7" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" fill="#5b9aff"/></svg>Web online</span>
+            <span id="heroWebAgentBadge" style="display:none;align-items:center;gap:6px;padding:5px 13px;border-radius:99px;font-size:12px;font-weight:600;background:rgba(91,154,255,.08);border:1px solid rgba(91,154,255,.2);color:var(--brand2)"><svg width="7" height="7" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" fill="#5b9aff"/></svg>Orchestrator online</span>
           </div>
         </div>
         <div class="stats-grid" id="statsGrid">
@@ -769,9 +769,9 @@ HTML_PAGE = """<!doctype html>
             </div>
           </div>
 
-          <!-- Agente Web -->
+          <!-- Orchestrator (ponte para os outros agentes) -->
           <div class="settings-card">
-            <div class="settings-card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20"/></svg>Agente Web</div>
+            <div class="settings-card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20"/></svg>Orchestrator</div>
             <div class="settings-row">
               <div class="settings-row-info">
                 <div class="settings-row-label">Status da conexão</div>
@@ -783,6 +783,13 @@ HTML_PAGE = """<!doctype html>
                   <span id="web-agent-label">Verificando…</span>
                 </span>
                 <button class="btn btn-ghost btn-sm" id="checkWebAgentBtn" title="Verificar agora"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg></button>
+              </div>
+            </div>
+            <div class="settings-row" style="border-bottom:none">
+              <div class="settings-row-info">
+                <div class="settings-row-label">Agentes que ele controla</div>
+                <div class="settings-row-desc">A Cassandra pede tudo a outros agentes através do orchestrator (pesquisas na internet vão para o web-agent).</div>
+                <div class="settings-row-desc" id="orch-agents" style="margin-top:6px">—</div>
               </div>
             </div>
           </div>
@@ -1482,8 +1489,13 @@ async function checkWebAgentStatus(){
   dot.style.background="#a78bfa"; lbl.textContent="Verificando…";
   badge.style.borderColor="var(--border)";
   try{
-    const d=await api("/api/web-agent-status");
+    const d=await api("/api/orchestrator-status");
     urlEl.textContent=d.url||"";
+    const agentsEl=document.getElementById("orch-agents");
+    if(agentsEl){
+      const list=(d.agents||[]).map(a=>`${a.name} — ${a.enabled===false?"desligado":a.status}`);
+      agentsEl.textContent=list.length?list.join(" · "):(d.connected?"nenhum agente":"—");
+    }
     const heroBadge=document.getElementById("heroWebAgentBadge");
     if(d.connected){
       dot.style.background="var(--green)"; lbl.textContent="Conectado";
@@ -1585,10 +1597,20 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                 events = assistant.list_calendar_events(days=days)
                 self._send_json({"configured": True, "events": events})
                 return
-            if parsed.path == "/api/web-agent-status":
-                from skills.web_search.skill import _client as web_agent_client
+            if parsed.path in ("/api/orchestrator-status", "/api/web-agent-status"):  # o 2º é o nome antigo
+                from skills.web_search.skill import _client as orchestrator_client
 
-                self._send_json(web_agent_client.status())
+                status = orchestrator_client.status()
+                agents = []
+                if status["connected"]:
+                    try:
+                        agents = [
+                            {k: a.get(k) for k in ("name", "status", "enabled", "tagline")}
+                            for a in orchestrator_client._link.agents()
+                        ]
+                    except Exception:  # noqa: BLE001 — a lista é só informativa
+                        agents = []
+                self._send_json({**status, "agents": agents})
                 return
             self._send_json({"error": "Not found."}, status=HTTPStatus.NOT_FOUND)
 

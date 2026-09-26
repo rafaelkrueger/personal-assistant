@@ -142,22 +142,28 @@ Com `local` (ou `auto` sem chave/créditos), o comando também é transcrito pel
 alguns segundos por frase num Raspberry Pi 3 e erra mais que a OpenAI. Se a OpenAI falhar (ex.: sem
 créditos), a Cassandra usa só o local pelos 10 minutos seguintes.
 
-## Busca na internet (web-agent)
+## Outros agentes, sempre via orchestrator
 
-Perguntas que precisam de informacao atual (noticias, cotacoes, clima, esportes, transito, busca geral) vao
-para o **web-agent**, que roda em outro computador e nem sempre esta ligado. A Cassandra checa a cada 15 s,
-em segundo plano, se ele responde: ligado, ela usa; desligado, ela responde so com o LLM, sem esperar.
-O status aparece em Configuracoes.
+A Cassandra **não fala com outros agentes direto**: pede ao **orchestrator** (a ponte entre todos os
+agentes), que escolhe quem executa e devolve o resultado. Hoje isso é usado nas perguntas que precisam de
+informação atual (notícias, cotações, clima, esportes, trânsito, busca geral) — o orchestrator despacha para
+o web-agent.
+
+O orchestrator roda no PC e nem sempre está ligado. A Cassandra checa a cada 15 s, em segundo plano, se ele
+responde: ligado, ela usa; desligado (ou se o pedido falhar), ela responde só com o próprio LLM, sem esperar.
+O status e a lista de agentes que ele controla aparecem em Configurações.
 
 ```bash
-WEB_SEARCH_ENABLED=auto   # auto (padrao) = usa quando disponivel; false = nunca usa
-WEB_AGENT_URL=http://desktop-cc6nlck.local:8001,http://192.168.100.52:8001
-WEB_AGENT_TIMEOUT=90
+WEB_SEARCH_ENABLED=auto   # auto (padrão) = usa quando disponível; false = nunca usa
+ORCHESTRATOR_URL=http://desktop-cc6nlck.local:8090,http://192.168.100.52:8090
+ORCHESTRATOR_TOKEN=...    # o ORCHESTRATOR_SHARED_SECRET do orchestrator
+ORCHESTRATOR_AGENT_NAME=personal-assistant
+ORCHESTRATOR_TIMEOUT=120
 ```
 
-`WEB_AGENT_URL` aceita varias URLs, tentadas em ordem. Prefira o nome `.local` do PC (resolvido por mDNS
-na rede local): ele continua valendo quando o roteador troca o IP. O IP fica de reserva. O web-agent nao
-tem login.
+O cliente é o plug-in `cassandra/orchestrator_link.py`, cópia de `orchestrator/plugin/orchestrator_link.py`
+(o mesmo em todos os agentes). `ORCHESTRATOR_URL` aceita várias URLs, tentadas em ordem: prefira o nome
+`.local` do PC, que continua valendo quando o roteador troca o IP.
 
 ## Interface web (dashboard)
 
