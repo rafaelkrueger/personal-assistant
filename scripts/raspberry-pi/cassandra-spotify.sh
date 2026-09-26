@@ -8,7 +8,7 @@ CACHE="$HOME/.cache/cassandra-spotify"
 STATE="$HOME/.local/state/cassandra-spotify"
 mkdir -p "$CACHE" "$STATE"
 PAIR=""
-[ -s "$CACHE/credentials.json" ] || PAIR="--enable-device-auth"
+[ -s "$STATE/credentials.json" ] || PAIR="--enable-device-auth"
 exec "$HOME/.local/bin/librespot" --name Cassandra --device-type speaker --backend pulseaudio \
     --bitrate 320 --initial-volume 70 --enable-volume-normalisation \
     --cache "$CACHE" --system-cache "$STATE" --cache-size-limit 500M $PAIR

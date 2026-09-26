@@ -64,6 +64,6 @@ systemctl --user daemon-reload && systemctl --user enable --now cassandra-spotif
 Depois conecte a conta na UI (Configurações > Spotify) e pareie a caixa, uma vez só: sem credencial guardada,
 o `cassandra-spotify.sh` sobe o librespot em modo de pareamento e ele escreve no log um código; a aba Música
 mostra esse código — é só abrir spotify.com/pair e digitá-lo. O librespot guarda a credencial no cache
-(`~/.cache/cassandra-spotify/credentials.json`) e entra sozinho depois de reboots. Para parear de novo (outra
+(`~/.local/state/cassandra-spotify/credentials.json`) e entra sozinho depois de reboots. Para parear de novo (outra
 conta), apague esse arquivo e reinicie o serviço. (Um token do app da Cassandra não serve para isso: o Spotify
 só aceita o Connect com o login do próprio librespot.)

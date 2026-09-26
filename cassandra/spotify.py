@@ -42,7 +42,8 @@ SCOPES = " ".join([
 ])
 TOKEN_FILE = Path("data/spotify_token.json")
 # O player do Pi (serviço cassandra-spotify): onde guarda a credencial e onde escreve o código de pareamento.
-LIBRESPOT_CACHE = Path(os.getenv("SPOTIFY_LIBRESPOT_CACHE", "~/.cache/cassandra-spotify")).expanduser()
+# (a credencial fica no --system-cache do librespot)
+LIBRESPOT_STATE = Path(os.getenv("SPOTIFY_LIBRESPOT_STATE", "~/.local/state/cassandra-spotify")).expanduser()
 LIBRESPOT_SERVICE = os.getenv("SPOTIFY_LIBRESPOT_SERVICE", "cassandra-spotify")
 LIBRESPOT_LOG = Path(os.getenv("SPOTIFY_LIBRESPOT_LOG", "/tmp/cassandra-spotify.log"))
 
@@ -216,7 +217,7 @@ class SpotifyClient:
     @staticmethod
     def pairing() -> dict[str, str] | None:
         """O código que o librespot mostrou para parear com a conta (só enquanto ainda não tem credencial)."""
-        if (LIBRESPOT_CACHE / "credentials.json").exists():
+        if (LIBRESPOT_STATE / "credentials.json").exists():
             return None
         try:
             text = LIBRESPOT_LOG.read_text(encoding="utf-8", errors="replace")
