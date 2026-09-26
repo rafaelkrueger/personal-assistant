@@ -347,21 +347,39 @@ class CassandraAssistant:
                 command = text
                 command_source = "web_active_session"
 
+        # A UI recebe o texto na hora e a fala sai em segundo plano. Esperar a fala terminar antes de responder
+        # estourava o limite do proxy do site (~26 s no Netlify) com a voz grátis: ela falava, mas a UI dava erro.
         result = self.process_text_command(
             command,
             source=command_source,
-            speak_response=True,
+            speak_response=False,
         )
         with self._state_lock:
             if result["dismissed"]:
                 self._web_session_active = False
             else:
                 self._web_session_active = True
+        self._speak_in_background(
+            result["response"],
+            then_sound=self.settings.off_sound_path if result["dismissed"] else None,
+        )
         return {
             "response": result["response"],
             "dismissed": result["dismissed"],
             "activated": True,
         }
+
+    def _speak_in_background(self, text: str, then_sound: str | None = None) -> None:
+        def run() -> None:
+            try:
+                # speak_stream divide em frases e gera a próxima enquanto a atual toca
+                self.voice_output.speak_stream(iter([text]))
+            except Exception as exc:  # noqa: BLE001
+                print(f"[VOZ] Erro ao falar a resposta do chat: {exc}", flush=True)
+            if then_sound:
+                self.sound_player.play(then_sound)
+
+        threading.Thread(target=run, name="web-speech", daemon=True).start()
 
     def get_conversation_history(self) -> list[dict[str, str]]:
         with self._state_lock:

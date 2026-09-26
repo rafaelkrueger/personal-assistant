@@ -106,6 +106,7 @@ class VoiceOutput:
         self._piper.preload()  # ~16 s num Pi 3; em segundo plano para a 1ª resposta não esperar
         self._openai_down_until = 0.0
         self._last_engine: str | None = None
+        self._play_lock = threading.Lock()  # uma fala por vez (chat web em segundo plano + microfone)
 
     # ── API pública ───────────────────────────────────────────────────────────
 
@@ -249,6 +250,7 @@ class VoiceOutput:
         try:
             cmd = player_command(self._player, path) if self._player else None
             if cmd:
-                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+                with self._play_lock:
+                    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
         finally:
             os.unlink(path)
