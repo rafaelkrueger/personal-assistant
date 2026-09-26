@@ -39,6 +39,10 @@ PLAYERS = ["pw-play", "ffplay", "mpg123", "mpv", "cvlc", "play"]
 
 _OPENAI_RETRY_AFTER = 600  # depois de uma falha da voz da OpenAI (ex.: sem créditos), só voz grátis por 10 min
 
+# Variante feminina do espeak-ng. Medido num Raspberry Pi 3: ~80 ms por frase. As alternativas femininas
+# grátis foram bem mais lentas (Edge TTS ~4,5 s, Kokoro ~25 s) e o Piper não tem voz feminina em português.
+ESPEAK_FEMALE_VARIANT = "f4"
+
 
 def detect_player() -> str | None:
     for player in PLAYERS:
@@ -67,12 +71,13 @@ class VoiceOutput:
     """Text-to-speech output.
 
     Engines:
-      - openai: OpenAI TTS (the most natural; paid).
-      - piper: Piper, neural voice running on the device (free, offline; see piper_tts.py).
-      - espeak: espeak-ng (free, robotic; last resort).
+      - openai: OpenAI TTS (the most natural; paid; voice "nova" is female).
+      - espeak: espeak-ng with a female variant (free, instant, robotic).
+      - piper: Piper, neural voice running on the device (free, natural, but male and ~3 s per sentence on
+        a Pi 3; only loaded when chosen).
     engine="auto" (default) uses OpenAI while there's a key and it works; if it fails (e.g. no credits) it
-    switches to Piper and skips OpenAI for 10 minutes. Any engine falls back to the free ones, so a missing
-    key or credits never leaves Cassandra silent.
+    switches to the female espeak and skips OpenAI for 10 minutes. Every engine falls back to espeak, so a
+    missing key or credits never leaves Cassandra silent.
 
     Playback is always blocking so the microphone is not re-opened
     while Cassandra is still speaking.
@@ -102,8 +107,9 @@ class VoiceOutput:
         self.engine = engine if engine in self.ENGINES else "auto"
         self._player = detect_player()
         self._espeak = shutil.which("espeak-ng") or shutil.which("espeak")
-        self._piper = PiperTTS(piper_model or DEFAULT_VOICE)
-        self._piper.preload()  # ~16 s num Pi 3; em segundo plano para a 1ª resposta não esperar
+        self._piper = PiperTTS(piper_model or DEFAULT_VOICE)  # só carrega se o motor escolhido for o Piper
+        if self.engine == "piper":
+            self._piper.preload()
         self._openai_down_until = 0.0
         self._last_engine: str | None = None
         self._play_lock = threading.Lock()  # uma fala por vez (chat web em segundo plano + microfone)
@@ -179,19 +185,23 @@ class VoiceOutput:
 
     # ── Síntese ───────────────────────────────────────────────────────────────
 
+    def set_engine(self, engine: str) -> None:
+        self.engine = engine if engine in self.ENGINES else "auto"
+        if self.engine == "piper":
+            self._piper.preload()  # ~16 s num Pi 3, em segundo plano
+
     def _engine_order(self) -> list[str]:
-        free = ["piper", "espeak"]
         if self.engine == "espeak":
             return ["espeak"]
         if self.engine == "piper":
-            return free
+            return ["piper", "espeak"]
         if self.engine == "openai":
-            return ["openai", *free]
-        # auto: OpenAI só se houver chave e ela não tiver falhado há pouco
+            return ["openai", "espeak"]
+        # auto: OpenAI só se houver chave e ela não tiver falhado há pouco; senão a voz feminina grátis
         from cassandra import llm_settings  # noqa: PLC0415
 
         openai_ok = bool(llm_settings.get()["openai_api_key"]) and time.monotonic() >= self._openai_down_until
-        return (["openai"] if openai_ok else []) + free
+        return (["openai"] if openai_ok else []) + ["espeak"]
 
     def _synthesize(self, text: str) -> str | None:
         """Gera o áudio da frase num arquivo temporário (quem toca apaga). None se nenhum motor conseguiu."""
@@ -201,7 +211,7 @@ class VoiceOutput:
             except Exception as exc:  # noqa: BLE001
                 if engine == "openai":
                     self._openai_down_until = time.monotonic() + _OPENAI_RETRY_AFTER
-                    print(f"[VOZ] Voz da OpenAI falhou ({str(exc)[:120]}); usando voz grátis por 10 min.", flush=True)
+                    print(f"[VOZ] Voz da OpenAI falhou ({str(exc)[:120]}); usando a voz grátis por 10 min.", flush=True)
                 elif self._last_engine != f"{engine}-erro":
                     print(f"[VOZ] {engine} falhou: {exc}", flush=True)
                     self._last_engine = f"{engine}-erro"
@@ -236,8 +246,9 @@ class VoiceOutput:
             lang = "pt-br"  # no espeak-ng, "pt" é português de Portugal
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
         tmp.close()
+        voice = f"{lang}+{ESPEAK_FEMALE_VARIANT}"
         subprocess.run(
-            [self._espeak, "-v", lang, "-s", str(self.fallback_rate), "-w", tmp.name, text],
+            [self._espeak, "-v", voice, "-s", str(self.fallback_rate), "-w", tmp.name, text],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=True,

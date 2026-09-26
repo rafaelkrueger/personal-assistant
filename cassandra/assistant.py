@@ -525,8 +525,7 @@ class CassandraAssistant:
         vo.tts_model = str(v.get("tts_model", self.settings.tts_model))
         vo.fallback_lang = str(v.get("fallback_lang", self.settings.voice_lang))
         vo.fallback_rate = int(v.get("fallback_rate", self.settings.voice_rate))
-        engine = str(v.get("engine", "auto"))
-        vo.engine = engine if engine in vo.ENGINES else "auto"
+        vo.set_engine(str(v.get("engine", "auto")))
 
     def remove_alarm(self, alarm_id: str) -> bool:
         return self.alarm_manager.remove_alarm(alarm_id)

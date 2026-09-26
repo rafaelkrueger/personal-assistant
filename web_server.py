@@ -653,13 +653,13 @@ HTML_PAGE = """<!doctype html>
               <div class="settings-row-control"><label class="toggle"><input type="checkbox" id="voice-enabled" checked/><span class="toggle-slider"></span></label></div>
             </div>
             <div class="settings-row">
-              <div class="settings-row-info"><div class="settings-row-label">Motor de voz</div><div class="settings-row-desc">Automático: OpenAI enquanto houver créditos; sem créditos, Piper (grátis, no próprio aparelho)</div></div>
+              <div class="settings-row-info"><div class="settings-row-label">Motor de voz</div><div class="settings-row-desc">Automático: OpenAI enquanto houver créditos; sem créditos, voz feminina grátis e instantânea</div></div>
               <div class="settings-row-control">
                 <select id="voice-engine" class="settings-select">
                   <option value="auto">Automático</option>
                   <option value="openai">OpenAI (pago)</option>
-                  <option value="piper">Piper (grátis)</option>
-                  <option value="espeak">espeak (grátis, robótica)</option>
+                  <option value="espeak">espeak (grátis, feminina, instantânea)</option>
+                  <option value="piper">Piper (grátis, masculina, ~3 s por frase)</option>
                 </select>
               </div>
             </div>
@@ -686,7 +686,7 @@ HTML_PAGE = """<!doctype html>
               </div>
             </div>
             <div class="settings-row">
-              <div class="settings-row-info"><div class="settings-row-label">Idioma fallback</div><div class="settings-row-desc">Idioma do espeak (o Piper fala português do Brasil)</div></div>
+              <div class="settings-row-info"><div class="settings-row-label">Idioma fallback</div><div class="settings-row-desc">Idioma da voz grátis (espeak)</div></div>
               <div class="settings-row-control">
                 <select id="voice-fallback-lang" class="settings-select">
                   <option value="pt">Português</option>

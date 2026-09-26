@@ -104,13 +104,17 @@ e segue o microfone padrão.
 
 Em **Configurações > Voz & TTS > Motor de voz**:
 
-- **Automático** (padrão): voz da OpenAI enquanto houver chave e créditos; se ela falhar (ex.: sem créditos),
-  usa o **Piper** e pula a OpenAI por 10 minutos.
+- **Automático** (padrão): voz da OpenAI (feminina, "nova") enquanto houver chave e créditos; se ela falhar
+  (ex.: sem créditos), usa a voz feminina grátis do **espeak** e pula a OpenAI por 10 minutos.
 - **OpenAI**: a mais natural, paga por caractere.
-- **Piper**: voz neural que roda no próprio aparelho, grátis e offline (`pt_BR-faber-medium`, ~63 MB, baixada
-  sozinha para `models/piper/` na primeira vez). Num Raspberry Pi 3 gera a fala ~1,5x mais devagar que o
-  tempo real (frase curta ~3 s); carrega em segundo plano no start.
-- **espeak**: grátis e instantânea, mas robótica. É o último recurso de qualquer motor.
+- **espeak**: `espeak-ng` com variante feminina — grátis, offline e instantânea (~80 ms por frase num
+  Raspberry Pi 3), mas robótica. É o último recurso de qualquer motor.
+- **Piper**: voz neural natural, grátis e offline, mas **masculina** (não há voz feminina em português no
+  Piper) e ~3 s por frase num Pi 3. Só é carregada se for escolhida (`pt_BR-faber-medium`, ~63 MB, baixada
+  sozinha para `models/piper/`).
+
+Vozes femininas grátis testadas num Pi 3 e descartadas por lentidão: Edge TTS (~4,5 s por frase, online) e
+Kokoro (`pf_dora`, ~25 s por frase).
 
 O áudio sai pelo `pw-play` (PipeWire), direto na saída padrão — ex.: uma soundbar Bluetooth.
 
