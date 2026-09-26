@@ -2053,7 +2053,7 @@ function micRender(d){
   document.getElementById("micThr").style.left=Math.min(100,d.threshold/max*100)+"%";
   document.getElementById("micLevel").textContent=`nível ${d.level} · pico ${d.peak}`;
   document.getElementById("micThrLabel").textContent=`limite de fala ${d.threshold} · ruído ${d.noise||0}`;
-  if(!micPaused&&(d.events||[]).length){micEvents=micEvents.concat(d.events).slice(-400);micRenderLog();}
+  if(!micPaused&&(d.events||[]).length){micEvents=micEvents.concat(d.events).slice(-10);micRenderLog();}
   if((d.events||[]).length) micAfter=d.events[d.events.length-1].id;
 }
 function micRenderLog(){

@@ -2,7 +2,7 @@
 taxa em que abriu, o nível de som agora, em que etapa a Cassandra está (esperando o nome / ouvindo o pedido /
 pensando) e um log do que foi captado (fala detectada, nome ou não, texto transcrito, pedido, resposta, erros).
 
-Fica só na memória (as últimas 400 entradas) — nada vai para o disco.
+Fica só na memória (as últimas 10 entradas) — o resto é descartado, nada vai para o disco.
 """
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import time
 from collections import deque
 from typing import Any
 
-MAX_EVENTS = 400
+MAX_EVENTS = 10  # só as últimas 10 linhas; o resto é descartado
 
 
 class MicMonitor:
