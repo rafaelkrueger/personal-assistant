@@ -8,6 +8,8 @@ import tempfile
 import threading
 import wave
 
+from cassandra.mic_monitor import monitor
+
 SAMPLE_RATE = 16_000
 CHANNELS = 1
 SAMPLE_WIDTH = 2  # 16-bit PCM
@@ -63,6 +65,7 @@ class VadRecorder:
         self.max_duration = max_duration
         self.pre_roll_frames = pre_roll_frames
         self._pa = None
+        monitor.set(threshold=energy_threshold)
         self._rate: int | None = None  # a taxa que o microfone atual aceitou
 
     def _ensure_pyaudio(self):
@@ -110,6 +113,12 @@ class VadRecorder:
             if rate != self._rate:
                 note = "" if rate == SAMPLE_RATE else f" (convertido para {SAMPLE_RATE} Hz)"
                 print(f"[MIC] Microfone aberto a {rate} Hz{note}", flush=True)
+                try:
+                    name = pa.get_device_info_by_index(device).get("name", "") if device is not None else ""
+                except Exception:  # noqa: BLE001
+                    name = ""
+                monitor.set(device=name, rate=rate)
+                monitor.event("status", f"Microfone aberto: {name or 'padrão'} a {rate} Hz{note}")
             self._rate = rate
             return stream, rate, frames
         raise last_error or RuntimeError("nenhum microfone")
@@ -163,6 +172,7 @@ class VadRecorder:
 
                 frame = _to_16k(stream.read(device_frames, exception_on_overflow=False), rate)
                 energy = self._rms(frame)
+                monitor.level(energy)
 
                 if not speaking:
                     pre_roll.append(frame)
@@ -191,6 +201,9 @@ class VadRecorder:
 
         if not recorded:
             return None
+        peak = max((self._rms(f) for f in recorded), default=0)
+        monitor.event("heard", f"Som captado: {len(recorded) * FRAME_MS / 1000:.1f} s (pico {peak:.0f}, "
+                               f"limite {self.energy_threshold})")
 
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
         tmp.close()

@@ -9,6 +9,7 @@ from datetime import datetime
 from difflib import SequenceMatcher
 
 from cassandra import llm_settings
+from cassandra.mic_monitor import monitor
 from cassandra.openai_client import LLMService
 
 _OPENAI_RETRY_AFTER = 600  # depois de uma falha da OpenAI (ex.: sem créditos), usa só o local por 10 min
@@ -111,6 +112,7 @@ class MicrophoneInputSource:
             if now - self._last_capture_error_at > 5.0:
                 self._last_capture_error_at = now
                 print(f"[MIC] Entrada de audio indisponivel: {exc}")
+                monitor.event("error", f"Não consegui usar o microfone: {exc}")
             self._recorder.close()  # reabre na próxima: o PortAudio só enxerga aparelhos novos ao reiniciar
             time.sleep(1.0)
             return InputEvent(text="")
@@ -130,7 +132,10 @@ class MicrophoneInputSource:
             if wake_phase and self.local_wake and self._local_ready():
                 # Esperando o nome: checa no próprio aparelho; sem o nome, nada vai para a API.
                 if not self.local.heard_wake_word(wav_path):
+                    heard = getattr(self.local, "last_heard", "")
+                    monitor.event("no_wake", f"Sem o nome — ouvido: “{heard}”" if heard else "Sem o nome (nada reconhecível)")
                     return ""
+                monitor.event("wake", "Nome detectado no aparelho")
                 if self.local.last_only_name:
                     text = self.assistant_name  # só o nome: abre a sessão sem gastar transcrição
                 else:
@@ -141,6 +146,7 @@ class MicrophoneInputSource:
             os.unlink(wav_path)
 
         text = (text or "").strip()
+        monitor.event("transcribed", f"Transcrito: “{text}”" if text else "Transcrição vazia (silêncio ou ruído)")
 
         if self.debug:
             ts = datetime.now().strftime("%H:%M:%S")
@@ -152,12 +158,16 @@ class MicrophoneInputSource:
         """Há algum aparelho de captura (ex.: microfone USB)? Loga só quando muda."""
         present = bool(glob.glob("/proc/asound/card*/pcm*c"))
         if present != self._mic_present:
+            monitor.set(present=present)
             if present:
                 print("[MIC] Microfone detectado — ouvindo (diga o nome para chamar).", flush=True)
+                monitor.event("status", "Microfone conectado")
                 self._recorder.close()  # o PortAudio precisa reiniciar para ver o aparelho novo
             else:
                 print("[MIC] Nenhum microfone conectado — aguardando você plugar um. "
                       "O chat da UI continua funcionando.", flush=True)
+                monitor.set(phase="sem microfone", device="", rate=0)
+                monitor.event("status", "Nenhum microfone conectado — aguardando você plugar um")
             self._mic_present = present
         return present
 

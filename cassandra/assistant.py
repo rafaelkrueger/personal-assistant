@@ -12,6 +12,7 @@ from pathlib import Path
 from cassandra.config import load_settings
 from cassandra.input_sources import InputEvent, MicrophoneInputSource, TextInputSource
 from cassandra.memory import ConversationMemory
+from cassandra.mic_monitor import monitor as mic_monitor
 from cassandra import llm_settings
 from cassandra.openai_client import LLMService
 from cassandra.router import SkillRouter
@@ -146,6 +147,8 @@ class CassandraAssistant:
             self._timer_interrupt.clear()
             # Use a shorter silence threshold when waiting for the wake word.
             in_active_session = active_until is not None
+            if mic_monitor.present is not False:
+                mic_monitor.set(phase="ouvindo o pedido" if in_active_session else "esperando o nome")
             event = self.input_source.read(wake_phase=not in_active_session)
 
             # Handle fired timers before anything else
@@ -168,6 +171,7 @@ class CassandraAssistant:
                 self.sound_player.play(self.settings.off_sound_path)
                 active_until = None
                 self.memory.clear()
+                mic_monitor.event("status", "Sessão encerrada por tempo — voltou a esperar o nome")
                 if self.settings.mic_debug:
                     print("[SESSION] Sessao expirada. Memoria limpa.")
 
@@ -186,6 +190,7 @@ class CassandraAssistant:
             wake_detected, wake_command = self._parse_wake(raw_text)
 
             if active_until is None and not wake_detected:
+                mic_monitor.event("ignored", f"Ignorado (sem o nome): “{raw_text}”")
                 self._log_passive_heard(raw_text)
                 if self.settings.mic_debug and self.settings.input_mode in {"mic", "auto"}:
                     print("[WAKE] Ignorado: wake word nao detectada.")
@@ -219,6 +224,8 @@ class CassandraAssistant:
                 active_until = time.monotonic() + self.settings.wake_timeout_seconds
                 continue
 
+            mic_monitor.event("command", f"Pedido: “{command}”")
+            mic_monitor.set(phase="pensando")
             result = self.process_text_command(
                 command,
                 source=command_source,
@@ -226,6 +233,7 @@ class CassandraAssistant:
             )
             response = result["response"]
             print(f"Cassandra: {response}")
+            mic_monitor.event("response", f"Resposta: “{response}”")
             if result["dismissed"]:
                 active_until = None
                 continue

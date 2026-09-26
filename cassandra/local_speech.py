@@ -105,6 +105,7 @@ class LocalSpeech:
         words = [w for w in all_words if w != "[unk]"]
         heard = any(w in self.wake_words for w in words[:2])
         self.last_only_name = heard and all(w in self.wake_words for w in all_words)
+        self.last_heard = result.get("text", "")
         if self.debug:
             print(f"[WAKE local] {'NOME DETECTADO' if heard else 'sem o nome'} | ouvido: {result.get('text', '')!r}")
         return heard

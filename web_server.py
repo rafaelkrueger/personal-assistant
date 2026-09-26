@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 from cassandra import audio_devices, llm_settings
 from cassandra import spotify as spotify_api
 from cassandra import network_devices
+from cassandra.mic_monitor import monitor as mic_monitor
 from cassandra.assistant import CassandraAssistant
 
 HTML_PAGE = """<!doctype html>
@@ -389,6 +390,30 @@ HTML_PAGE = """<!doctype html>
     .sp-play-row{display:flex;gap:8px;margin-top:12px}
     .sp-play-row input{flex:1;min-width:0}
     .sp-green{color:#1ed760}
+    /* ═══ MICROFONE ═══ */
+    .mic-status{display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:var(--glass);border:1px solid var(--border);border-radius:var(--rx);padding:16px;margin-bottom:14px}
+    .mic-dot{width:12px;height:12px;border-radius:50%;background:var(--text3);flex-shrink:0}
+    .mic-dot.on{background:var(--green);box-shadow:0 0 10px var(--green-glow)}
+    .mic-dot.off{background:var(--red)}
+    .mic-title{font-weight:800;font-size:15px}
+    .mic-sub{font-size:12.5px;color:var(--text2);margin-top:2px;overflow-wrap:anywhere}
+    .mic-phase{margin-left:auto;font-size:12px;font-weight:700;padding:5px 12px;border-radius:99px;background:var(--brand-dim);color:var(--brand2);border:1px solid rgba(91,154,255,.25)}
+    .mic-meter-wrap{background:var(--glass);border:1px solid var(--border);border-radius:var(--rx);padding:14px 16px;margin-bottom:14px}
+    .mic-meter{position:relative;height:14px;border-radius:99px;background:rgba(255,255,255,.06);overflow:hidden;margin:8px 0 6px}
+    .mic-meter-fill{position:absolute;left:0;top:0;bottom:0;width:0;border-radius:99px;background:linear-gradient(90deg,#34d399,#fbbf24 70%,#f87171);transition:width .12s linear}
+    .mic-meter-peak{position:absolute;top:0;bottom:0;width:2px;background:#fff;opacity:.7;left:0;transition:left .12s linear}
+    .mic-meter-thr{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--brand2)}
+    .mic-meter-legend{display:flex;justify-content:space-between;font-size:11.5px;color:var(--text2);font-variant-numeric:tabular-nums}
+    .mic-log{display:flex;flex-direction:column;gap:6px}
+    .mic-row{display:flex;gap:10px;align-items:flex-start;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r);background:rgba(255,255,255,.02);font-size:13px}
+    .mic-time{font-size:11.5px;color:var(--text3);font-variant-numeric:tabular-nums;flex-shrink:0;padding-top:1px}
+    .mic-kind{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:99px;flex-shrink:0;background:rgba(255,255,255,.06);color:var(--text2)}
+    .mic-kind.wake,.mic-kind.command{background:var(--green-dim);color:var(--green)}
+    .mic-kind.response{background:var(--brand-dim);color:var(--brand2)}
+    .mic-kind.error{background:var(--red-dim);color:#fca5a5}
+    .mic-kind.status{background:var(--amber-dim);color:#fbbf24}
+    .mic-text{flex:1;min-width:0;overflow-wrap:anywhere}
+    .mic-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:18px 0 10px}
     /* ═══ APARELHOS ═══ */
     .dv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin-bottom:8px}
     .dv-card{background:var(--glass);border:1px solid var(--border);border-radius:var(--rl);padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0}
@@ -638,6 +663,28 @@ HTML_PAGE = """<!doctype html>
           <div class="mu-section"><div class="mu-section-title">Suas playlists</div><div class="mu-grid" id="muPlaylists"><div class="bt-empty">Carregando…</div></div></div>
           <div class="mu-section" id="muRecentSec" style="display:none"><div class="mu-section-title">Tocadas recentemente</div><div class="mu-list" id="muRecent"></div></div>
         </div>
+      </div>
+
+      <!-- ══ MICROFONE ══ -->
+      <div class="tab-panel hidden" id="tab-mic">
+        <div class="sec-hdr"><span class="sec-title">Microfone</span><span class="count-badge" id="micBadge">—</span></div>
+        <div class="mic-status">
+          <span class="mic-dot" id="micDot"></span>
+          <div style="min-width:0;flex:1"><div class="mic-title" id="micTitle">Verificando…</div><div class="mic-sub" id="micSub">—</div></div>
+          <span class="mic-phase" id="micPhase">—</span>
+        </div>
+        <div class="mic-meter-wrap">
+          <div class="settings-row-label">Nível de som agora</div>
+          <div class="mic-meter"><div class="mic-meter-fill" id="micFill"></div><div class="mic-meter-peak" id="micPeak"></div><div class="mic-meter-thr" id="micThr" title="Limite: acima disso conta como fala"></div></div>
+          <div class="mic-meter-legend"><span id="micLevel">—</span><span id="micThrLabel">—</span></div>
+        </div>
+        <div class="mic-tools">
+          <span class="settings-row-label" style="flex:1">O que ela captou</span>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text2);cursor:pointer"><input type="checkbox" id="micOnlyUseful" style="width:auto;flex:none"/> só falas e pedidos</label>
+          <button class="btn btn-ghost btn-sm" id="micPause">Pausar</button>
+          <button class="btn btn-ghost btn-sm" id="micClear">Limpar</button>
+        </div>
+        <div class="mic-log" id="micLog"><div class="bt-empty">Nada captado ainda. Fale perto do microfone.</div></div>
       </div>
 
       <!-- ══ APARELHOS ══ -->
@@ -1161,6 +1208,7 @@ HTML_PAGE = """<!doctype html>
 const IC = {
   dashboard:`<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`,
   chat:     `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>`,
+  mic:      `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0014 0"/><line x1="12" y1="17" x2="12" y2="22"/></svg>`,
   devices:  `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="13" rx="2"/><polyline points="17 2 12 7 7 2"/></svg>`,
   music:    `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`,
   shopping: `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg>`,
@@ -1187,11 +1235,12 @@ const ALL_TABS = [
   {id:"agenda",    label:"Agenda",     group:"Organização"},
   {id:"alarms",    label:"Alarmes",    group:"Automação"},
   {id:"routines",  label:"Rotinas",    group:"Automação"},
+  {id:"mic",       label:"Microfone",  group:"Sistema"},
   {id:"settings",  label:"Config.",    group:"Sistema"},
 ];
 let currentTab = "dashboard";
 const PAGE_TITLES = {
-  dashboard:"Dashboard",chat:"Chat",music:"Música",devices:"Aparelhos",shopping:"Compras",
+  dashboard:"Dashboard",chat:"Chat",music:"Música",devices:"Aparelhos",mic:"Microfone",shopping:"Compras",
   todos:"Tarefas",alarms:"Alarmes",routines:"Rotinas",agenda:"Agenda",settings:"Configurações",
 };
 const DAY_NAMES = ["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"];
@@ -1218,7 +1267,7 @@ function fmtTime(ts){return(ts||"").substring(11,16);}
 function getVisibleTabs(){
   const mods = currentSettings.modules || {};
   return ALL_TABS.filter(t=>{
-    if(t.id==="dashboard"||t.id==="settings") return true;
+    if(t.id==="dashboard"||t.id==="settings"||t.id==="mic") return true;
     return mods[t.id]!==false;
   });
 }
@@ -1255,6 +1304,7 @@ function gotoTab(tab){
   closeMobileMenu();
   if(tab==="music") muOpen();
   if(tab==="devices") dvOpen();
+  if(tab==="mic") micOpen(); else micClose();
 }
 
 // ── Sidebar ──
@@ -1986,6 +2036,42 @@ async function spPlay(){
 }
 document.getElementById("sp-play").addEventListener("click",spPlay);
 enter(document.getElementById("sp-query"),spPlay);
+// ── Aba Microfone ──
+const MIC_KINDS={status:"estado",heard:"som",no_wake:"sem nome",wake:"nome",transcribed:"texto",ignored:"ignorado",command:"pedido",response:"resposta",error:"erro"};
+const MIC_USEFUL=new Set(["wake","transcribed","ignored","command","response","error","status"]);
+let micAfter=0, micTimer=null, micPaused=false, micEvents=[];
+function micRender(d){
+  const dot=document.getElementById("micDot"), title=document.getElementById("micTitle"), sub=document.getElementById("micSub");
+  if(d.present===false){dot.className="mic-dot off";title.textContent="Nenhum microfone conectado";sub.textContent="Plugue um microfone USB no Raspberry Pi — ela começa a ouvir sozinha.";}
+  else if(d.listening){dot.className="mic-dot on";title.textContent="Microfone conectado e ouvindo";sub.textContent=[d.device,d.rate?`${d.rate} Hz`+(d.rate!==16000?" → 16000 Hz":""):""].filter(Boolean).join(" · ")||"—";}
+  else{dot.className="mic-dot";title.textContent=d.present?"Microfone conectado":"Microfone: sem sinal agora";sub.textContent=(d.device?d.device+" · ":"")+"não está lendo o áudio neste instante (falando ou pensando?)";}
+  document.getElementById("micPhase").textContent=d.phase||"—";
+  document.getElementById("micBadge").textContent=d.listening?"ao vivo":"parado";
+  const max=Math.max(d.threshold*3,1500);
+  document.getElementById("micFill").style.width=Math.min(100,d.level/max*100)+"%";
+  document.getElementById("micPeak").style.left=Math.min(100,d.peak/max*100)+"%";
+  document.getElementById("micThr").style.left=Math.min(100,d.threshold/max*100)+"%";
+  document.getElementById("micLevel").textContent=`nível ${d.level} · pico ${d.peak}`;
+  document.getElementById("micThrLabel").textContent=`limite de fala ${d.threshold}`;
+  if(!micPaused&&(d.events||[]).length){micEvents=micEvents.concat(d.events).slice(-400);micRenderLog();}
+  if((d.events||[]).length) micAfter=d.events[d.events.length-1].id;
+}
+function micRenderLog(){
+  const only=document.getElementById("micOnlyUseful").checked;
+  const list=micEvents.filter(e=>!only||MIC_USEFUL.has(e.kind)).slice().reverse();
+  document.getElementById("micLog").innerHTML=list.length?list.map(e=>{
+    const t=new Date(e.ts*1000).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+    return `<div class="mic-row"><span class="mic-time">${t}</span><span class="mic-kind ${e.kind}">${MIC_KINDS[e.kind]||e.kind}</span><span class="mic-text">${esc(e.text)}</span></div>`;
+  }).join(""):'<div class="bt-empty">Nada captado ainda. Fale perto do microfone.</div>';
+}
+async function micPoll(){try{micRender(await api(`/api/mic?after=${micAfter}`));}catch(e){document.getElementById("micTitle").textContent="Sem resposta da Cassandra";}}
+function micOpen(){micPoll();clearInterval(micTimer);micTimer=setInterval(micPoll,700);}
+function micClose(){clearInterval(micTimer);micTimer=null;}
+document.getElementById("micPause").addEventListener("click",e=>{micPaused=!micPaused;e.currentTarget.textContent=micPaused?"Continuar":"Pausar";});
+document.getElementById("micClear").addEventListener("click",()=>{micEvents=[];micRenderLog();});
+document.getElementById("micOnlyUseful").addEventListener("change",micRenderLog);
+document.addEventListener("visibilitychange",()=>{if(document.hidden) micClose(); else if(currentTab==="mic") micOpen();});
+
 // ── Aba Aparelhos ──
 const APP_COLORS={netflix:"#e50914",youtube:"#ff0033",prime:"#00a8e1",disney:"#113ccf",globoplay:"#f15a24",max:"#5822b4",spotify:"#1db954",twitch:"#9146ff"};
 // Categoria vem do servidor (classificada ao conectar); aqui só o nome e o ícone de cada uma.
@@ -2538,6 +2624,13 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                 return
             if parsed.path == "/api/audio":
                 self._send_json(audio_devices.audio_status())
+                return
+            if parsed.path == "/api/mic":
+                try:
+                    after = int((parse_qs(parsed.query).get("after") or ["0"])[0])
+                except ValueError:
+                    after = 0
+                self._send_json(mic_monitor.snapshot(after))
                 return
             if parsed.path == "/api/devices":
                 self._send_json(network_devices.manager.status())
