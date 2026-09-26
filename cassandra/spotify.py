@@ -16,6 +16,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import secrets
 import shutil
 import subprocess
@@ -35,15 +36,15 @@ AUTH_URL = "https://accounts.spotify.com/authorize"
 TOKEN_URL = "https://accounts.spotify.com/api/token"
 API = "https://api.spotify.com/v1"
 SCOPES = " ".join([
-    "streaming",  # o player do Pi (librespot) entra na conta com este token
     "user-read-playback-state", "user-modify-playback-state", "user-read-currently-playing",
     "user-library-read", "user-library-modify", "playlist-read-private", "playlist-read-collaborative",
     "user-read-private", "user-read-recently-played", "user-top-read",
 ])
 TOKEN_FILE = Path("data/spotify_token.json")
-# Onde o librespot (serviço cassandra-spotify) guarda a credencial e lê o token do 1º login.
+# O player do Pi (serviço cassandra-spotify): onde guarda a credencial e onde escreve o código de pareamento.
 LIBRESPOT_CACHE = Path(os.getenv("SPOTIFY_LIBRESPOT_CACHE", "~/.cache/cassandra-spotify")).expanduser()
 LIBRESPOT_SERVICE = os.getenv("SPOTIFY_LIBRESPOT_SERVICE", "cassandra-spotify")
+LIBRESPOT_LOG = Path(os.getenv("SPOTIFY_LIBRESPOT_LOG", "/tmp/cassandra-spotify.log"))
 
 
 class SpotifyError(Exception):
@@ -127,7 +128,6 @@ class SpotifyClient:
         token["authorized_at"] = time.time()  # o refresh token vale 180 dias a partir daqui (modo dev)
         self._save_token(token)
         self._me = None
-        threading.Thread(target=self._link_quietly, daemon=True, name="spotify-link").start()
 
     def _token_request(self, form: dict[str, str]) -> dict[str, Any]:
         req = urllib.request.Request(
@@ -209,45 +209,44 @@ class SpotifyClient:
         return (self.api("GET", "/me/player/devices") or {}).get("devices", [])
 
     # ── o player do Pi (librespot) ──
-    def has_streaming_scope(self) -> bool:
-        return "streaming" in (self._token or {}).get("scope", "").split()
-
     def _own_device(self, devices: list[dict[str, Any]]) -> dict[str, Any] | None:
         wanted = self.device_name.lower()
         return next((d for d in devices if (d.get("name") or "").lower() == wanted), None)
 
-    def link_device(self, wait: float = 15) -> dict[str, Any] | None:
-        """Faz o librespot entrar na conta com o token atual e espera ele aparecer. None se não apareceu."""
-        if not self.has_streaming_scope():
-            raise SpotifyError("Para a caixa Cassandra entrar na sua conta, clique em Renovar credenciais "
-                               "(Configurações > Spotify) uma vez.", 403, "NEED_RENEW")
-        if not shutil.which("systemctl"):
+    @staticmethod
+    def pairing() -> dict[str, str] | None:
+        """O código que o librespot mostrou para parear com a conta (só enquanto ainda não tem credencial)."""
+        if (LIBRESPOT_CACHE / "credentials.json").exists():
             return None
-        self._last_link = time.time()
-        LIBRESPOT_CACHE.mkdir(parents=True, exist_ok=True)
-        token_path = LIBRESPOT_CACHE / "access_token"
-        token_path.write_text(self._access_token(), encoding="utf-8")
         try:
-            os.chmod(token_path, 0o600)
+            text = LIBRESPOT_LOG.read_text(encoding="utf-8", errors="replace")
         except OSError:
-            pass
-        subprocess.run(["systemctl", "--user", "restart", LIBRESPOT_SERVICE],
-                       capture_output=True, timeout=20, check=False)
+            return None
+        codes = re.findall(r"spotify\.com/pair\?code=([A-Za-z0-9]+)", text)
+        return {"code": codes[-1], "url": f"https://spotify.com/pair?code={codes[-1]}"} if codes else None
+
+    def link_device(self, wait: float = 12) -> dict[str, Any]:
+        """Religa o player do Pi. {"device": ...} se ele entrou na conta; {"pair": {...}} se falta digitar o
+        código em spotify.com/pair; {} se nada disso apareceu a tempo."""
+        self._last_link = time.time()
+        if shutil.which("systemctl"):
+            subprocess.run(["systemctl", "--user", "restart", LIBRESPOT_SERVICE],
+                           capture_output=True, timeout=20, check=False)
         deadline = time.time() + wait
         while time.time() < deadline:
             time.sleep(1.5)
+            pair = self.pairing()
+            if pair:
+                return {"pair": pair}
             dev = self._own_device(self.devices())
             if dev:
-                return dev
-        return None
+                return {"device": dev}
+        return {}
 
-    def _link_quietly(self) -> None:
-        try:
-            time.sleep(1)
-            if not self._own_device(self.devices()):
-                self.link_device()
-        except Exception:  # noqa: BLE001 — é só uma tentativa; o pick_device tenta de novo
-            pass
+    def _pair_error(self, pair: dict[str, str]) -> SpotifyError:
+        return SpotifyError(
+            f"Falta parear a caixa {self.device_name} com o Spotify, uma vez só: abra spotify.com/pair "
+            f"e digite o código {pair['code']}.", 409, "NEED_PAIR")
 
     def pick_device(self) -> dict[str, Any]:
         """O dispositivo "Cassandra" (o Pi); sem ele, tenta fazê-lo entrar na conta; senão, o que estiver ativo."""
@@ -255,18 +254,22 @@ class SpotifyClient:
         own = self._own_device(devices)
         if own:
             return own
+        pair = self.pairing()
+        if pair:
+            raise self._pair_error(pair)
         if time.time() - self._last_link > 60:
             linked = self.link_device()
-            if linked:
-                return linked
+            if linked.get("device"):
+                return linked["device"]
+            if linked.get("pair"):
+                raise self._pair_error(linked["pair"])
             devices = self.devices()
         for dev in devices:
             if dev.get("is_active"):
                 return dev
         raise SpotifyError(
-            f"A caixa {self.device_name} não entrou no Spotify. Tente Renovar credenciais em Configurações > "
-            f"Spotify; se continuar, abra o app do Spotify no celular (mesmo Wi-Fi) e escolha {self.device_name} "
-            f"em dispositivos.", 404, "NO_DEVICE")
+            f"A caixa {self.device_name} não apareceu no Spotify. Toque em Conectar a caixa na aba Música.",
+            404, "NO_DEVICE")
 
     # ── tocar ──
     def play(self, uris: list[str] | None = None, context_uri: str | None = None,
@@ -440,7 +443,8 @@ class SpotifyClient:
             info["devices"] = [{"name": d.get("name"), "active": d.get("is_active"), "volume": d.get("volume_percent")}
                                for d in self.devices()]
             info["device_online"] = any((d["name"] or "").lower() == self.device_name.lower() for d in info["devices"])
-            info["needs_renew"] = not self.has_streaming_scope()
+            if not info["device_online"]:
+                info["pair"] = self.pairing()
             state = self.playback()
             if state and state.get("item"):
                 item = state["item"]
@@ -467,7 +471,8 @@ class SpotifyClient:
             view["devices"] = [{"id": d.get("id"), "name": d.get("name"), "type": d.get("type"),
                                 "active": d.get("is_active"), "volume": d.get("volume_percent")} for d in devices]
             view["device_online"] = any((d.get("name") or "").lower() == self.device_name.lower() for d in devices)
-            view["needs_renew"] = not self.has_streaming_scope()
+            if not view["device_online"]:
+                view["pair"] = self.pairing()
             state = self.playback()
             if state and state.get("item"):
                 item = state["item"]

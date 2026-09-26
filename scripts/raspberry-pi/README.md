@@ -10,7 +10,7 @@ e scripts de apoio.
 | `cassandra-netlify-sync.service` | `~/.config/systemd/user/` | Republica o site no Netlify quando a URL do túnel (ou a página) muda — ex.: depois de um reboot |
 | `cassandra-netlify-sync.py` | `~/.local/bin/` | O sincronizador (só biblioteca padrão do Python) |
 | `cassandra-spotify.service` | `~/.config/systemd/user/` | Spotify Connect: o Pi vira o dispositivo "Cassandra" no Spotify (librespot → PipeWire). Log: `/tmp/cassandra-spotify.log` |
-| `cassandra-spotify.sh` | `~/.local/bin/` | Sobe o librespot; no 1º login usa o token que a Cassandra deixa no cache |
+| `cassandra-spotify.sh` | `~/.local/bin/` | Sobe o librespot; sem credencial ainda, em modo de pareamento (código no log) |
 | `cassandra-start.sh` | `~/.local/bin/` | Reinicia a Cassandra e mostra o fim do log |
 | `cassandra-tunnel.sh` | `~/.local/bin/` | Reinicia o túnel e imprime a URL nova |
 
@@ -61,8 +61,9 @@ cp ~/Desktop/personal-assistant/scripts/raspberry-pi/cassandra-spotify.sh ~/.loc
 systemctl --user daemon-reload && systemctl --user enable --now cassandra-spotify
 ```
 
-Depois é só conectar a conta na UI (Configurações > Spotify). O login pede o escopo `streaming`, e a Cassandra
-passa o token para o librespot (arquivo `~/.cache/cassandra-spotify/access_token`, apagado assim que lido): ele
-entra na conta, guarda a própria credencial no cache e entra sozinho depois de reboots. Se a caixa sumir, o
-botão "Conectar a caixa Cassandra" (aba Música) repete isso. Alternativa manual: escolher **Cassandra** na
-lista de dispositivos do app do Spotify (mesmo Wi-Fi).
+Depois conecte a conta na UI (Configurações > Spotify) e pareie a caixa, uma vez só: sem credencial guardada,
+o `cassandra-spotify.sh` sobe o librespot em modo de pareamento e ele escreve no log um código; a aba Música
+mostra esse código — é só abrir spotify.com/pair e digitá-lo. O librespot guarda a credencial no cache
+(`~/.cache/cassandra-spotify/credentials.json`) e entra sozinho depois de reboots. Para parear de novo (outra
+conta), apague esse arquivo e reinicie o serviço. (Um token do app da Cassandra não serve para isso: o Spotify
+só aceita o Connect com o login do próprio librespot.)

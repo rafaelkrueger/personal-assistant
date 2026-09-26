@@ -551,7 +551,7 @@ HTML_PAGE = """<!doctype html>
         </div>
 
         <div id="muBody" style="display:none">
-          <div class="mu-banner" id="muBanner" style="display:none"><span id="muBannerText"></span><button class="btn btn-warn btn-sm" id="muLinkBtn">Conectar a caixa Cassandra</button></div>
+          <div class="mu-banner" id="muBanner" style="display:none"><span id="muBannerText"></span><a class="btn btn-warn btn-sm" id="muPairLink" target="_blank" rel="noopener" style="display:none;text-decoration:none">Abrir spotify.com/pair</a><button class="btn btn-warn btn-sm" id="muLinkBtn">Conectar a caixa</button></div>
           <div class="mu-hero">
             <img class="mu-cover" id="muCover" alt=""/>
             <div class="mu-main">
@@ -1833,7 +1833,7 @@ function renderSpotify(d){
   chip.style.color=d.device_online?"var(--green)":"var(--amber)";
   document.getElementById("sp-device-desc").textContent=d.device_online
     ?"O Raspberry Pi toca no Spotify pela saída de áudio atual"
-    :(d.needs_renew?"Clique em Renovar credenciais uma vez para a caixa entrar na sua conta":"Desconectada — conecte pela aba Música");
+    :(d.pair?`Falta parear: abra spotify.com/pair e digite o código ${d.pair.code}`:"Desconectada — conecte pela aba Música");
   const np=d.now_playing;
   document.getElementById("sp-title").textContent=np?np.title:"Nada tocando";
   document.getElementById("sp-artist").textContent=np?(np.artist+(np.device&&np.device!==d.device_name?` · em ${np.device}`:"")):'Peça "Cassandra, toca …" ou use o campo abaixo';
@@ -1893,12 +1893,16 @@ function renderMusic(v){
   }
   connect.style.display="none"; body.style.display="";
   badge.textContent=v.device_online?`Caixa ${v.device_name} conectada`:`Caixa ${v.device_name} desconectada`;
-  const link=document.getElementById("muLinkBtn");
+  const link=document.getElementById("muLinkBtn"), pairLink=document.getElementById("muPairLink");
   document.getElementById("muBanner").style.display=v.device_online?"none":"";
-  document.getElementById("muBannerText").textContent=v.needs_renew
-    ?`Falta um passo: renove o login do Spotify uma vez para a caixa ${v.device_name} (o Raspberry Pi) entrar na sua conta.`
-    :`A caixa ${v.device_name} (o Raspberry Pi) não está conectada ao Spotify.`;
-  link.textContent=v.needs_renew?"Renovar credenciais":`Conectar a caixa`;
+  const bannerText=document.getElementById("muBannerText");
+  if(v.pair){
+    bannerText.innerHTML=`Falta parear a caixa ${esc(v.device_name)} (o Raspberry Pi) com o seu Spotify, uma vez só: abra <b>spotify.com/pair</b> e digite o código <b style="font-size:16px;letter-spacing:.12em;color:#fff">${esc(v.pair.code)}</b>`;
+    pairLink.href=v.pair.url; pairLink.style.display=""; link.textContent="Gerar outro código";
+  }else{
+    bannerText.textContent=`A caixa ${v.device_name} (o Raspberry Pi) não está conectada ao Spotify.`;
+    pairLink.style.display="none"; link.textContent="Conectar a caixa";
+  }
   badge.style.color=v.device_online?"var(--green)":"var(--amber)";
   const t=v.track;
   document.getElementById("muTitle").textContent=t?t.name:"Nada tocando";
@@ -1950,7 +1954,7 @@ async function loadMusicLibrary(){
 }
 function muOpen(){
   loadMusic().then(()=>{if(muView&&muView.connected&&!muView.expired&&!muLibLoaded) loadMusicLibrary();});
-  clearInterval(muPoll); muPoll=setInterval(()=>{if(!document.getElementById("tab-music").classList.contains("hidden")) loadMusic(); else clearInterval(muPoll);},8000);
+  clearInterval(muPoll); muPoll=setInterval(()=>{if(!document.getElementById("tab-music").classList.contains("hidden")) loadMusic(); else clearInterval(muPoll);},5000);
 }
 async function muControl(action,extra){
   try{const d=await api("/api/spotify/control","POST",{action,...(extra||{})});if(d.message)muSay(d.message,"ok");setTimeout(loadMusic,700);if(["play_uri","queue","liked","top"].includes(action))setTimeout(loadMusicLibrary,2500);}
@@ -1978,9 +1982,8 @@ document.getElementById("muSearchBtn").addEventListener("click",muSearch);
 enter(document.getElementById("muQuery"),muSearch);
 document.getElementById("muConnectBtn").addEventListener("click",spLogin);
 document.getElementById("muLinkBtn").addEventListener("click",async e=>{
-  if(muView&&muView.needs_renew){spLogin();return;}
-  e.currentTarget.disabled=true; muSay("Conectando a caixa… (até 15 s)");
-  await muControl("link_device"); e.currentTarget.disabled=false;
+  const b=e.currentTarget; b.disabled=true; muSay("Conectando a caixa… (até 15 s)");
+  await muControl("link_device"); b.disabled=false;
 });
 document.getElementById("muToggle").addEventListener("click",()=>muControl(muView&&muView.is_playing?"pause":"resume"));
 document.getElementById("muShuffle").addEventListener("click",()=>muControl("shuffle",{on:!(muView&&muView.shuffle)}));
@@ -2090,10 +2093,13 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                 sp.transfer(device_id, play=True)
                 return "Tocando no dispositivo escolhido."
             if what == "link_device":
-                if not sp.link_device():
-                    raise spotify_api.SpotifyError(
-                        "A caixa Cassandra não apareceu no Spotify. Veja se o Pi está ligado e tente de novo.")
-                return "Caixa Cassandra conectada."
+                result = sp.link_device()
+                if result.get("device"):
+                    return "Caixa Cassandra conectada."
+                if result.get("pair"):
+                    return f"Abra spotify.com/pair e digite o código {result['pair']['code']}."
+                raise spotify_api.SpotifyError(
+                    "A caixa Cassandra não respondeu. Veja se o Raspberry Pi está ligado e tente de novo.")
             if what in ("liked", "top"):
                 return skill._run({"action": "play", "kind": what})
             if what in ("play_uri", "queue"):
