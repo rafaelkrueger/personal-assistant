@@ -383,6 +383,53 @@ HTML_PAGE = """<!doctype html>
     .sp-play-row{display:flex;gap:8px;margin-top:12px}
     .sp-play-row input{flex:1;min-width:0}
     .sp-green{color:#1ed760}
+    /* ═══ MÚSICA ═══ */
+    .mu-hero{display:flex;gap:18px;align-items:center;flex-wrap:wrap;background:var(--glass);border:1px solid var(--border);border-radius:var(--rx);padding:18px;backdrop-filter:blur(12px);margin-bottom:16px;position:relative;overflow:hidden}
+    .mu-hero::before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 0% 0%,rgba(30,215,96,.10),transparent 55%);pointer-events:none}
+    .mu-cover{width:132px;height:132px;border-radius:14px;object-fit:cover;background:rgba(255,255,255,.05);flex-shrink:0;box-shadow:0 8px 28px rgba(0,0,0,.45)}
+    @media(max-width:560px){.mu-cover{width:100%;height:auto;aspect-ratio:1/1;max-width:260px;margin:0 auto}}
+    .mu-main{flex:1;min-width:220px;position:relative}
+    .mu-title{font-size:20px;font-weight:800;letter-spacing:-.03em;overflow-wrap:anywhere}
+    .mu-sub{font-size:13px;color:var(--text2);margin-top:3px;overflow-wrap:anywhere}
+    .mu-progress{display:flex;align-items:center;gap:10px;margin:14px 0 10px;font-size:11.5px;color:var(--text2);font-variant-numeric:tabular-nums}
+    .mu-bar{flex:1;height:6px;border-radius:99px;background:rgba(255,255,255,.08);cursor:pointer;position:relative}
+    .mu-bar-fill{position:absolute;left:0;top:0;bottom:0;border-radius:99px;background:linear-gradient(90deg,#1ed760,#5eead4);width:0}
+    .mu-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .mu-btn{position:relative;width:38px;height:38px;border-radius:50%;border:1px solid var(--border);background:rgba(255,255,255,.04);color:var(--text);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s;flex-shrink:0}
+    .mu-btn:hover{border-color:var(--border2);background:rgba(255,255,255,.08)}
+    .mu-btn svg{width:16px;height:16px}
+    .mu-btn.on{color:#1ed760;border-color:rgba(30,215,96,.35)}
+    .mu-btn.big{width:50px;height:50px;background:#1ed760;color:#04130a;border:none}
+    .mu-btn.big:hover{background:#3be477}
+    .mu-btn.big svg{width:22px;height:22px}
+    .mu-btn.liked{color:#1ed760}
+    .mu-extra{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap}
+    .mu-extra input[type=range]{flex:1;min-width:100px;max-width:200px;accent-color:#1ed760}
+    .mu-extra select{max-width:200px;padding:6px 10px}
+    .mu-msg{font-size:12.5px;min-height:18px;margin-top:8px;color:var(--text2)}
+    .mu-msg.error{color:#fca5a5}.mu-msg.ok{color:var(--green)}
+    .mu-search{display:flex;gap:8px;margin-bottom:10px}
+    .mu-search input{flex:1;min-width:0}
+    .mu-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+    .mu-section{margin-bottom:22px}
+    .mu-section-title{font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+    .mu-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}
+    .mu-card{background:var(--glass);border:1px solid var(--border);border-radius:var(--rl);padding:10px;cursor:pointer;transition:all .15s;min-width:0}
+    .mu-card:hover{border-color:rgba(30,215,96,.3);transform:translateY(-2px)}
+    .mu-card img,.mu-card .mu-ph{width:100%;aspect-ratio:1/1;border-radius:10px;object-fit:cover;background:rgba(255,255,255,.05);display:block}
+    .mu-card.round img,.mu-card.round .mu-ph{border-radius:50%}
+    .mu-card-name{font-size:13px;font-weight:600;margin-top:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .mu-card-sub{font-size:11.5px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .mu-list{display:flex;flex-direction:column;gap:6px}
+    .mu-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--r);background:rgba(255,255,255,.02)}
+    .mu-row:hover{border-color:var(--border2)}
+    .mu-row img,.mu-row .mu-ph{width:40px;height:40px;border-radius:6px;object-fit:cover;background:rgba(255,255,255,.05);flex-shrink:0}
+    .mu-row-info{flex:1;min-width:0}
+    .mu-row-name{font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .mu-row-sub{font-size:12px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .mu-row-actions{display:flex;gap:6px;flex-shrink:0}
+    .mu-connect{text-align:center;padding:36px 18px;background:var(--glass);border:1px solid var(--border);border-radius:var(--rx)}
+    .mu-connect p{color:var(--text2);font-size:13.5px;margin:8px auto 16px;max-width:460px}
     .save-bar{display:flex;align-items:center;gap:10px;padding-top:4px}
     .save-toast{font-size:12px;color:var(--green);font-weight:600;opacity:0;transition:opacity .3s}
     .save-toast.show{opacity:1}
@@ -487,6 +534,63 @@ HTML_PAGE = """<!doctype html>
             <input id="msgInput" type="text" placeholder="cassandra, o que você pode fazer?"/>
             <button class="chat-send" id="sendBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
           </div>
+        </div>
+      </div>
+
+      <!-- ══ MÚSICA ══ -->
+      <div class="tab-panel hidden" id="tab-music">
+        <div class="sec-hdr"><span class="sec-title">Música</span><span class="count-badge" id="muDeviceBadge">Spotify</span></div>
+
+        <div class="mu-connect" id="muConnect" style="display:none">
+          <div style="font-size:15px;font-weight:700" id="muConnectTitle">Conecte o Spotify</div>
+          <p id="muConnectText">Conecte sua conta (Premium) para a Cassandra tocar o que você pedir, por voz ou por aqui.</p>
+          <button class="btn btn-primary" id="muConnectBtn">Conectar Spotify</button>
+        </div>
+
+        <div id="muBody" style="display:none">
+          <div class="mu-hero">
+            <img class="mu-cover" id="muCover" alt=""/>
+            <div class="mu-main">
+              <div class="mu-title" id="muTitle">Nada tocando</div>
+              <div class="mu-sub" id="muSub">Busque abaixo ou diga "Cassandra, toca …"</div>
+              <div class="mu-progress"><span id="muPos">0:00</span><div class="mu-bar" id="muBar"><div class="mu-bar-fill" id="muFill"></div></div><span id="muDur">0:00</span></div>
+              <div class="mu-controls">
+                <button class="mu-btn" id="muShuffle" title="Aleatório"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg></button>
+                <button class="mu-btn" data-mu="previous" title="Anterior"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
+                <button class="mu-btn big" id="muToggle" title="Tocar/pausar"><svg viewBox="0 0 24 24" fill="currentColor" id="muToggleIcon"><path d="M8 5v14l11-7z"/></svg></button>
+                <button class="mu-btn" data-mu="next" title="Próxima"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
+                <button class="mu-btn" id="muRepeat" title="Repetir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg><span id="muRepeatOne" style="position:absolute;font-size:8px;font-weight:800;display:none">1</span></button>
+                <button class="mu-btn" id="muLike" title="Curtir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" id="muLikeIcon"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg></button>
+              </div>
+              <div class="mu-extra">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--text2)"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>
+                <input type="range" id="muVol" min="0" max="100" value="50" title="Volume da música"/>
+                <select id="muDevice" class="settings-select" title="Tocar em"></select>
+              </div>
+              <div class="mu-msg" id="muMsg"></div>
+            </div>
+          </div>
+
+          <div class="mu-search">
+            <input type="text" id="muQuery" placeholder="Buscar música, artista, álbum ou playlist…"/>
+            <button class="btn btn-primary" id="muSearchBtn">Buscar</button>
+          </div>
+          <div class="mu-chips">
+            <button class="btn btn-ghost btn-sm" data-mu="liked">❤ Minhas curtidas</button>
+            <button class="btn btn-ghost btn-sm" data-mu="top">★ Mais ouvidas</button>
+            <button class="btn btn-ghost btn-sm" data-mu-ask="música pra relaxar">Relaxar</button>
+            <button class="btn btn-ghost btn-sm" data-mu-ask="música pra animar">Animar</button>
+            <button class="btn btn-ghost btn-sm" data-mu-ask="lo-fi pra estudar">Foco</button>
+            <button class="btn btn-ghost btn-sm" data-mu-ask="rock clássico">Rock</button>
+            <button class="btn btn-ghost btn-sm" data-mu-ask="sertanejo">Sertanejo</button>
+            <button class="btn btn-ghost btn-sm" data-mu-ask="MPB">MPB</button>
+          </div>
+
+          <div id="muResults"></div>
+
+          <div class="mu-section" id="muQueueSec" style="display:none"><div class="mu-section-title">A seguir</div><div class="mu-list" id="muQueue"></div></div>
+          <div class="mu-section"><div class="mu-section-title">Suas playlists</div><div class="mu-grid" id="muPlaylists"><div class="bt-empty">Carregando…</div></div></div>
+          <div class="mu-section" id="muRecentSec" style="display:none"><div class="mu-section-title">Tocadas recentemente</div><div class="mu-list" id="muRecent"></div></div>
         </div>
       </div>
 
@@ -655,6 +759,10 @@ HTML_PAGE = """<!doctype html>
               <div class="settings-row-control"><label class="toggle"><input type="checkbox" id="mod-chat" checked/><span class="toggle-slider"></span></label></div>
             </div>
             <div class="settings-row">
+              <div class="settings-row-info"><div class="settings-row-label">Música</div><div class="settings-row-desc">Spotify: tocar, buscar, playlists e controles</div></div>
+              <div class="settings-row-control"><label class="toggle"><input type="checkbox" id="mod-music" checked/><span class="toggle-slider"></span></label></div>
+            </div>
+            <div class="settings-row">
               <div class="settings-row-info"><div class="settings-row-label">Compras</div><div class="settings-row-desc">Lista de compras com voz</div></div>
               <div class="settings-row-control"><label class="toggle"><input type="checkbox" id="mod-shopping" checked/><span class="toggle-slider"></span></label></div>
             </div>
@@ -785,6 +893,7 @@ HTML_PAGE = """<!doctype html>
               <div class="settings-row-info"><div class="settings-row-label">Conta</div><div class="settings-row-desc" id="sp-account">Verificando…</div></div>
               <div class="settings-row-control" style="gap:8px">
                 <button class="btn btn-primary btn-sm" id="sp-connect" style="display:none">Conectar Spotify</button>
+                <button class="btn btn-ghost btn-sm" id="sp-renew" style="display:none" title="Faz o login de novo (o Spotify pede a cada 180 dias)">Renovar credenciais</button>
                 <button class="btn btn-ghost btn-sm" id="sp-disconnect" style="display:none">Desconectar</button>
               </div>
             </div>
@@ -938,6 +1047,7 @@ HTML_PAGE = """<!doctype html>
 const IC = {
   dashboard:`<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`,
   chat:     `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>`,
+  music:    `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`,
   shopping: `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg>`,
   todos:    `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>`,
   alarms:   `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>`,
@@ -954,6 +1064,7 @@ const IC = {
 const ALL_TABS = [
   {id:"dashboard", label:"Dashboard"},
   {id:"chat",      label:"Chat"},
+  {id:"music",     label:"Música"},
   {id:"shopping",  label:"Compras"},
   {id:"todos",     label:"Tarefas"},
   {id:"alarms",    label:"Alarmes"},
@@ -962,7 +1073,7 @@ const ALL_TABS = [
   {id:"settings",  label:"Config."},
 ];
 const PAGE_TITLES = {
-  dashboard:"Dashboard",chat:"Chat",shopping:"Compras",
+  dashboard:"Dashboard",chat:"Chat",music:"Música",shopping:"Compras",
   todos:"Tarefas",alarms:"Alarmes",routines:"Rotinas",agenda:"Agenda",settings:"Configurações",
 };
 const DAY_NAMES = ["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"];
@@ -999,8 +1110,8 @@ function buildNav(container,visibleTabs){
 
 function buildBottomNav(visibleTabs){
   const BN=document.getElementById("bottomNav");
-  // Show max 6 items on bottom nav (settings is the last)
-  const items=visibleTabs.slice(0,6);
+  // Até 6 itens: os 5 primeiros e Configurações sempre por último (as outras abas ficam no menu ☰)
+  const items=[...visibleTabs.filter(t=>t.id!=="settings").slice(0,5),...visibleTabs.filter(t=>t.id==="settings")];
   BN.innerHTML=items.map(t=>
     `<button class="bn-item${t.id==="dashboard"?" active":""}" data-tab="${t.id}">
       ${IC[t.id]}<span>${t.label}</span><div class="bn-dot"></div>
@@ -1028,6 +1139,7 @@ function gotoTab(tab){
   document.querySelectorAll(".nav-item,[data-tab]").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));
   document.getElementById("pageTitle").textContent=PAGE_TITLES[tab]||tab;
   closeMobileMenu();
+  if(tab==="music") muOpen();
 }
 
 // ── Sidebar ──
@@ -1162,6 +1274,7 @@ function applySettingsToForm(s){
   currentSettings=s;
   const m=s.modules||{};
   document.getElementById("mod-chat").checked=m.chat!==false;
+  document.getElementById("mod-music").checked=m.music!==false;
   document.getElementById("mod-shopping").checked=m.shopping!==false;
   document.getElementById("mod-todos").checked=m.todos!==false;
   document.getElementById("mod-alarms").checked=m.alarms!==false;
@@ -1191,6 +1304,7 @@ function collectSettingsFromForm(){
   return {
     modules:{
       chat:document.getElementById("mod-chat").checked,
+      music:document.getElementById("mod-music").checked,
       shopping:document.getElementById("mod-shopping").checked,
       todos:document.getElementById("mod-todos").checked,
       alarms:document.getElementById("mod-alarms").checked,
@@ -1696,7 +1810,13 @@ function renderSpotify(d){
   if(!d.configured){acc.textContent="Falta o SPOTIFY_CLIENT_ID no .env da Cassandra";con.style.display="none";dis.style.display="none";devRow.style.display="none";player.style.display="none";return;}
   if(!d.connected){acc.textContent="Não conectada — conecte para ela tocar o que você pedir (conta Premium)";con.style.display="";dis.style.display="none";devRow.style.display="none";player.style.display="none";return;}
   con.style.display="none"; dis.style.display="";
-  acc.innerHTML=d.error?`<span style="color:#fca5a5">${esc(d.error)}</span>`:`Conectada como <b>${esc(d.user||"")}</b>${d.premium===false?' — <span style="color:#fca5a5">precisa de Premium para tocar</span>':""}`;
+  const renew=document.getElementById("sp-renew");
+  renew.style.display="";
+  const days=d.expires_at?Math.floor((d.expires_at*1000-Date.now())/86400000):null;
+  renew.className="btn btn-sm "+(d.expired||(days!==null&&days<=14)?"btn-warn":"btn-ghost");
+  renew.textContent=d.expired?"Renovar credenciais (expirou)":"Renovar credenciais";
+  const validity=days===null?"":(days>0?` · login vale por mais ${days} dia${days>1?"s":""}`:" · login vencido");
+  acc.innerHTML=d.error?`<span style="color:#fca5a5">${esc(d.error)}</span>`:`Conectada como <b>${esc(d.user||"")}</b>${d.premium===false?' — <span style="color:#fca5a5">precisa de Premium para tocar</span>':""}${validity}`;
   devRow.style.display=""; player.style.display="";
   document.getElementById("sp-device-name").textContent=d.device_name;
   const chip=document.getElementById("sp-device-chip");
@@ -1714,9 +1834,9 @@ function renderSpotify(d){
 }
 function spMsg(text,state){const m=document.getElementById("sp-msg");m.className="bt-job "+(state||"");m.textContent=text||"";}
 async function loadSpotify(){try{renderSpotify(await api("/api/spotify/status"));}catch(e){console.error("Spotify:",e);}}
-document.getElementById("sp-connect").addEventListener("click",()=>{
-  window.location.href="/api/spotify/login?origin="+encodeURIComponent(window.location.origin);
-});
+function spLogin(){window.location.href="/api/spotify/login?origin="+encodeURIComponent(window.location.origin);}
+document.getElementById("sp-connect").addEventListener("click",spLogin);
+document.getElementById("sp-renew").addEventListener("click",spLogin);
 document.getElementById("sp-disconnect").addEventListener("click",async()=>{
   if(!confirm("Desconectar a conta do Spotify da Cassandra?")) return;
   try{renderSpotify(await api("/api/spotify/disconnect","POST",{}));spMsg("");}catch(e){alert(e.message);}
@@ -1736,6 +1856,136 @@ async function spPlay(){
 }
 document.getElementById("sp-play").addEventListener("click",spPlay);
 enter(document.getElementById("sp-query"),spPlay);
+// ── Aba Música ──
+let muView=null, muTick=null, muPoll=null, muLibLoaded=false, muVolTimer=null;
+const muFmt=ms=>{ms=Math.max(0,ms||0);const s=Math.floor(ms/1000);return Math.floor(s/60)+":"+String(s%60).padStart(2,"0");};
+function muSay(text,state){const m=document.getElementById("muMsg");m.className="mu-msg "+(state||"");m.textContent=text||"";}
+const MU_PH='<div class="mu-ph"></div>';
+function muImg(src){return src?`<img src="${esc(src)}" alt="" loading="lazy"/>`:MU_PH;}
+function muRow(i,ctx){
+  return `<div class="mu-row">${muImg(i.image)}<div class="mu-row-info"><div class="mu-row-name">${esc(i.name)}</div><div class="mu-row-sub">${esc(i.subtitle||"")}</div></div>
+    <div class="mu-row-actions">
+      <button class="btn btn-ghost btn-icon" title="Pôr na fila" data-mu-act="queue" data-uri="${esc(i.uri)}" data-name="${esc(i.name)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="15" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="11" y2="18"/><line x1="19" y1="14" x2="19" y2="22"/><line x1="15" y1="18" x2="23" y2="18"/></svg></button>
+      <button class="btn btn-primary btn-icon" title="Tocar" data-mu-act="play_uri" data-uri="${esc(i.uri)}" data-name="${esc(i.name)}" data-ctx="${esc(ctx||"")}"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
+    </div></div>`;
+}
+function muCard(i){
+  return `<div class="mu-card${i.type==="artist"?" round":""}" data-mu-act="play_uri" data-uri="${esc(i.uri)}" data-name="${esc(i.name)}" title="Tocar ${esc(i.name)}">${muImg(i.image)}<div class="mu-card-name">${esc(i.name)}</div><div class="mu-card-sub">${esc(i.subtitle||"")}</div></div>`;
+}
+function renderMusic(v){
+  muView=v;
+  const connect=document.getElementById("muConnect"), body=document.getElementById("muBody");
+  const badge=document.getElementById("muDeviceBadge");
+  if(!v.connected||v.expired){
+    connect.style.display=""; body.style.display="none";
+    document.getElementById("muConnectTitle").textContent=v.expired?"O login do Spotify expirou":"Conecte o Spotify";
+    document.getElementById("muConnectBtn").textContent=v.expired?"Renovar credenciais":"Conectar Spotify";
+    badge.textContent="Spotify desconectado"; return;
+  }
+  connect.style.display="none"; body.style.display="";
+  badge.textContent=v.device_online?`${v.device_name} online`:`${v.device_name} fora do ar`;
+  badge.style.color=v.device_online?"var(--green)":"var(--amber)";
+  const t=v.track;
+  document.getElementById("muTitle").textContent=t?t.name:"Nada tocando";
+  document.getElementById("muSub").textContent=t?[t.subtitle,t.album].filter(Boolean).join(" · "):(v.device_online?'Busque abaixo ou diga "Cassandra, toca …"':`Abra o app do Spotify no celular (mesmo Wi-Fi) e escolha "${v.device_name}" uma vez`);
+  const cover=document.getElementById("muCover");
+  if(t&&(t.image_large||t.image)){cover.src=t.image_large||t.image;cover.style.visibility="";}else{cover.removeAttribute("src");cover.style.visibility="hidden";}
+  document.getElementById("muToggleIcon").innerHTML=v.is_playing?'<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>':'<path d="M8 5v14l11-7z"/>';
+  document.getElementById("muShuffle").classList.toggle("on",!!v.shuffle);
+  document.getElementById("muRepeat").classList.toggle("on",v.repeat&&v.repeat!=="off");
+  document.getElementById("muRepeatOne").style.display=v.repeat==="track"?"":"none";
+  const like=document.getElementById("muLike");
+  like.classList.toggle("liked",!!(t&&t.liked));
+  document.getElementById("muLikeIcon").setAttribute("fill",t&&t.liked?"currentColor":"none");
+  like.disabled=!t;
+  if(v.device&&v.device.volume!=null&&document.activeElement!==document.getElementById("muVol")) document.getElementById("muVol").value=v.device.volume;
+  const sel=document.getElementById("muDevice");
+  if(document.activeElement!==sel){
+    const devs=v.devices||[];
+    sel.innerHTML=devs.length?devs.map(d=>`<option value="${esc(d.id)}" ${d.active?"selected":""}>${esc(d.name)}${d.active?" (tocando)":""}</option>`).join(""):'<option value="">Nenhum dispositivo</option>';
+    if(!devs.some(d=>d.active)&&devs.length) sel.insertAdjacentHTML("afterbegin",'<option value="" selected>Escolher onde tocar…</option>');
+  }
+  if(v.error) muSay(v.error,"error");
+  muProgress(true);
+}
+function muProgress(reset){
+  clearInterval(muTick);
+  const t=muView&&muView.track; if(!t) {document.getElementById("muFill").style.width="0";document.getElementById("muPos").textContent="0:00";document.getElementById("muDur").textContent="0:00";return;}
+  const start=Date.now(), base=t.progress_ms;
+  const draw=()=>{
+    const pos=Math.min(t.duration_ms,base+(muView.is_playing?Date.now()-start:0));
+    document.getElementById("muFill").style.width=(t.duration_ms?pos/t.duration_ms*100:0)+"%";
+    document.getElementById("muPos").textContent=muFmt(pos);
+    document.getElementById("muDur").textContent=muFmt(t.duration_ms);
+    if(muView.is_playing&&pos>=t.duration_ms) setTimeout(loadMusic,1200);
+  };
+  draw(); if(muView.is_playing) muTick=setInterval(draw,1000);
+}
+async function loadMusic(){try{renderMusic(await api("/api/spotify/player"));}catch(e){muSay(e.message,"error");}}
+async function loadMusicLibrary(){
+  try{
+    const d=await api("/api/spotify/library");
+    document.getElementById("muPlaylists").innerHTML=(d.playlists||[]).length?d.playlists.map(muCard).join(""):'<div class="bt-empty">Nenhuma playlist na sua conta.</div>';
+    document.getElementById("muQueueSec").style.display=(d.queue||[]).length?"":"none";
+    document.getElementById("muQueue").innerHTML=(d.queue||[]).map(i=>muRow(i)).join("");
+    document.getElementById("muRecentSec").style.display=(d.recent||[]).length?"":"none";
+    document.getElementById("muRecent").innerHTML=(d.recent||[]).map(i=>muRow(i,i.context_uri)).join("");
+    muLibLoaded=true;
+  }catch(e){document.getElementById("muPlaylists").innerHTML=`<div class="bt-empty">${esc(e.message)}</div>`;}
+}
+function muOpen(){
+  loadMusic().then(()=>{if(muView&&muView.connected&&!muView.expired&&!muLibLoaded) loadMusicLibrary();});
+  clearInterval(muPoll); muPoll=setInterval(()=>{if(!document.getElementById("tab-music").classList.contains("hidden")) loadMusic(); else clearInterval(muPoll);},8000);
+}
+async function muControl(action,extra){
+  try{const d=await api("/api/spotify/control","POST",{action,...(extra||{})});if(d.message)muSay(d.message,"ok");setTimeout(loadMusic,700);if(["play_uri","queue","liked","top"].includes(action))setTimeout(loadMusicLibrary,2500);}
+  catch(e){muSay(e.message,"error");}
+}
+async function muAsk(text){
+  muSay("Procurando…");
+  try{const d=await api("/api/spotify/play","POST",{query:text});muSay(d.message,"ok");setTimeout(loadMusic,1200);}catch(e){muSay(e.message,"error");}
+}
+async function muSearch(){
+  const q=document.getElementById("muQuery").value.trim(); if(!q) return;
+  const box=document.getElementById("muResults"); box.innerHTML='<div class="bt-empty">Buscando…</div>';
+  try{
+    const d=await api("/api/spotify/search?q="+encodeURIComponent(q));
+    const sec=(title,html)=>html?`<div class="mu-section"><div class="mu-section-title">${title}</div>${html}</div>`:"";
+    box.innerHTML=
+      sec("Músicas",(d.track||[]).length?`<div class="mu-list">${d.track.map(i=>muRow(i,i.context_uri)).join("")}</div>`:"")+
+      sec("Artistas",(d.artist||[]).length?`<div class="mu-grid">${d.artist.map(muCard).join("")}</div>`:"")+
+      sec("Álbuns",(d.album||[]).length?`<div class="mu-grid">${d.album.map(muCard).join("")}</div>`:"")+
+      sec("Playlists",(d.playlist||[]).length?`<div class="mu-grid">${d.playlist.map(muCard).join("")}</div>`:"")
+      ||'<div class="bt-empty">Nada encontrado.</div>';
+  }catch(e){box.innerHTML=`<div class="bt-empty">${esc(e.message)}</div>`;}
+}
+document.getElementById("muSearchBtn").addEventListener("click",muSearch);
+enter(document.getElementById("muQuery"),muSearch);
+document.getElementById("muConnectBtn").addEventListener("click",spLogin);
+document.getElementById("muToggle").addEventListener("click",()=>muControl(muView&&muView.is_playing?"pause":"resume"));
+document.getElementById("muShuffle").addEventListener("click",()=>muControl("shuffle",{on:!(muView&&muView.shuffle)}));
+document.getElementById("muRepeat").addEventListener("click",()=>{
+  const next={off:"context",context:"track",track:"off"}[(muView&&muView.repeat)||"off"];
+  muControl("repeat",{mode:next});
+});
+document.getElementById("muLike").addEventListener("click",()=>muControl(muView&&muView.track&&muView.track.liked?"unlike":"like"));
+document.getElementById("muBar").addEventListener("click",e=>{
+  const t=muView&&muView.track; if(!t||!t.duration_ms) return;
+  const r=e.currentTarget.getBoundingClientRect();
+  const pos=Math.round((e.clientX-r.left)/r.width*t.duration_ms);
+  t.progress_ms=pos; muProgress(); muControl("seek",{position_ms:pos});
+});
+document.getElementById("muVol").addEventListener("input",e=>{
+  clearTimeout(muVolTimer); muVolTimer=setTimeout(()=>muControl("volume",{level:+e.target.value}),250);
+});
+document.getElementById("muDevice").addEventListener("change",e=>{if(e.target.value) muControl("transfer",{device_id:e.target.value});});
+document.getElementById("tab-music").addEventListener("click",e=>{
+  const act=e.target.closest("[data-mu-act]");
+  if(act){e.stopPropagation();muControl(act.dataset.muAct,{uri:act.dataset.uri,name:act.dataset.name,context_uri:act.dataset.ctx||null});return;}
+  const b=e.target.closest("[data-mu]"); if(b){muControl(b.dataset.mu);return;}
+  const ask=e.target.closest("[data-mu-ask]"); if(ask) muAsk(ask.dataset.muAsk);
+});
+
 (function(){ // volta do login do Spotify
   const p=new URLSearchParams(window.location.search).get("spotify");
   if(!p) return;
@@ -1797,6 +2047,49 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
             self.send_header("Content-Length", "0")
             self.end_headers()
 
+        @staticmethod
+        def _spotify_control(sp, skill, what: str, data: dict) -> str | None:
+            """Botões da aba Música. None = ação desconhecida."""
+            if what in ("pause", "resume", "next", "previous"):
+                return skill._run({"action": what})
+            if what == "shuffle":
+                return skill._run({"action": "shuffle", "on": bool(data.get("on"))})
+            if what == "repeat":
+                return skill._run({"action": "repeat", "mode": str(data.get("mode", "off"))})
+            if what == "volume":
+                return f"Volume da música em {sp.set_volume(int(data.get('level', 50)))}%."
+            if what == "seek":
+                sp.seek(int(data.get("position_ms", 0)))
+                return ""
+            if what in ("like", "unlike"):
+                return skill._run({"action": "save" if what == "like" else "unsave"})
+            if what == "transfer":
+                device_id = str(data.get("device_id", ""))
+                if not device_id:
+                    return None
+                sp.transfer(device_id, play=True)
+                return "Tocando no dispositivo escolhido."
+            if what in ("liked", "top"):
+                return skill._run({"action": "play", "kind": what})
+            if what in ("play_uri", "queue"):
+                uri = str(data.get("uri", ""))
+                if not uri.startswith("spotify:"):
+                    return None
+                name = str(data.get("name", "")).strip()
+                if what == "queue":
+                    sp.queue(uri)
+                    return f"{name or 'Música'} vai tocar em seguida."
+                context = str(data.get("context_uri") or "")
+                if uri.split(":")[1] in ("track", "episode"):
+                    if context.startswith("spotify:"):
+                        sp.play(context_uri=context, offset={"uri": uri})
+                    else:
+                        sp.play(uris=[uri])
+                else:
+                    sp.play(context_uri=uri)
+                return f"Tocando {name}." if name else "Tocando."
+            return None
+
         def _spotify_post(self, action: str, data: dict) -> None:
             sp = spotify_api.client
             if action == "disconnect":
@@ -1806,13 +2099,12 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
             skill = assistant.spotify_skill
             try:
                 if action == "control":
-                    what = str(data.get("action", ""))
-                    if what not in ("pause", "resume", "next", "previous"):
-                        self._send_json({"error": "action inválida"}, status=HTTPStatus.BAD_REQUEST)
-                        return
                     if not sp.connected:
                         raise spotify_api.SpotifyError("Conecte a conta do Spotify primeiro.")
-                    message = skill._run({"action": what})
+                    message = self._spotify_control(sp, skill, str(data.get("action", "")), data)
+                    if message is None:
+                        self._send_json({"error": "action inválida"}, status=HTTPStatus.BAD_REQUEST)
+                        return
                 elif action == "play":
                     query = str(data.get("query", "")).strip()
                     if not query:
@@ -1829,6 +2121,33 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                 self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_GATEWAY)
                 return
             self._send_json({"ok": True, "message": message})
+
+        def _spotify_get(self, parsed) -> None:
+            sp = spotify_api.client
+            if parsed.path == "/api/spotify/player":
+                self._send_json(sp.player_view())
+                return
+            if not sp.connected:
+                self._send_json({"error": "Conecte a conta do Spotify primeiro."}, status=HTTPStatus.CONFLICT)
+                return
+            view = spotify_api.item_view
+            try:
+                if parsed.path == "/api/spotify/search":
+                    q = (parse_qs(parsed.query).get("q") or [""])[0].strip()
+                    if not q:
+                        self._send_json({"error": "q is required"}, status=HTTPStatus.BAD_REQUEST)
+                        return
+                    found = sp.search_all(q)
+                    self._send_json({kind: [view(i) for i in items] for kind, items in found.items()})
+                    return
+                # library: suas playlists, a fila e as tocadas recentemente
+                self._send_json({
+                    "playlists": [view(p) for p in sp.my_playlists(100)],
+                    "queue": [view(i) for i in sp.queue_items()[:10]],
+                    "recent": [view(t) for t in sp.recently_played(12)],
+                })
+            except spotify_api.SpotifyError as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_GATEWAY)
 
         def do_GET(self) -> None:
             parsed = urlparse(self.path)
@@ -1874,6 +2193,9 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                 return
             if parsed.path == "/api/spotify/status":
                 self._send_json(spotify_api.client.status())
+                return
+            if parsed.path in ("/api/spotify/player", "/api/spotify/search", "/api/spotify/library"):
+                self._spotify_get(parsed)
                 return
             if parsed.path == "/api/spotify/login":
                 origin = (parse_qs(parsed.query).get("origin") or [""])[0]

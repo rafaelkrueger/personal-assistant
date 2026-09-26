@@ -117,6 +117,7 @@ class SpotifyClient:
             "grant_type": "authorization_code", "code": code, "redirect_uri": redirect,
             "client_id": self.client_id, "code_verifier": verifier,
         })
+        token["authorized_at"] = time.time()  # o refresh token vale 180 dias a partir daqui (modo dev)
         self._save_token(token)
         self._me = None
 
@@ -134,8 +135,11 @@ class SpotifyClient:
         except (urllib.error.URLError, OSError) as exc:
             raise SpotifyError(f"Sem conexão com o Spotify: {exc}") from exc
         data["expires_at"] = time.time() + int(data.get("expires_in", 3600)) - 60
-        if not data.get("refresh_token") and self._token:
-            data["refresh_token"] = self._token.get("refresh_token")
+        if self._token:
+            if not data.get("refresh_token"):
+                data["refresh_token"] = self._token.get("refresh_token")
+            if self._token.get("authorized_at"):
+                data["authorized_at"] = self._token["authorized_at"]
         return data
 
     def _access_token(self) -> str:
@@ -151,7 +155,7 @@ class SpotifyClient:
                 except SpotifyError as exc:
                     if exc.status in (400, 401):
                         raise SpotifyError("O login do Spotify expirou — conecte a conta de novo "
-                                           "(Configurações > Spotify).", exc.status) from exc
+                                           "(Configurações > Spotify).", exc.status, "EXPIRED") from exc
                     raise
                 self._save_token(token)
             return self._token["access_token"]
@@ -318,10 +322,61 @@ class SpotifyClient:
                 raise
             self.api(method, "/me/library", {"uris": track["uri"]})  # endpoint novo da biblioteca
 
+    def seek(self, position_ms: int) -> None:
+        self._player("PUT", "/me/player/seek", {"position_ms": max(0, int(position_ms))})
+
+    def transfer(self, device_id: str, play: bool = True) -> None:
+        self.api("PUT", "/me/player", body={"device_ids": [device_id], "play": play})
+
+    def queue_items(self) -> list[dict[str, Any]]:
+        try:
+            return [i for i in (self.api("GET", "/me/player/queue") or {}).get("queue", []) if i]
+        except SpotifyError:
+            return []
+
+    def recently_played(self, limit: int = 10) -> list[dict[str, Any]]:
+        try:
+            page = self.api("GET", "/me/player/recently-played", {"limit": min(limit, 50)}) or {}
+        except SpotifyError:
+            return []
+        seen, out = set(), []
+        for i in page.get("items", []):
+            track = (i or {}).get("track")
+            if track and track.get("uri") not in seen:
+                seen.add(track["uri"])
+                out.append(track)
+        return out
+
+    def is_saved(self, track: dict[str, Any]) -> bool | None:
+        try:
+            data = self.api("GET", "/me/tracks/contains", {"ids": track["id"]})
+        except SpotifyError as exc:
+            if exc.status not in (404, 410):
+                return None
+            try:
+                data = self.api("GET", "/me/library/contains", {"uris": track["uri"]})
+            except SpotifyError:
+                return None
+        return bool(data[0]) if isinstance(data, list) and data else None
+
+    def search_all(self, query: str, limit: int = 6) -> dict[str, list[dict[str, Any]]]:
+        data = self.api("GET", "/search", {"q": query, "type": "track,artist,album,playlist",
+                                           "limit": min(limit, 10), "market": "from_token"}) or {}
+        return {kind: [i for i in (data.get(f"{kind}s") or {}).get("items", []) if i]
+                for kind in ("track", "artist", "album", "playlist")}
+
+    def token_info(self) -> dict[str, Any]:
+        """Quando a conta foi autorizada e até quando vale (apps em modo dev: 180 dias)."""
+        if not self._token:
+            return {}
+        authorized = self._token.get("authorized_at")
+        return {"authorized_at": authorized,
+                "expires_at": authorized + 180 * 86400 if authorized else None}
+
     # ── resumo para a UI ──
     def status(self) -> dict[str, Any]:
         info: dict[str, Any] = {"configured": self.configured, "connected": self.connected,
-                                "device_name": self.device_name}
+                                "device_name": self.device_name, **self.token_info()}
         if not self.connected:
             return info
         try:
@@ -346,7 +401,70 @@ class SpotifyClient:
                 }
         except SpotifyError as exc:
             info["error"] = str(exc)
+            info["expired"] = exc.reason == "EXPIRED"
         return info
+
+    # ── aba Música da UI ──
+    def player_view(self) -> dict[str, Any]:
+        view: dict[str, Any] = {"connected": self.connected, "device_name": self.device_name}
+        try:
+            devices = self.devices()
+            view["devices"] = [{"id": d.get("id"), "name": d.get("name"), "type": d.get("type"),
+                                "active": d.get("is_active"), "volume": d.get("volume_percent")} for d in devices]
+            view["device_online"] = any((d.get("name") or "").lower() == self.device_name.lower() for d in devices)
+            state = self.playback()
+            if state and state.get("item"):
+                item = state["item"]
+                track = item_view(item)
+                track.update({
+                    "progress_ms": state.get("progress_ms") or 0,
+                    "duration_ms": item.get("duration_ms") or 0,
+                    "album": (item.get("album") or {}).get("name"),
+                    "image_large": image_of(item.get("album") or item, large=True),
+                    "liked": self.is_saved(item) if item.get("type") == "track" else None,
+                })
+                view["track"] = track
+                view["is_playing"] = bool(state.get("is_playing"))
+                view["shuffle"] = bool(state.get("shuffle_state"))
+                view["repeat"] = state.get("repeat_state") or "off"
+                dev = state.get("device") or {}
+                view["device"] = {"id": dev.get("id"), "name": dev.get("name"), "volume": dev.get("volume_percent")}
+        except SpotifyError as exc:
+            view["error"] = str(exc)
+            view["expired"] = exc.reason == "EXPIRED"
+        return view
+
+
+def image_of(obj: dict[str, Any], large: bool = False) -> str | None:
+    images = [i for i in (obj or {}).get("images") or [] if i and i.get("url")]
+    if not images:
+        return None
+    return images[0]["url"] if large else images[-1]["url"]
+
+
+def item_view(item: dict[str, Any]) -> dict[str, Any]:
+    """Uma música/artista/álbum/playlist resumido para a UI."""
+    kind = item.get("type")
+    view = {"type": kind, "uri": item.get("uri"), "id": item.get("id"), "name": item.get("name")}
+    if kind == "track":
+        view["subtitle"] = ", ".join(a.get("name", "") for a in item.get("artists", []))
+        view["image"] = image_of(item.get("album") or {})
+        view["context_uri"] = (item.get("album") or {}).get("uri")
+    elif kind == "episode":
+        view["subtitle"] = (item.get("show") or {}).get("name", "")
+        view["image"] = image_of(item) or image_of(item.get("show") or {})
+    elif kind == "album":
+        view["subtitle"] = ", ".join(a.get("name", "") for a in item.get("artists", []))
+        view["image"] = image_of(item)
+    elif kind == "artist":
+        view["subtitle"] = "Artista"
+        view["image"] = image_of(item)
+    elif kind == "playlist":
+        owner = (item.get("owner") or {}).get("display_name") or ""
+        total = (item.get("tracks") or item.get("items") or {}).get("total")
+        view["subtitle"] = " · ".join(x for x in (owner, f"{total} músicas" if total is not None else "") if x)
+        view["image"] = image_of(item)
+    return view
 
 
 client = SpotifyClient()

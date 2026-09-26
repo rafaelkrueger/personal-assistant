@@ -7,6 +7,7 @@ from pathlib import Path
 _DEFAULTS: dict = {
     "modules": {
         "chat": True,
+        "music": True,
         "shopping": True,
         "todos": True,
         "alarms": True,

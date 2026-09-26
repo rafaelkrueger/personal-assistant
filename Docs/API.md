@@ -365,6 +365,26 @@ Resposta `{ "ok": true, "message": "Tocando Legião Urbana." }`; erros do Spotif
 ### `POST /api/spotify/control`
 **Body:** `{ "action": "pause" | "resume" | "next" | "previous" }`.
 
+### `GET /api/spotify/player` (aba Música)
+Estado completo: `track` (`name`, `subtitle`, `album`, `image_large`, `progress_ms`, `duration_ms`, `liked`),
+`is_playing`, `shuffle`, `repeat`, `device`, `devices` (`id`, `name`, `active`, `volume`), `device_online`.
+
+### `GET /api/spotify/search?q=...`
+`{ "track": [...], "artist": [...], "album": [...], "playlist": [...] }` — cada item com `type`, `uri`, `name`,
+`subtitle`, `image` (músicas também `context_uri`, o álbum).
+
+### `GET /api/spotify/library`
+`{ "playlists": [...suas playlists], "queue": [...a seguir], "recent": [...tocadas recentemente] }`.
+
+### `POST /api/spotify/control` — ações da aba Música
+Além de `pause`/`resume`/`next`/`previous`: `shuffle` (`on`), `repeat` (`mode`: `off|context|track`),
+`volume` (`level` 0-100), `seek` (`position_ms`), `like`/`unlike` (a música atual), `transfer` (`device_id`),
+`liked`/`top` (toca as curtidas / as mais ouvidas), `play_uri` (`uri`, `context_uri` opcional — toca uma
+música dentro do álbum/playlist) e `queue` (`uri`).
+
+`GET /api/spotify/status` traz também `authorized_at`/`expires_at` (o login vale 180 dias) e `expired`; o botão
+**Renovar credenciais** (Configurações > Spotify, e na aba Música quando expira) refaz o login.
+
 ### `POST /api/spotify/disconnect`
 Esquece o login da conta.
 
