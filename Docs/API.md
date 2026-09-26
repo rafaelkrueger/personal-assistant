@@ -95,6 +95,14 @@ internet dependem do web-agent (dezenas de segundos) — pela URL pública, acim
 de ~26 s o Netlify devolve `504` (a Cassandra ainda responde e fala, mas o
 cliente perde o texto; use a URL da rede local para pedidos longos).
 
+### `POST /api/speak`
+**Body:** `{ "text": "O jantar está pronto!" }` (até 1000 caracteres)
+
+Aviso falado na casa: fala **exatamente** o texto (sem passar pelo LLM), depois
+do som de atenção, e registra no histórico (`kind: "announcement"`). Responde
+na hora — a fala sai em segundo plano. `{ "ok": true, "spoken": true }`;
+`spoken: false` quando a voz está desligada nas configurações. `400` sem `text`.
+
 ### `POST /api/reset`
 Limpa a memória e o histórico da conversa e encerra a sessão. `{ "ok": true }`.
 
@@ -284,21 +292,23 @@ A UI web (HTML único, sem build). É a mesma página publicada no Netlify.
 
 ## 12. Integração com o orchestrator
 
-Ainda não existe adapter da Cassandra em `orchestrator/app/adapters/`. Um
-adapter precisa só de:
+O orchestrator tem o adapter `personal-assistant`
+(`orchestrator/app/adapters/personal_assistant_adapter.py`, URL em
+`PERSONAL_ASSISTANT_BASE_URL` no `.env` dele). Ele segue exatamente isto:
 
 1. **Pedido em linguagem natural** → `POST /api/chat` com
    `{"message": "cassandra, <pedido>"}` (sempre com o nome na frente — a sessão
    pode ter sido encerrada por outra pessoa, por voz). Resultado: `reply`.
    Timeout de cliente de ~120 s cobre inclusive buscas via web-agent.
-2. **Pedido estruturado** (quando o orchestrator já sabe exatamente o que
+2. **Aviso falado** (texto exato, sem o LLM reinterpretar) → `POST /api/speak`.
+3. **Pedido estruturado** (quando o orchestrator já sabe exatamente o que
    fazer) → endpoints diretos: `POST /api/shopping/add`, `/api/todos/add`,
    `/api/alarms/add`, `GET /api/dashboard`… São instantâneos, determinísticos e
    não falam em voz alta.
-3. **Status/saúde** → `GET /api/settings` (200 = no ar).
+4. **Status/saúde** → `GET /api/settings` (200 = no ar).
 
 Cuidados para quem despacha:
-- **Tudo que passa por `/api/chat` é falado em voz alta na casa.**
+- **Tudo que passa por `/api/chat` e `/api/speak` é falado em voz alta na casa.**
 - A conversa é **única** e compartilhada com a voz e a UI — um despacho entra no
   mesmo histórico que o usuário vê.
 - Não há conceito de tarefa/`job_id`: a resposta já é o resultado final.

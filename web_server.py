@@ -1619,6 +1619,18 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                 })
                 return
 
+            if parsed.path == "/api/speak":
+                # Aviso falado na casa: o texto exato, sem passar pelo LLM (ex.: o orchestrator avisando algo).
+                text = str(self._read_json_body().get("text", "")).strip()
+                if not text:
+                    self._send_json({"error": "text is required"}, status=HTTPStatus.BAD_REQUEST)
+                    return
+                if len(text) > 1000:
+                    self._send_json({"error": "text too long (max 1000 chars)"}, status=HTTPStatus.BAD_REQUEST)
+                    return
+                self._send_json(assistant.announce(text))
+                return
+
             if parsed.path == "/api/shopping/add":
                 data = self._read_json_body()
                 name = str(data.get("name", "")).strip()

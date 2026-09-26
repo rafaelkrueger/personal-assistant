@@ -64,10 +64,31 @@ técnicos e exemplos de API estão em [`API.md`](./API.md) — este arquivo é s
 
 ## Parâmetros de despacho
 
-Ainda não há adapter da Cassandra no orchestrator. Para integrar, quem
-despacha manda o pedido em linguagem natural em `POST /api/chat`, com o texto
-**começando pelo nome dela** — `{"message": "cassandra, <pedido>"}` — e lê a
-resposta em `reply` (ver [`API.md`](./API.md), seções 2 e 12). Nenhum outro
-parâmetro é necessário. Para operações estruturadas (adicionar item de compra,
-criar alarme, listar tarefas…) há endpoints próprios que não passam pelo LLM e
-**não falam em voz alta** — preferíveis quando o pedido já chega estruturado.
+O orchestrator fala com ela pelo adapter `personal-assistant`
+(`orchestrator/app/adapters/personal_assistant_adapter.py`). Sem nenhum
+parâmetro, o pedido (`task_summary`) vai em linguagem natural para o chat
+dela — **e a resposta é falada em voz alta na casa**. Use assim para
+conversar, avisar alguém em casa ou pedir algo que só ela resolve (timer,
+rotina, agenda).
+
+Para **avisar algo em voz alta na casa** (o texto exato, sem ela
+reinterpretar), use `{"action": "say", "text": "O jantar está pronto!"}`.
+
+Quando o pedido é uma destas operações, prefira mandar `parameters.action`
+estruturado — é instantâneo, não usa o LLM dela e **não fala nada em voz
+alta**:
+
+- `{"action": "shopping_add", "items": ["leite", "pão"]}` — adiciona à lista
+  de compras.
+- `{"action": "todo_add", "title": "pagar a conta de luz"}` — cria uma tarefa.
+- `{"action": "alarm_add", "time_hhmm": "07:30", "label": "Acordar"}` — cria
+  um alarme. Por padrão toca **uma vez** (no próximo 07:30 — "amanhã às 7h30"
+  é isso). Só mande `"recurring_daily": true` quando o pedido disser que
+  repete ("todo dia", "de segunda a sexta"); para dias específicos, junte
+  `"days_of_week": [0, 1, 2, 3, 4]` (0 = segunda … 6 = domingo).
+- `{"action": "status"}` — devolve a lista de compras, as tarefas pendentes e
+  os alarmes ativos (para responder "o que tem na lista de compras?" sem
+  acordar a casa).
+
+Sem `action`, o texto enviado é `parameters.message` (se houver) ou o
+`task_summary`. Detalhes em [`API.md`](./API.md), seção 12.

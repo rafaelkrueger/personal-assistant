@@ -381,6 +381,20 @@ class CassandraAssistant:
 
         threading.Thread(target=run, name="web-speech", daemon=True).start()
 
+    def announce(self, text: str) -> dict[str, bool]:
+        """Fala exatamente `text` na casa (aviso), sem passar pelo LLM: toca o som de atenção, registra no
+        histórico e fala em segundo plano. Respeita a voz desligada nas configurações."""
+        text = (text or "").strip()
+        if not text:
+            raise ValueError("text is required")
+        with self._state_lock:
+            self._append_history(role="assistant", content=text, source="api_speak", kind="announcement")
+        spoken = bool(self.voice_output.enabled)
+        if spoken:
+            self.sound_player.play(self.settings.on_sound_path)
+            self._speak_in_background(text)
+        return {"ok": True, "spoken": spoken}
+
     def get_conversation_history(self) -> list[dict[str, str]]:
         with self._state_lock:
             return [dict(item) for item in self._conversation_history]
