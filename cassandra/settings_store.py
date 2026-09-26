@@ -13,6 +13,8 @@ _DEFAULTS: dict = {
     },
     "voice": {
         "enabled": True,
+        # auto = OpenAI enquanto houver chave/créditos, senão Piper (grátis, local); openai | piper | espeak
+        "engine": "auto",
         "tts_model": "tts-1",
         "tts_voice": "nova",
         "fallback_lang": "pt",

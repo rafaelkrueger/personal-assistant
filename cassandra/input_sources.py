@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import glob
 import os
 import threading
 import time
@@ -60,6 +61,7 @@ class MicrophoneInputSource:
         wake_word_engine: str = "local",
         transcription_provider: str = "auto",
         vosk_model_path: str = "models/vosk-model-small-pt-0.3",
+        wait_for_device: bool = False,
     ) -> None:
         self.llm = llm
         self.transcription_model = transcription_model
@@ -70,6 +72,8 @@ class MicrophoneInputSource:
         self.debug = debug
         self._last_capture_error_at = 0.0
         self.assistant_name = assistant_name
+        self.wait_for_device = wait_for_device
+        self._mic_present: bool | None = None
         self.transcription_provider = transcription_provider
         self._openai_down_until = 0.0
 
@@ -96,6 +100,9 @@ class MicrophoneInputSource:
             wake_phase: When True, uses the shorter wake-word silence threshold
                 so activation is faster after the user says just the assistant name.
         """
+        if self.wait_for_device and not self._check_microphone():
+            time.sleep(3)
+            return InputEvent(text="")
         silence_override = self.vad_wake_silence_duration if wake_phase else None
         try:
             text = self._capture_and_transcribe(silence_override, wake_phase=wake_phase)
@@ -104,6 +111,7 @@ class MicrophoneInputSource:
             if now - self._last_capture_error_at > 5.0:
                 self._last_capture_error_at = now
                 print(f"[MIC] Entrada de audio indisponivel: {exc}")
+            self._recorder.close()  # reabre na próxima: o PortAudio só enxerga aparelhos novos ao reiniciar
             time.sleep(1.0)
             return InputEvent(text="")
         if text.lower() in {"sair", "exit", "quit"}:
@@ -139,6 +147,19 @@ class MicrophoneInputSource:
             print(f"[MIC {ts}] {text or '<silencio>'}")
 
         return text
+
+    def _check_microphone(self) -> bool:
+        """Há algum aparelho de captura (ex.: microfone USB)? Loga só quando muda."""
+        present = bool(glob.glob("/proc/asound/card*/pcm*c"))
+        if present != self._mic_present:
+            if present:
+                print("[MIC] Microfone detectado — ouvindo (diga o nome para chamar).", flush=True)
+                self._recorder.close()  # o PortAudio precisa reiniciar para ver o aparelho novo
+            else:
+                print("[MIC] Nenhum microfone conectado — aguardando você plugar um. "
+                      "O chat da UI continua funcionando.", flush=True)
+            self._mic_present = present
+        return present
 
     def _local_ready(self) -> bool:
         return self.local is not None and self.local.available()

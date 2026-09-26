@@ -81,6 +81,7 @@ As regras abaixo definem o comportamento esperado do produto.
   - `openai_client.py`: `LLMService`, fachada unica do LLM (chat, voz e transcricao).
   - `llm_settings.py`: provider ativo (OpenAI ou DeepSeek), modelo e chaves; editavel pela UI.
   - `local_speech.py`: Vosk offline — detecta o nome sem internet e transcreve localmente quando precisa.
+  - `piper_tts.py`: voz local gratis (Piper), usada quando a voz da OpenAI nao esta disponivel.
   - `router.py`: roteador de skills.
   - `sounds.py`: player para sons de ativacao/desativacao.
   - `voice.py`: saida de voz local (TTS).
@@ -138,6 +139,10 @@ Principais variaveis:
   - `OPENAI_API_KEY`, `OPENAI_MODEL` — a chave da OpenAI tambem e usada para voz e microfone
   - `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL` (padrao `deepseek-flash`)
   - Nenhuma chave e obrigatoria para iniciar; sem a chave do provider ativo o chat responde com erro.
+- Entrada: `INPUT_MODE` (`auto`: microfone quando houver um plugado, esperando em silencio quando nao;
+  `mic`; `text`). A UI web funciona em qualquer modo.
+- Voz: motor escolhido na UI (`voice.engine` em `data/ui_settings.json`: `auto` | `openai` | `piper` |
+  `espeak`); `auto` usa a OpenAI enquanto funcionar e cai no Piper (local, gratis). Audio via `pw-play`.
 - Microfone (detecção do nome e transcrição):
   - `WAKE_WORD_ENGINE` (`local` padrao: Vosk offline detecta o nome no aparelho e descarta fala sem o nome,
     sem chamar API; `openai`: transcreve toda fala na OpenAI e procura o nome no texto)

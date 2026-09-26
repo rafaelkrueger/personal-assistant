@@ -75,7 +75,9 @@ class CassandraAssistant:
             _skills.append(WebSearchSkill(self.llm))
         _skills.append(GeneralChatSkill(self.llm, self.memory))
         self.router = SkillRouter(skills=_skills)
-        if self.settings.input_mode == "mic":
+        if self.settings.input_mode in {"mic", "auto"}:
+            # auto: escuta o microfone quando houver um; sem microfone, espera em silêncio até ele ser plugado.
+            # A UI web funciona em qualquer modo (chat por texto + microfone ao mesmo tempo).
             self.input_source = MicrophoneInputSource(
                 llm=self.llm,
                 transcription_model=self.settings.transcription_model,
@@ -92,6 +94,7 @@ class CassandraAssistant:
                 wake_word_engine=self.settings.wake_word_engine,
                 transcription_provider=self.settings.transcription_provider,
                 vosk_model_path=self.settings.vosk_model_path,
+                wait_for_device=self.settings.input_mode == "auto",
             )
         else:
             self.input_source = TextInputSource()
@@ -103,6 +106,7 @@ class CassandraAssistant:
             fallback_lang=self.settings.voice_lang,
             fallback_rate=self.settings.voice_rate,
         )
+        self._apply_voice_settings(self.settings_store.get().get("voice", {}))
         self.routine_manager._voice = self.voice_output  # conecta após criação
         self.speaker_keepalive = SpeakerKeepAlive(interval_seconds=240)
         self.speaker_keepalive.start()
@@ -122,7 +126,7 @@ class CassandraAssistant:
             f"Diga/digite 'sair' para encerrar."
         )
         print(f"Alias ativos: {', '.join(aliases)} | Modo: {self.settings.input_mode}")
-        if self.settings.input_mode == "mic" and self.settings.mic_debug:
+        if self.settings.input_mode in {"mic", "auto"} and self.settings.mic_debug:
             print(
                 f"[DEBUG] VAD threshold={self.settings.vad_energy_threshold} | "
                 f"wake_silence={self.settings.vad_wake_silence_duration}s | "
@@ -170,14 +174,14 @@ class CassandraAssistant:
                     self.sound_player.play(self.settings.on_sound_path)
                 continue
 
-            if self.settings.mic_debug and self.settings.input_mode == "mic":
+            if self.settings.mic_debug and self.settings.input_mode in {"mic", "auto"}:
                 print(f"[ROUTER] Recebido: {raw_text!r}")
 
             wake_detected, wake_command = self._parse_wake(raw_text)
 
             if active_until is None and not wake_detected:
                 self._log_passive_heard(raw_text)
-                if self.settings.mic_debug and self.settings.input_mode == "mic":
+                if self.settings.mic_debug and self.settings.input_mode in {"mic", "auto"}:
                     print("[WAKE] Ignorado: wake word nao detectada.")
                 continue
 
@@ -484,16 +488,7 @@ class CassandraAssistant:
     def save_ui_settings(self, patch: dict) -> dict:
         updated = self.settings_store.update(patch)
         # Apply voice settings dynamically without restart
-        v = updated.get("voice", {})
-        self.voice_output.enabled = bool(v.get("enabled", True))
-        if hasattr(self.voice_output, "tts_voice"):
-            self.voice_output.tts_voice = str(v.get("tts_voice", self.settings.tts_voice))
-        if hasattr(self.voice_output, "tts_model"):
-            self.voice_output.tts_model = str(v.get("tts_model", self.settings.tts_model))
-        if hasattr(self.voice_output, "fallback_lang"):
-            self.voice_output.fallback_lang = str(v.get("fallback_lang", self.settings.voice_lang))
-        if hasattr(self.voice_output, "fallback_rate"):
-            self.voice_output.fallback_rate = int(v.get("fallback_rate", self.settings.voice_rate))
+        self._apply_voice_settings(updated.get("voice", {}))
         # Apply sounds toggle dynamically
         sounds_on = bool(updated.get("sounds", {}).get("enabled", True))
         self.sound_player.enabled = sounds_on
@@ -501,7 +496,19 @@ class CassandraAssistant:
 
     def reset_ui_settings(self) -> dict:
         self.settings_store.reset()
+        self._apply_voice_settings(self.settings_store.get().get("voice", {}))
         return self.get_ui_settings()
+
+    def _apply_voice_settings(self, v: dict) -> None:
+        """Configurações de voz da UI (data/ui_settings.json) — no start e ao salvar, sem reiniciar."""
+        vo = self.voice_output
+        vo.enabled = bool(v.get("enabled", True))
+        vo.tts_voice = str(v.get("tts_voice", self.settings.tts_voice))
+        vo.tts_model = str(v.get("tts_model", self.settings.tts_model))
+        vo.fallback_lang = str(v.get("fallback_lang", self.settings.voice_lang))
+        vo.fallback_rate = int(v.get("fallback_rate", self.settings.voice_rate))
+        engine = str(v.get("engine", "auto"))
+        vo.engine = engine if engine in vo.ENGINES else "auto"
 
     def remove_alarm(self, alarm_id: str) -> bool:
         return self.alarm_manager.remove_alarm(alarm_id)

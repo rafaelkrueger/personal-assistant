@@ -114,7 +114,8 @@ class LLMService:
         model: str = "tts-1",
         voice: str = "nova",
     ) -> bytes:
-        response = llm_settings.audio_client().audio.speech.create(
+        # sem novas tentativas: se falhar (ex.: sem créditos), a voz grátis assume na hora
+        response = llm_settings.audio_client().with_options(max_retries=0).audio.speech.create(
             model=model,
             voice=voice,
             input=text,

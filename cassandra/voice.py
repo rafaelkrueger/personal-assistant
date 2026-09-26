@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import time
 from collections.abc import Iterator
 
 
@@ -31,15 +32,53 @@ def _split_sentences(text: str) -> tuple[list[str], str]:
     return sentences, text[last:]
 
 
+# Players em ordem de preferência. pw-play (PipeWire) vem primeiro: manda o áudio direto para a saída padrão
+# (ex.: a soundbar Bluetooth). Sem o pacote pipewire-alsa, os players via ALSA (ffplay, mpg123...) tocam no
+# dispositivo de hardware padrão (HDMI/fone do Pi) — ninguém ouve.
+PLAYERS = ["pw-play", "ffplay", "mpg123", "mpv", "cvlc", "play"]
+
+_OPENAI_RETRY_AFTER = 600  # depois de uma falha da voz da OpenAI (ex.: sem créditos), só voz grátis por 10 min
+
+
+def detect_player() -> str | None:
+    for player in PLAYERS:
+        if shutil.which(player):
+            return player
+    return None
+
+
+def player_command(player: str, path: str) -> list[str] | None:
+    if player == "pw-play":
+        return ["pw-play", path]
+    if player == "ffplay":
+        return ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", path]
+    if player == "mpg123":
+        return ["mpg123", "-q", path]
+    if player == "mpv":
+        return ["mpv", "--no-video", "--really-quiet", path]
+    if player == "cvlc":
+        return ["cvlc", "--play-and-exit", "--quiet", path]
+    if player == "play":
+        return ["play", "-q", path]
+    return None
+
+
 class VoiceOutput:
     """Text-to-speech output.
 
-    Primary backend: OpenAI TTS (neural, natural-sounding).
-    Fallback: espeak / spd-say (robotic, but no API cost).
+    Engines:
+      - openai: OpenAI TTS (the most natural; paid).
+      - piper: Piper, neural voice running on the device (free, offline; see piper_tts.py).
+      - espeak: espeak-ng (free, robotic; last resort).
+    engine="auto" (default) uses OpenAI while there's a key and it works; if it fails (e.g. no credits) it
+    switches to Piper and skips OpenAI for 10 minutes. Any engine falls back to the free ones, so a missing
+    key or credits never leaves Cassandra silent.
 
     Playback is always blocking so the microphone is not re-opened
     while Cassandra is still speaking.
     """
+
+    ENGINES = ("auto", "openai", "piper", "espeak")
 
     def __init__(
         self,
@@ -49,15 +88,26 @@ class VoiceOutput:
         tts_model: str = "tts-1",
         fallback_lang: str = "pt-br",
         fallback_rate: int = 165,
+        engine: str = "auto",
+        piper_model: str | None = None,
     ) -> None:
+        from cassandra.piper_tts import DEFAULT_VOICE, PiperTTS  # noqa: PLC0415
+
         self.enabled = enabled
         self.llm = llm
         self.tts_voice = tts_voice
         self.tts_model = tts_model
         self.fallback_lang = fallback_lang
         self.fallback_rate = fallback_rate
-        self._player = self._detect_player() if enabled else None
-        self._local_tts = self._detect_local_tts() if enabled else None
+        self.engine = engine if engine in self.ENGINES else "auto"
+        self._player = detect_player()
+        self._espeak = shutil.which("espeak-ng") or shutil.which("espeak")
+        self._piper = PiperTTS(piper_model or DEFAULT_VOICE)
+        self._piper.preload()  # ~16 s num Pi 3; em segundo plano para a 1ª resposta não esperar
+        self._openai_down_until = 0.0
+        self._last_engine: str | None = None
+
+    # ── API pública ───────────────────────────────────────────────────────────
 
     def speak(self, text: str) -> None:
         if not self.enabled:
@@ -65,28 +115,22 @@ class VoiceOutput:
         cleaned = text.strip()
         if not cleaned:
             return
-
-        if self.llm and self._player:
-            try:
-                self._speak_openai(cleaned)
-                return
-            except Exception:
-                pass  # fall through to local TTS
-
-        self._speak_local(cleaned)
+        path = self._synthesize(cleaned)
+        if path:
+            self._play_file(path)
 
     def speak_stream(self, token_iter: Iterator[str]) -> str:
         """Stream LLM tokens, pipeline TTS per sentence, return full text.
 
         While sentence N is playing, TTS for sentence N+1 is already being
-        requested — cutting the perceived latency roughly in half for long
+        generated — cutting the perceived latency roughly in half for long
         responses.
         """
         if not self.enabled:
             return "".join(token_iter)
 
         sentence_q: queue.Queue[str | None] = queue.Queue()
-        audio_q: queue.Queue[tuple[str, bytes | None] | None] = queue.Queue(maxsize=2)
+        audio_q: queue.Queue[tuple[str, str | None] | None] = queue.Queue(maxsize=2)
 
         errors: list[BaseException] = []
 
@@ -113,16 +157,7 @@ class VoiceOutput:
                 if sentence is None:
                     audio_q.put(None)
                     break
-                if self.llm and self._player:
-                    try:
-                        audio = self.llm.synthesize_speech(
-                            sentence, model=self.tts_model, voice=self.tts_voice
-                        )
-                        audio_q.put((sentence, audio))
-                        continue
-                    except Exception:
-                        pass
-                audio_q.put((sentence, None))
+                audio_q.put((sentence, self._synthesize(sentence)))
 
         threading.Thread(target=collect, daemon=True).start()
         threading.Thread(target=generate_tts, daemon=True).start()
@@ -132,83 +167,88 @@ class VoiceOutput:
             item = audio_q.get()
             if item is None:
                 break
-            sentence, audio = item
+            sentence, path = item
             parts.append(sentence)
-            if audio:
-                self._play_audio_bytes(audio)
-            else:
-                self._speak_local(sentence)
+            if path:
+                self._play_file(path)
 
         if errors:
             raise errors[0]
         return " ".join(parts)
 
-    def _play_audio_bytes(self, audio: bytes) -> None:
+    # ── Síntese ───────────────────────────────────────────────────────────────
+
+    def _engine_order(self) -> list[str]:
+        free = ["piper", "espeak"]
+        if self.engine == "espeak":
+            return ["espeak"]
+        if self.engine == "piper":
+            return free
+        if self.engine == "openai":
+            return ["openai", *free]
+        # auto: OpenAI só se houver chave e ela não tiver falhado há pouco
+        from cassandra import llm_settings  # noqa: PLC0415
+
+        openai_ok = bool(llm_settings.get()["openai_api_key"]) and time.monotonic() >= self._openai_down_until
+        return (["openai"] if openai_ok else []) + free
+
+    def _synthesize(self, text: str) -> str | None:
+        """Gera o áudio da frase num arquivo temporário (quem toca apaga). None se nenhum motor conseguiu."""
+        for engine in self._engine_order():
+            try:
+                path = getattr(self, f"_synth_{engine}")(text)
+            except Exception as exc:  # noqa: BLE001
+                if engine == "openai":
+                    self._openai_down_until = time.monotonic() + _OPENAI_RETRY_AFTER
+                    print(f"[VOZ] Voz da OpenAI falhou ({str(exc)[:120]}); usando voz grátis por 10 min.", flush=True)
+                elif self._last_engine != f"{engine}-erro":
+                    print(f"[VOZ] {engine} falhou: {exc}", flush=True)
+                    self._last_engine = f"{engine}-erro"
+                continue
+            if path:
+                if self._last_engine != engine:
+                    print(f"[VOZ] Falando com: {engine}", flush=True)
+                    self._last_engine = engine
+                return path
+        return None
+
+    def _synth_openai(self, text: str) -> str | None:
+        if not self.llm:
+            return None
+        audio = self.llm.synthesize_speech(text, model=self.tts_model, voice=self.tts_voice)
         tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
         tmp.write(audio)
         tmp.close()
-        try:
-            cmd = self._build_player_cmd(self._player, tmp.name)
-            if cmd:
-                subprocess.run(
-                    cmd,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    check=False,
-                )
-        finally:
-            os.unlink(tmp.name)
+        return tmp.name
 
-    def _speak_openai(self, text: str) -> None:
-        audio_bytes = self.llm.synthesize_speech(
-            text, model=self.tts_model, voice=self.tts_voice
+    def _synth_piper(self, text: str) -> str | None:
+        # Espera no máximo alguns segundos pelo carregamento; se ainda não estiver pronto, cai no espeak.
+        if not self._piper.available(wait=5):
+            raise RuntimeError("voz local ainda carregando ou indisponível")
+        return self._piper.synthesize_to_file(text, rate_wpm=self.fallback_rate)
+
+    def _synth_espeak(self, text: str) -> str | None:
+        if not self._espeak:
+            return None
+        lang = self.fallback_lang
+        if lang == "pt":
+            lang = "pt-br"  # no espeak-ng, "pt" é português de Portugal
+        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        tmp.close()
+        subprocess.run(
+            [self._espeak, "-v", lang, "-s", str(self.fallback_rate), "-w", tmp.name, text],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True,
         )
-        self._play_audio_bytes(audio_bytes)
+        return tmp.name
 
-    def _speak_local(self, text: str) -> None:
-        if not self._local_tts:
-            return
-        cmd = self._build_local_cmd(self._local_tts, text)
-        if cmd:
-            subprocess.run(
-                cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=False,
-            )
+    # ── Reprodução ────────────────────────────────────────────────────────────
 
-    @staticmethod
-    def _detect_player() -> str | None:
-        for player in ["ffplay", "mpg123", "mpv", "cvlc", "play"]:
-            if shutil.which(player):
-                return player
-        return None
-
-    @staticmethod
-    def _detect_local_tts() -> str | None:
-        if shutil.which("espeak"):
-            return "espeak"
-        if shutil.which("spd-say"):
-            return "spd-say"
-        return None
-
-    @staticmethod
-    def _build_player_cmd(player: str, path: str) -> list[str] | None:
-        if player == "ffplay":
-            return ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", path]
-        if player == "mpg123":
-            return ["mpg123", "-q", path]
-        if player == "mpv":
-            return ["mpv", "--no-video", "--really-quiet", path]
-        if player == "cvlc":
-            return ["cvlc", "--play-and-exit", "--quiet", path]
-        if player == "play":
-            return ["play", "-q", path]
-        return None
-
-    def _build_local_cmd(self, backend: str, text: str) -> list[str] | None:
-        if backend == "espeak":
-            return ["espeak", "-v", self.fallback_lang, "-s", str(self.fallback_rate), text]
-        if backend == "spd-say":
-            return ["spd-say", "-l", self.fallback_lang, text]
-        return None
+    def _play_file(self, path: str) -> None:
+        try:
+            cmd = player_command(self._player, path) if self._player else None
+            if cmd:
+                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        finally:
+            os.unlink(path)

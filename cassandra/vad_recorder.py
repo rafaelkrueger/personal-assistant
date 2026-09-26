@@ -57,6 +57,18 @@ class VadRecorder:
         return self._pa
 
     @staticmethod
+    def _input_device(pa) -> int | None:
+        """Prefere a entrada do PipeWire/Pulse (converte a taxa e segue o microfone padrão, inclusive um recém
+        plugado — precisa do pacote pipewire-alsa); senão, o primeiro aparelho de hardware com entrada."""
+        devices = [pa.get_device_info_by_index(i) for i in range(pa.get_device_count())]
+        inputs = [d for d in devices if d.get("maxInputChannels", 0) > 0]
+        for name in ("pipewire", "pulse", "default"):
+            for d in inputs:
+                if d.get("name") == name:
+                    return int(d["index"])
+        return int(inputs[0]["index"]) if inputs else None
+
+    @staticmethod
     def _rms(frame: bytes) -> float:
         count = len(frame) // 2
         if not count:
@@ -94,6 +106,7 @@ class VadRecorder:
             channels=CHANNELS,
             rate=SAMPLE_RATE,
             input=True,
+            input_device_index=self._input_device(pa),
             frames_per_buffer=FRAME_SIZE,
         )
 

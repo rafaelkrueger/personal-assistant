@@ -653,7 +653,18 @@ HTML_PAGE = """<!doctype html>
               <div class="settings-row-control"><label class="toggle"><input type="checkbox" id="voice-enabled" checked/><span class="toggle-slider"></span></label></div>
             </div>
             <div class="settings-row">
-              <div class="settings-row-info"><div class="settings-row-label">Modelo TTS</div><div class="settings-row-desc">tts-1 é mais rápido, tts-1-hd tem mais qualidade</div></div>
+              <div class="settings-row-info"><div class="settings-row-label">Motor de voz</div><div class="settings-row-desc">Automático: OpenAI enquanto houver créditos; sem créditos, Piper (grátis, no próprio aparelho)</div></div>
+              <div class="settings-row-control">
+                <select id="voice-engine" class="settings-select">
+                  <option value="auto">Automático</option>
+                  <option value="openai">OpenAI (pago)</option>
+                  <option value="piper">Piper (grátis)</option>
+                  <option value="espeak">espeak (grátis, robótica)</option>
+                </select>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-info"><div class="settings-row-label">Modelo TTS</div><div class="settings-row-desc">Voz da OpenAI: tts-1 é mais rápido, tts-1-hd tem mais qualidade</div></div>
               <div class="settings-row-control">
                 <select id="voice-tts-model" class="settings-select">
                   <option value="tts-1">tts-1 (rápido)</option>
@@ -662,7 +673,7 @@ HTML_PAGE = """<!doctype html>
               </div>
             </div>
             <div class="settings-row">
-              <div class="settings-row-info"><div class="settings-row-label">Voz</div><div class="settings-row-desc">Personalidade da voz sintética</div></div>
+              <div class="settings-row-info"><div class="settings-row-label">Voz</div><div class="settings-row-desc">Personalidade da voz da OpenAI</div></div>
               <div class="settings-row-control">
                 <select id="voice-tts-voice" class="settings-select">
                   <option value="alloy">Alloy</option>
@@ -675,7 +686,7 @@ HTML_PAGE = """<!doctype html>
               </div>
             </div>
             <div class="settings-row">
-              <div class="settings-row-info"><div class="settings-row-label">Idioma fallback</div><div class="settings-row-desc">Usado quando o TTS da OpenAI não estiver disponível</div></div>
+              <div class="settings-row-info"><div class="settings-row-label">Idioma fallback</div><div class="settings-row-desc">Idioma do espeak (o Piper fala português do Brasil)</div></div>
               <div class="settings-row-control">
                 <select id="voice-fallback-lang" class="settings-select">
                   <option value="pt">Português</option>
@@ -685,7 +696,7 @@ HTML_PAGE = """<!doctype html>
               </div>
             </div>
             <div class="settings-row">
-              <div class="settings-row-info"><div class="settings-row-label">Velocidade da fala</div><div class="settings-row-desc">Palavras por minuto no fallback local</div></div>
+              <div class="settings-row-info"><div class="settings-row-label">Velocidade da fala</div><div class="settings-row-desc">Vozes grátis (Piper e espeak); 160 = normal</div></div>
               <div class="settings-row-control">
                 <div class="settings-range">
                   <input type="range" id="voice-rate" min="80" max="280" step="10" value="160"/>
@@ -1059,6 +1070,7 @@ function applySettingsToForm(s){
   document.getElementById("mod-agenda").checked=m.agenda!==false;
   const v=s.voice||{};
   document.getElementById("voice-enabled").checked=v.enabled!==false;
+  document.getElementById("voice-engine").value=v.engine||"auto";
   document.getElementById("voice-tts-model").value=v.tts_model||"tts-1";
   document.getElementById("voice-tts-voice").value=v.tts_voice||"nova";
   document.getElementById("voice-fallback-lang").value=v.fallback_lang||"pt";
@@ -1088,6 +1100,7 @@ function collectSettingsFromForm(){
     },
     voice:{
       enabled:document.getElementById("voice-enabled").checked,
+      engine:document.getElementById("voice-engine").value,
       tts_model:document.getElementById("voice-tts-model").value,
       tts_voice:document.getElementById("voice-tts-voice").value,
       fallback_lang:document.getElementById("voice-fallback-lang").value,

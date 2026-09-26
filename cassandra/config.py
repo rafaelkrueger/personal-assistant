@@ -102,8 +102,8 @@ def load_settings() -> Settings:
         "off",
     }
 
-    if input_mode not in {"text", "mic"}:
-        raise RuntimeError("INPUT_MODE invalido. Use 'text' ou 'mic'.")
+    if input_mode not in {"text", "mic", "auto"}:
+        raise RuntimeError("INPUT_MODE invalido. Use 'auto', 'mic' ou 'text'.")
     if wake_word_engine not in {"local", "openai"}:
         raise RuntimeError("WAKE_WORD_ENGINE invalido. Use 'local' ou 'openai'.")
     if transcription_provider not in {"auto", "openai", "local"}:

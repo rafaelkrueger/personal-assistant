@@ -90,6 +90,30 @@ OpenAI ou DeepSeek, com modelo e chave de cada um. A troca vale na hora, sem rei
 A DeepSeek so faz texto. Voz (TTS) e microfone (transcricao) continuam na OpenAI: com a DeepSeek ativa e
 sem chave da OpenAI, a Cassandra fala com a voz local (espeak) e o modo microfone nao transcreve.
 
+## Microfone e UI ao mesmo tempo
+
+Com `INPUT_MODE=auto` (padrão sugerido) a Cassandra ouve o microfone **quando houver um plugado** e espera
+em silêncio quando não houver — é só plugar um microfone USB e chamar pelo nome, sem reiniciar. O chat da
+UI web funciona sempre, em qualquer modo, e também fala as respostas e toca os sons pela caixa de som.
+
+Para o microfone plugado depois ser adotado sozinho, o Pi precisa do pacote `pipewire-alsa`
+(`sudo apt install pipewire-alsa`): com ele a gravação passa pelo PipeWire, que converte a taxa de amostragem
+e segue o microfone padrão.
+
+## Voz da Cassandra (paga ou grátis)
+
+Em **Configurações > Voz & TTS > Motor de voz**:
+
+- **Automático** (padrão): voz da OpenAI enquanto houver chave e créditos; se ela falhar (ex.: sem créditos),
+  usa o **Piper** e pula a OpenAI por 10 minutos.
+- **OpenAI**: a mais natural, paga por caractere.
+- **Piper**: voz neural que roda no próprio aparelho, grátis e offline (`pt_BR-faber-medium`, ~63 MB, baixada
+  sozinha para `models/piper/` na primeira vez). Num Raspberry Pi 3 gera a fala ~1,5x mais devagar que o
+  tempo real (frase curta ~3 s); carrega em segundo plano no start.
+- **espeak**: grátis e instantânea, mas robótica. É o último recurso de qualquer motor.
+
+O áudio sai pelo `pw-play` (PipeWire), direto na saída padrão — ex.: uma soundbar Bluetooth.
+
 ## Detecção do nome sem internet (modo microfone)
 
 No modo microfone, a Cassandra reconhece o próprio nome **no aparelho**, com o Vosk (offline, grátis, modelo
