@@ -23,6 +23,7 @@ from cassandra.timer_manager import TimerManager, format_duration
 from cassandra.voice import VoiceOutput
 from cassandra.alarm_manager import AlarmManager
 from skills.alarm.skill import AlarmSkill
+from skills.clock.skill import ClockSkill
 from skills.general_chat.skill import GeneralChatSkill
 from skills.schedule.skill import ScheduleSkill
 from skills.shopping_list.skill import ShoppingListSkill
@@ -65,6 +66,7 @@ class CassandraAssistant:
         self.spotify_skill = SpotifySkill(self.llm)
         self.tv_skill = TvSkill(self.llm)
         _skills: list = [
+            ClockSkill(),  # hora/data na hora, sem LLM
             AlarmSkill(self.alarm_manager),
             TimerSkill(self.timer_manager),
             self.tv_skill,  # antes do Spotify e do volume: "pausa a TV", "volume da TV" são dela

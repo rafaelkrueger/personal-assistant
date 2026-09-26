@@ -78,6 +78,8 @@ _CATEGORIES: dict[str, dict] = {
             "clima em", "clima de", "como está o tempo",
             "tempo em", "tempo de", "tempo hoje",
             "graus em", "umidade em",
+            "clima", "temperatura", "quantos graus", "vai chover", "chuva", "previsão", "previsao",
+            "frio hoje", "calor hoje", "frio amanhã", "calor amanhã",
         ],
         "format_prompt": (
             "Você recebeu dados meteorológicos. "
@@ -148,6 +150,10 @@ _REALTIME_EXTRAS = [
     "hoje de manhã", "hoje à noite", "hoje a noite",
     "essa semana", "essa manhã", "essa tarde",
     "recém", "acabou de", "acabou de sair",
+    # pedidos explícitos de busca
+    "pesquise", "pesquisa sobre", "pesquisar", "procure na", "procura na", "busque", "busca na",
+    "na internet", "no google", "na web", "quem ganhou", "último jogo", "ultimo jogo", "placar",
+    "lançamento", "lancamento", "estreia", "quanto custa", "preço do", "preco do", "preço da", "preco da",
 ]
 _ALL_TRIGGERS.extend(_REALTIME_EXTRAS)
 
@@ -290,19 +296,16 @@ class WebSearchSkill(Skill):
     ]
 
     def can_handle(self, text: str) -> bool:
-        """
-        Retorna True para tudo exceto conversa claramente sem web.
-        O LLM faz o filtro fino via direct_answer em handle().
-        """
+        """Só pedidos que precisam da internet (notícias, cotação, clima, esporte, trânsito, "pesquise"...).
+        O resto vai para o chat normal: uma única chamada ao LLM, com a voz saindo frase a frase — passar tudo
+        por aqui custava duas chamadas em sequência (classificar + responder) e deixava a Cassandra lenta."""
         if not _client.available():
             log.debug("can_handle: maestro indisponível → deixa para as outras skills")
             return False
         t = text.lower()
-        # Fast-path: conversa pura → deixa para GeneralChatSkill
-        if any(p in t for p in self._CHAT_ONLY) and not _needs_web(t):
-            log.debug("can_handle: bypass (conversa pura) | text=%s", text[:60])
+        if not _needs_web(t):
             return False
-        log.debug("can_handle: True | keyword_match=%s | text=%s", _needs_web(t), text[:60])
+        log.debug("can_handle: True | text=%s", text[:60])
         return True
 
     def handle(self, text: str) -> str:
