@@ -33,6 +33,9 @@ WEB_AGENT_URLS = [
 _TIMEOUT = int(os.getenv("WEB_AGENT_TIMEOUT", "90"))
 _PROBE_INTERVAL = 15  # segundos entre checagens de disponibilidade
 _PROBE_PATH = "/api/settings/browser"  # leve e só existe no web-agent
+# Quando o web-agent responde à checagem mas falha na tarefa (ex.: o LLM dele está fora do ar), fica de lado
+# por um tempo — senão cada pergunta perde ~15 s esperando ele falhar de novo.
+_FAILURE_COOLDOWN = 300
 
 # ── Categorias ────────────────────────────────────────────────────────────────
 # Cada categoria define: gatilhos para can_handle e prompt de formatação da resposta.
@@ -214,6 +217,7 @@ class _WebAgentClient:
         self._base: str | None = None  # URL que respondeu na última checagem; None = indisponível
         self._checked = threading.Event()
         self._monitor: threading.Thread | None = None
+        self._failed_until = 0.0
 
     def _probe(self) -> str | None:
         for url in WEB_AGENT_URLS:
@@ -250,8 +254,14 @@ class _WebAgentClient:
         até a primeira checagem terminar, no máximo alguns segundos)."""
         self.start()
         self._checked.wait(timeout=10)
+        if time.monotonic() < self._failed_until:
+            return None
         with self._lock:
             return self._base
+
+    def _mark_failed(self) -> None:
+        self._failed_until = time.monotonic() + _FAILURE_COOLDOWN
+        print(f"[WEB-AGENT] falhou na tarefa; sem usar por {_FAILURE_COOLDOWN // 60} min", flush=True)
 
     def status(self) -> dict:
         """Para a tela de Configurações: checa agora (pode levar alguns segundos com o PC desligado)."""
@@ -275,8 +285,12 @@ class _WebAgentClient:
             )
             if r.status_code != 200:
                 log.error("web-agent respondeu %d: %s", r.status_code, r.text[:200])
+                self._mark_failed()
                 return None
-            return (r.json().get("content") or "").strip() or None
+            content = (r.json().get("content") or "").strip()
+            if not content:
+                self._mark_failed()
+            return content or None
         except requests.RequestException as e:
             log.error("Erro falando com o web-agent: %s", e)
             self._refresh()  # talvez tenha sido desligado agora
@@ -367,9 +381,12 @@ class WebSearchSkill(Skill):
         raw = _client.query(query)
         log.debug("Resposta do web-agent: %s", repr(raw)[:120] if raw else "NENHUMA")
         if not raw:
-            return (
-                "Tentei buscar essa informação na internet, mas não obtive resposta "
-                "do agente web no momento. Verifique se ele está disponível."
+            # web-agent falhou: responde com o próprio LLM em vez de só pedir desculpas
+            log.debug("web-agent sem resposta → respondendo direto com o LLM")
+            return self.llm.answer(
+                user_text=text,
+                system_prompt=_FORMAT_PROMPTS["direto"],
+                history=[],
             )
 
         # ── 4. Formata a resposta com prompt específico da categoria ───────────
