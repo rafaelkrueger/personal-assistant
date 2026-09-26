@@ -2,6 +2,14 @@
 
 Projeto base de uma assistente pessoal chamada **Cassandra**, inspirada em assistentes como Alexa.
 
+## Documentação técnica
+
+Como nos outros agentes (web-agent, editor, orchestrator), a especificação fica em [`Docs/`](Docs/):
+
+- [`Docs/CAPABILITIES.md`](Docs/CAPABILITIES.md) — o que a Cassandra pode e não pode fazer (em prosa; é o que o
+  orchestrator lê para decidir se um pedido é para ela).
+- [`Docs/API.md`](Docs/API.md) — todos os endpoints HTTP, formatos, erros e como integrar com o orchestrator.
+
 ## O que ela faz hoje
 
 - So responde quando chamada por wake word (padrao `cassandra`, com aliases)

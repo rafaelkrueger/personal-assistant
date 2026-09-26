@@ -1,5 +1,7 @@
 # Cassandra - Documento de Arquitetura e Regras de Negocio
 
+Especificacao para integracao (capacidades e API HTTP): ver `Docs/CAPABILITIES.md` e `Docs/API.md`.
+
 Este documento descreve como a assistente pessoal **Cassandra** funciona hoje: regras de negocio, arquitetura tecnica, fluxo de execucao, organizacao de skills e diretrizes de evolucao.
 
 ## 1) Objetivo do sistema
