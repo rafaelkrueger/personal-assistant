@@ -139,7 +139,8 @@ class MicrophoneInputSource:
                 # Esperando o nome: checa no próprio aparelho; sem o nome, nada vai para a API.
                 if not self.local.heard_wake_word(wav_path):
                     heard = getattr(self.local, "last_heard", "")
-                    monitor.event("no_wake", f"Sem o nome — ouvido: “{heard}”" if heard else "Sem o nome (nada reconhecível)")
+                    if heard:  # sem nada reconhecível é só ruído: não registra
+                        monitor.event("no_wake", f"Sem o nome — ouvido: “{heard}”")
                     return ""
                 monitor.event("wake", "Nome detectado no aparelho")
                 if self.local.last_only_name:

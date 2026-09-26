@@ -234,9 +234,7 @@ class VadRecorder:
         peak = max((self._rms(f) for f in recorded), default=0)
         speech_seconds = speech_frames * FRAME_MS / 1000
         if speech_seconds < MIN_SPEECH_SECONDS:
-            monitor.event("heard", f"Som curto descartado: {speech_seconds:.2f} s de fala (pico {peak:.0f}, "
-                                   f"limite {threshold:.0f})")
-            return None
+            return None  # estalo/ruído: descartado sem registrar (só poluía o log)
         monitor.event("heard", f"Fala captada: {speech_seconds:.1f} s (pico {peak:.0f}, limite {threshold:.0f}, "
                                f"ruído {self._noise or 0:.0f})")
 
