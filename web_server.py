@@ -315,7 +315,7 @@ HTML_PAGE = """<!doctype html>
 
     /* ═══ SETTINGS ═══ */
     .settings-layout{display:flex;flex-direction:column;gap:14px}
-    @media(min-width:900px){.settings-layout{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}}
+    @media(min-width:900px){.settings-layout{display:grid;grid-template-columns:1fr;gap:12px;align-items:start}}
     /* seções recolhíveis */
     .settings-card-title.sc-toggle{cursor:pointer;user-select:none;margin-bottom:0;border-radius:8px}
     .settings-card-title.sc-toggle:hover{color:var(--text)}
