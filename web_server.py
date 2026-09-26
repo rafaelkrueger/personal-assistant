@@ -315,7 +315,14 @@ HTML_PAGE = """<!doctype html>
 
     /* ═══ SETTINGS ═══ */
     .settings-layout{display:flex;flex-direction:column;gap:14px}
-    @media(min-width:900px){.settings-layout{display:grid;grid-template-columns:1fr 1fr;gap:14px}}
+    @media(min-width:900px){.settings-layout{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}}
+    /* seções recolhíveis */
+    .settings-card-title.sc-toggle{cursor:pointer;user-select:none;margin-bottom:0;border-radius:8px}
+    .settings-card-title.sc-toggle:hover{color:var(--text)}
+    .settings-card:not(.sc-collapsed) .settings-card-title.sc-toggle{margin-bottom:16px}
+    .settings-card-title .sc-chevron{margin-left:auto;width:16px;height:16px;opacity:.7;transition:transform .2s}
+    .settings-card:not(.sc-collapsed) .sc-chevron{transform:rotate(180deg)}
+    .settings-card.sc-collapsed .sc-body{display:none}
     .settings-card{
       background:var(--glass);border:1px solid var(--border);border-radius:var(--rx);
       padding:16px;backdrop-filter:blur(12px);position:relative;overflow:hidden;
@@ -2227,10 +2234,42 @@ document.getElementById("tab-music").addEventListener("click",e=>{
   const ask=e.target.closest("[data-mu-ask]"); if(ask) muAsk(ask.dataset.muAsk);
 });
 
+// ── Configurações: cada seção recolhível (começam fechadas; o navegador lembra as abertas) ──
+const SC_KEY="cassSettingsOpen";
+function scOpenSet(){try{return new Set(JSON.parse(localStorage.getItem(SC_KEY)||"[]"));}catch(e){return new Set();}}
+function scSave(set){try{localStorage.setItem(SC_KEY,JSON.stringify([...set]));}catch(e){}}
+function scSetOpen(card,open){
+  card.classList.toggle("sc-collapsed",!open);
+  const key=card.dataset.scKey, set=scOpenSet();
+  if(open) set.add(key); else set.delete(key);
+  scSave(set);
+}
+function openSettingsCard(el){const card=el&&el.closest(".settings-card");if(card&&card.dataset.scKey) scSetOpen(card,true);}
+(function initSettingsCollapsibles(){
+  const open=scOpenSet();
+  document.querySelectorAll("#tab-settings .settings-card").forEach(card=>{
+    const title=card.querySelector(":scope > .settings-card-title");
+    if(!title||card.dataset.scKey) return;
+    const body=document.createElement("div");
+    body.className="sc-body";
+    while(title.nextSibling) body.appendChild(title.nextSibling);
+    card.appendChild(body);
+    card.dataset.scKey=title.textContent.trim();
+    title.classList.add("sc-toggle");
+    title.setAttribute("role","button"); title.tabIndex=0;
+    title.insertAdjacentHTML("beforeend",'<svg class="sc-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>');
+    card.classList.toggle("sc-collapsed",!open.has(card.dataset.scKey));
+    const toggle=()=>scSetOpen(card,card.classList.contains("sc-collapsed"));
+    title.addEventListener("click",toggle);
+    title.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();toggle();}});
+  });
+})();
+
 (function(){ // volta do login do Spotify
   const p=new URLSearchParams(window.location.search).get("spotify");
   if(!p) return;
   spMsg(p==="ok"?"Spotify conectado!":"Não deu para conectar o Spotify: "+p, p==="ok"?"ok":"error");
+  openSettingsCard(document.getElementById("sp-msg"));
   history.replaceState(null,"",window.location.pathname+window.location.hash);
 })();
 
