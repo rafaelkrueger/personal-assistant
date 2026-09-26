@@ -8,7 +8,7 @@ from threading import Thread
 from typing import Type
 from urllib.parse import urlparse
 
-from cassandra import llm_settings
+from cassandra import audio_devices, llm_settings
 from cassandra.assistant import CassandraAssistant
 
 HTML_PAGE = """<!doctype html>
@@ -352,6 +352,27 @@ HTML_PAGE = """<!doctype html>
     /* Info chip */
     .info-chip{display:inline-flex;align-items:center;padding:4px 11px;border-radius:99px;background:rgba(255,255,255,.04);border:1px solid var(--border);font-size:12px;color:var(--text2);font-weight:500;white-space:nowrap}
     .settings-card.full{grid-column:1/-1}
+    /* Som & Bluetooth */
+    .vol-control{display:flex;align-items:center;gap:10px;width:100%}
+    .vol-control input[type=range]{flex:1;accent-color:var(--brand);cursor:pointer;min-width:0}
+    .vol-val{font-size:13px;font-weight:700;color:var(--brand2);min-width:40px;text-align:right;font-variant-numeric:tabular-nums}
+    .vol-control.muted input[type=range]{opacity:.35}
+    .vol-control.muted .vol-val{color:var(--text3)}
+    .bt-list{display:flex;flex-direction:column;gap:8px;margin-top:4px}
+    .bt-item{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r);background:rgba(255,255,255,.02)}
+    .bt-item.connected{border-color:rgba(52,211,153,.3);background:var(--green-dim)}
+    .bt-item-info{flex:1;min-width:150px}
+    .bt-item-name{font-size:13.5px;font-weight:600;overflow-wrap:anywhere}
+    .bt-item-meta{font-size:11.5px;color:var(--text2);margin-top:2px;font-family:monospace}
+    .bt-item-actions{display:flex;gap:6px;flex-wrap:wrap}
+    .bt-dot{width:9px;height:9px;border-radius:50%;background:var(--text3);flex-shrink:0}
+    .bt-item.connected .bt-dot{background:var(--green);box-shadow:0 0 8px var(--green-glow)}
+    .bt-job{font-size:12.5px;padding:9px 12px;border-radius:var(--r);margin-top:12px;border:1px solid var(--border);color:var(--text2);display:none}
+    .bt-job.running{display:block;border-color:rgba(91,154,255,.3);color:var(--brand2)}
+    .bt-job.ok{display:block;border-color:rgba(52,211,153,.3);color:var(--green)}
+    .bt-job.error{display:block;border-color:rgba(248,113,113,.3);color:#fca5a5}
+    .bt-section-label{font-size:10.5px;color:var(--text2);font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin:16px 0 8px}
+    .bt-empty{font-size:12.5px;color:var(--text3);padding:6px 0}
     .save-bar{display:flex;align-items:center;gap:10px;padding-top:4px}
     .save-toast{font-size:12px;color:var(--green);font-weight:600;opacity:0;transition:opacity .3s}
     .save-toast.show{opacity:1}
@@ -713,10 +734,38 @@ HTML_PAGE = """<!doctype html>
               <div class="settings-row-info"><div class="settings-row-label">Sons de interação</div><div class="settings-row-desc">Toques de ativação, desativação e alertas</div></div>
               <div class="settings-row-control"><label class="toggle"><input type="checkbox" id="sounds-enabled" checked/><span class="toggle-slider"></span></label></div>
             </div>
-            <div class="settings-row" style="border-bottom:none">
-              <div class="settings-row-info"><div class="settings-row-label">Volume do sistema</div><div class="settings-row-desc">Controlado pelo volume do SO — diga "volume 70%"</div></div>
-              <div class="settings-row-control"><span class="info-chip">Via SO</span></div>
+            <div class="settings-row">
+              <div class="settings-row-info" style="flex-basis:100%"><div class="settings-row-label">Volume</div><div class="settings-row-desc" id="vol-desc">Volume da saída de áudio atual — ou diga "volume 70%"</div></div>
+              <div class="vol-control" id="vol-control">
+                <button class="btn btn-ghost btn-icon" id="vol-mute" title="Silenciar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path id="vol-mute-waves" d="M15.54 8.46a5 5 0 010 7.07"/><g id="vol-mute-x" style="display:none"><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></g></svg></button>
+                <button class="btn btn-ghost btn-sm" id="vol-down" title="Diminuir">−</button>
+                <input type="range" id="vol-range" min="0" max="100" step="1" value="0" disabled/>
+                <button class="btn btn-ghost btn-sm" id="vol-up" title="Aumentar">+</button>
+                <span class="vol-val" id="vol-val">—</span>
+              </div>
             </div>
+            <div class="settings-row" style="border-bottom:none">
+              <div class="settings-row-info"><div class="settings-row-label">Saída de áudio</div><div class="settings-row-desc">Onde a Cassandra toca (caixas Bluetooth aparecem aqui quando conectadas)</div></div>
+              <div class="settings-row-control"><select id="audio-output" class="settings-select" style="max-width:220px"><option value="">—</option></select></div>
+            </div>
+          </div>
+
+          <!-- Bluetooth -->
+          <div class="settings-card full">
+            <div class="settings-card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6.5 6.5 17.5 17.5 12 23 12 1 17.5 6.5 6.5 17.5"/></svg>Bluetooth</div>
+            <div class="settings-row">
+              <div class="settings-row-info"><div class="settings-row-label">Bluetooth</div><div class="settings-row-desc" id="bt-desc">Caixas de som, fones e outros aparelhos</div></div>
+              <div class="settings-row-control"><label class="toggle"><input type="checkbox" id="bt-power"/><span class="toggle-slider"></span></label></div>
+            </div>
+            <div class="bt-section-label">Meus aparelhos</div>
+            <div class="bt-list" id="bt-paired"><div class="bt-empty">Carregando…</div></div>
+            <div class="bt-section-label" style="display:flex;align-items:center;gap:10px">
+              <span style="flex:1">Conectar um aparelho novo</span>
+              <button class="btn btn-primary btn-sm" id="bt-scan">Procurar aparelhos</button>
+            </div>
+            <div class="settings-row-desc">Coloque o aparelho em modo de pareamento (normalmente segurando o botão de Bluetooth dele) e toque em <b>Procurar aparelhos</b>.</div>
+            <div class="bt-list" id="bt-found"></div>
+            <div class="bt-job" id="bt-job"></div>
           </div>
 
           <!-- Sessão -->
@@ -1513,6 +1562,88 @@ async function checkWebAgentStatus(){
 }
 document.getElementById("checkWebAgentBtn").addEventListener("click",checkWebAgentStatus);
 
+// ── Som: volume e saída ──
+let volBusy=false, volTimer=null;
+function renderVolume(d){
+  const range=document.getElementById("vol-range"), val=document.getElementById("vol-val");
+  const ctl=document.getElementById("vol-control");
+  if(!d.available){range.disabled=true;val.textContent="—";document.getElementById("vol-desc").textContent="Controle de volume indisponível neste aparelho";return;}
+  range.disabled=false;
+  if(!volBusy) range.value=d.volume;
+  val.textContent=d.muted?"mudo":d.volume+"%";
+  ctl.classList.toggle("muted",!!d.muted);
+  document.getElementById("vol-mute").dataset.muted=d.muted?"1":"";
+  document.getElementById("vol-mute").title=d.muted?"Tirar do mudo":"Silenciar";
+  document.getElementById("vol-mute-waves").style.display=d.muted?"none":"";
+  document.getElementById("vol-mute-x").style.display=d.muted?"":"none";
+  const sel=document.getElementById("audio-output");
+  if(document.activeElement!==sel){
+    const outs=d.outputs||[];
+    sel.innerHTML=outs.length?outs.map(o=>`<option value="${o.id}" ${o.default?"selected":""}>${esc(o.name)}</option>`).join(""):'<option value="">—</option>';
+    sel.disabled=outs.length<2;
+  }
+}
+async function loadAudio(){try{renderVolume(await api("/api/audio"));}catch(e){console.error("Audio:",e);}}
+async function sendVolume(body){try{renderVolume(await api("/api/audio/volume","POST",body));}catch(e){alert(e.message);}}
+document.getElementById("vol-range").addEventListener("input",e=>{
+  volBusy=true; document.getElementById("vol-val").textContent=e.target.value+"%";
+  clearTimeout(volTimer);
+  volTimer=setTimeout(async()=>{await sendVolume({volume:+e.target.value,muted:false});volBusy=false;},180);
+});
+document.getElementById("vol-up").addEventListener("click",()=>sendVolume({delta:5}));
+document.getElementById("vol-down").addEventListener("click",()=>sendVolume({delta:-5}));
+document.getElementById("vol-mute").addEventListener("click",e=>sendVolume({muted:!e.currentTarget.dataset.muted}));
+document.getElementById("audio-output").addEventListener("change",async e=>{
+  if(!e.target.value) return;
+  try{renderVolume(await api("/api/audio/output","POST",{id:+e.target.value}));}catch(err){alert(err.message);loadAudio();}
+});
+
+// ── Bluetooth ──
+let btPoll=null;
+function btItem(d,found){
+  const meta=[d.mac, d.connected?"conectado":(d.paired?"pareado":"novo")].join(" · ");
+  const actions=found
+    ? `<button class="btn btn-primary btn-sm" data-bt="connect" data-mac="${d.mac}">Conectar</button>`
+    : (d.connected
+        ? `<button class="btn btn-ghost btn-sm" data-bt="disconnect" data-mac="${d.mac}">Desconectar</button>`
+        : `<button class="btn btn-primary btn-sm" data-bt="connect" data-mac="${d.mac}">Conectar</button>`)
+      + `<button class="btn btn-danger btn-sm" data-bt="forget" data-mac="${d.mac}" data-name="${esc(d.name)}">Esquecer</button>`;
+  return `<div class="bt-item ${d.connected?"connected":""}"><span class="bt-dot"></span><div class="bt-item-info"><div class="bt-item-name">${esc(d.name)}</div><div class="bt-item-meta">${meta}</div></div><div class="bt-item-actions">${actions}</div></div>`;
+}
+function renderBluetooth(d){
+  const power=document.getElementById("bt-power"), scan=document.getElementById("bt-scan");
+  const desc=document.getElementById("bt-desc");
+  if(!d.available){desc.textContent="Bluetooth indisponível neste aparelho";power.disabled=true;scan.disabled=true;
+    document.getElementById("bt-paired").innerHTML='<div class="bt-empty">—</div>';return;}
+  power.disabled=false; power.checked=!!d.powered;
+  const devs=d.devices||[], paired=devs.filter(x=>x.paired), found=devs.filter(x=>!x.paired);
+  const nConn=paired.filter(x=>x.connected).length;
+  desc.textContent=!d.powered?"Desligado":(nConn?`${nConn} aparelho${nConn>1?"s":""} conectado${nConn>1?"s":""}`:"Ligado, nenhum aparelho conectado");
+  document.getElementById("bt-paired").innerHTML=paired.length?paired.map(x=>btItem(x,false)).join(""):'<div class="bt-empty">Nenhum aparelho pareado ainda.</div>';
+  const busy=d.job&&d.job.state==="running";
+  document.getElementById("bt-found").innerHTML=found.length?found.map(x=>btItem(x,true)).join("")
+    :(d.scanning?'<div class="bt-empty">Procurando…</div>':"");
+  scan.disabled=!d.powered||d.scanning||busy;
+  scan.textContent=d.scanning?"Procurando…":"Procurar aparelhos";
+  document.querySelectorAll("[data-bt]").forEach(b=>b.disabled=!!busy);
+  const job=document.getElementById("bt-job");
+  job.className="bt-job"+(d.job&&(Date.now()/1000-d.job.at<120||busy)?" "+d.job.state:"");
+  job.textContent=d.job?d.job.message:"";
+  // enquanto procura ou conecta, atualiza rápido; depois, para
+  if(d.scanning||busy){if(!btPoll) btPoll=setInterval(loadBluetooth,2000);}
+  else if(btPoll){clearInterval(btPoll);btPoll=null;loadAudio();}
+}
+async function loadBluetooth(){try{renderBluetooth(await api("/api/bluetooth"));}catch(e){console.error("Bluetooth:",e);}}
+async function btAction(path,body){try{renderBluetooth(await api(path,"POST",body));}catch(e){alert(e.message);loadBluetooth();}}
+document.getElementById("bt-scan").addEventListener("click",()=>btAction("/api/bluetooth/scan",{}));
+document.getElementById("bt-power").addEventListener("change",e=>btAction("/api/bluetooth/power",{on:e.target.checked}));
+document.getElementById("bt-paired").parentElement.addEventListener("click",e=>{
+  const b=e.target.closest("[data-bt]"); if(!b) return;
+  const act=b.dataset.bt, mac=b.dataset.mac;
+  if(act==="forget"&&!confirm(`Esquecer ${b.dataset.name}? Para usar de novo, será preciso parear outra vez.`)) return;
+  btAction(`/api/bluetooth/${act}`,{mac});
+});
+
 // ── Init ──
 async function init(){
   try{const s=await api("/api/settings");applySettingsToForm(s);}
@@ -1521,10 +1652,13 @@ async function init(){
   await refresh();
   checkWebAgentStatus();
   loadCalendarStatus();
+  loadAudio();
+  loadBluetooth();
 }
 init();
 setInterval(refresh,5000);
 setInterval(checkWebAgentStatus,30000);
+setInterval(()=>{loadAudio();if(!btPoll)loadBluetooth();},15000);
 </script>
 </body>
 </html>"""
@@ -1597,6 +1731,12 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                 events = assistant.list_calendar_events(days=days)
                 self._send_json({"configured": True, "events": events})
                 return
+            if parsed.path == "/api/audio":
+                self._send_json(audio_devices.audio_status())
+                return
+            if parsed.path == "/api/bluetooth":
+                self._send_json(audio_devices.bluetooth.status())
+                return
             if parsed.path in ("/api/maestro-status", "/api/orchestrator-status", "/api/web-agent-status"):  # nomes antigos
                 from skills.web_search.skill import _client as maestro_client
 
@@ -1639,6 +1779,67 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                     "activated": result["activated"],
                     "history":   assistant.get_conversation_history(),
                 })
+                return
+
+            if parsed.path == "/api/audio/volume":
+                # {volume: 0-100} | {delta: +-N} | {muted: bool} (podem vir juntos)
+                data = self._read_json_body()
+                try:
+                    if "volume" in data:
+                        audio_devices.set_volume(int(data["volume"]))
+                    elif "delta" in data:
+                        audio_devices.change_volume(int(data["delta"]))
+                except (TypeError, ValueError):
+                    self._send_json({"error": "volume/delta must be numbers"}, status=HTTPStatus.BAD_REQUEST)
+                    return
+                if "muted" in data:
+                    audio_devices.set_mute(bool(data["muted"]))
+                self._send_json(audio_devices.audio_status())
+                return
+
+            if parsed.path == "/api/audio/output":
+                try:
+                    sink_id = int(self._read_json_body().get("id"))
+                except (TypeError, ValueError):
+                    self._send_json({"error": "id is required"}, status=HTTPStatus.BAD_REQUEST)
+                    return
+                if not audio_devices.set_output(sink_id):
+                    self._send_json({"error": "Saída de áudio não encontrada."}, status=HTTPStatus.NOT_FOUND)
+                    return
+                self._send_json(audio_devices.audio_status())
+                return
+
+            if parsed.path.startswith("/api/bluetooth/"):
+                bt = audio_devices.bluetooth
+                action = parsed.path[len("/api/bluetooth/"):]
+                data = self._read_json_body()
+                if not bt.available():
+                    self._send_json({"error": "Bluetooth indisponível neste aparelho."}, status=HTTPStatus.CONFLICT)
+                    return
+                if action == "power":
+                    bt.set_power(bool(data.get("on")))
+                elif action == "scan":
+                    if not bt.start_scan(data.get("seconds")):
+                        self._send_json({"error": "Já existe uma busca ou conexão em andamento."}, status=HTTPStatus.CONFLICT)
+                        return
+                elif action == "scan/stop":
+                    bt.stop_scan()
+                elif action in ("connect", "disconnect", "forget"):
+                    mac = audio_devices.valid_mac(str(data.get("mac", "")))
+                    if not mac:
+                        self._send_json({"error": "mac inválido"}, status=HTTPStatus.BAD_REQUEST)
+                        return
+                    if action == "connect" and not bt.start_connect(mac):
+                        self._send_json({"error": "Já existe uma conexão em andamento."}, status=HTTPStatus.CONFLICT)
+                        return
+                    if action == "disconnect":
+                        bt.disconnect(mac)
+                    if action == "forget":
+                        bt.forget(mac)
+                else:
+                    self._send_json({"error": "Not found."}, status=HTTPStatus.NOT_FOUND)
+                    return
+                self._send_json(bt.status())
                 return
 
             if parsed.path == "/api/speak":

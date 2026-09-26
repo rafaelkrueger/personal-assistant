@@ -1,25 +1,17 @@
-"""Volume skill: control system audio volume via pactl or amixer."""
+"""Volume skill: control system audio volume (wpctl/PipeWire, pactl or amixer — see cassandra/audio_devices.py)."""
 from __future__ import annotations
 
 import re
-import shutil
-import subprocess
 
+from cassandra import audio_devices
 from skills.base import Skill
-
-
-def _find_backend() -> str | None:
-    for cmd in ["pactl", "amixer"]:
-        if shutil.which(cmd):
-            return cmd
-    return None
 
 
 class VolumeSkill(Skill):
     name = "volume"
 
     def __init__(self) -> None:
-        self._backend = _find_backend()
+        self._backend = audio_devices._backend()
 
     def can_handle(self, text: str) -> bool:
         t = text.lower()
@@ -56,37 +48,19 @@ class VolumeSkill(Skill):
         return "Nao entendi o comando de volume. Tente: 'volume 50%', 'aumenta o volume' ou 'muta o som'."
 
     def _set_volume(self, pct: int) -> str:
-        if self._backend == "pactl":
-            self._run(["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{pct}%"])
-        else:
-            self._run(["amixer", "set", "Master", f"{pct}%"])
+        audio_devices.set_volume(pct)
         return f"Volume ajustado para {pct}%."
 
     def _change_volume(self, delta: str) -> str:
-        if self._backend == "pactl":
-            self._run(["pactl", "set-sink-volume", "@DEFAULT_SINK@", delta])
-        else:
-            sign = delta[0]
-            val = delta[1:]
-            self._run(["amixer", "set", "Master", f"{val}{sign}"])
+        audio_devices.change_volume(int(delta.rstrip("%")))
         direction = "aumentado" if delta.startswith("+") else "diminuido"
         return f"Volume {direction}."
 
     def _set_mute(self, mute: bool) -> str:
-        if self._backend == "pactl":
-            self._run(["pactl", "set-sink-mute", "@DEFAULT_SINK@", "1" if mute else "0"])
-        else:
-            self._run(["amixer", "set", "Master", "mute" if mute else "unmute"])
+        audio_devices.set_mute(mute)
         return "Som silenciado." if mute else "Som restaurado."
 
     @staticmethod
     def _extract_step(text: str, default: int = 10) -> int:
         m = re.search(r"\b(\d+)\b", text)
         return int(m.group(1)) if m else default
-
-    @staticmethod
-    def _run(cmd: list[str]) -> None:
-        try:
-            subprocess.run(cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except FileNotFoundError:
-            pass

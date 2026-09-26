@@ -295,6 +295,46 @@ Configuração: `MAESTRO_URL` (uma ou mais URLs separadas por vírgula),
 
 ---
 
+## 10b. Som e Bluetooth
+
+Volume e saída pelo PipeWire (`wpctl`; sem ele, `pactl` ou `amixer`), Bluetooth
+pelo `bluetoothctl` — código em `cassandra/audio_devices.py`.
+
+### `GET /api/audio`
+`{ "available": true, "backend": "wpctl", "volume": 40, "muted": false,
+   "outputs": [ { "id": 56, "name": "Built-in Audio Stereo", "default": true } ] }`
+
+### `POST /api/audio/volume`
+**Body:** `{ "volume": 0-100 }` ou `{ "delta": 5 }` / `{ "delta": -5 }`, e/ou
+`{ "muted": true|false }`. Devolve o mesmo que `GET /api/audio`.
+
+### `POST /api/audio/output`
+**Body:** `{ "id": 56 }` (um `id` de `outputs`) — passa a tocar nessa saída.
+
+### `GET /api/bluetooth`
+`{ "available": true, "powered": true, "scanning": false,
+   "devices": [ { "mac": "4C:6B:B8:DE:E4:FC", "name": "LG SQC1(FC)", "paired": true,
+                  "connected": true, "trusted": true } ],
+   "job": { "action": "connect", "mac": "...", "state": "running|ok|error", "message": "...", "at": 1790000000.0 } }`
+
+`devices` traz os pareados e os achados na última busca (sem nome ficam de
+fora). `job` é a última operação.
+
+### `POST /api/bluetooth/{acao}`
+Todas devolvem o mesmo que `GET /api/bluetooth`.
+- `power` — `{ "on": true|false }`.
+- `scan` — `{ "seconds": 20 }` (opcional, 5-60): procura aparelhos em modo de
+  pareamento, **em segundo plano**. `scan/stop` interrompe.
+- `connect` — `{ "mac": "AA:BB:..." }`: pareia (se preciso), marca como
+  confiável (reconecta sozinho depois de um reboot) e conecta, **em segundo
+  plano** (pode levar ~30 s); acompanhe por `job` em `GET /api/bluetooth`.
+- `disconnect` — `{ "mac": ... }`.
+- `forget` — `{ "mac": ... }`: remove o pareamento.
+
+409 se já houver uma busca/conexão em andamento; 400 com `mac` inválido.
+
+---
+
 ## 11. Página
 
 ### `GET /`

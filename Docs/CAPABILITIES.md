@@ -17,6 +17,12 @@ técnicos e exemplos de API estão em [`API.md`](./API.md) — este arquivo é s
   som (voz "nova" da OpenAI enquanto houver créditos; sem créditos, uma voz
   feminina grátis e local). É o jeito de **avisar alguém que está em casa**
   (ex.: "Cassandra, avise que o jantar está pronto").
+- **Volume e saída de áudio**: ajustar o volume, silenciar e escolher por onde
+  ela toca (a saída do Pi ou uma caixa Bluetooth), por voz ("volume 70%") ou
+  pela interface/API (`/api/audio`).
+- **Bluetooth**: listar os aparelhos pareados e conectados, conectar,
+  desconectar e esquecer, e procurar e parear um aparelho novo (caixas de som
+  e fones, que não pedem PIN) pela interface/API (`/api/bluetooth`).
 - **Lista de compras**: adicionar, remover e listar itens (por voz ou pela API).
 - **Lista de tarefas (to-do)**: adicionar, marcar como feita, remover, listar.
 - **Alarmes**: pontuais ou recorrentes (todo dia ou em dias da semana
@@ -56,10 +62,6 @@ técnicos e exemplos de API estão em [`API.md`](./API.md) — este arquivo é s
 - **Não dá previsão do tempo sozinha**: clima, notas e calculadora existem como
   skills no código, mas **não estão ativos** no assistente principal; clima só
   funciona via maestro (ou como resposta genérica do LLM).
-- **Não ajusta o volume da caixa de som** hoje: a skill de volume usa `pactl`
-  ou `amixer`, e no Raspberry Pi atual (sem `pactl`) o `amixer` mexe na saída
-  de hardware do Pi, não na soundbar Bluetooth. O volume se ajusta no controle
-  da própria soundbar.
 - **Não controla outros aparelhos** da casa (luzes, TV, tomadas): não há
   integração com automação residencial.
 - **O microfone é só local**: ela ouve apenas o que é falado perto do Raspberry
