@@ -708,6 +708,7 @@ HTML_PAGE = """<!doctype html>
               <div style="flex:1;min-width:0"><div class="dv-name" id="rmName">TV</div><div class="dv-sub" id="rmSub">—</div></div>
             </div>
             <div class="remote-note" id="rmNote" style="display:none"></div>
+            <div id="pnlTv">
             <div class="remote-panel">
               <div class="remote-row">
                 <button class="rbtn power-on" data-rm="power_on" title="Ligar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>Ligar</button>
@@ -746,6 +747,78 @@ HTML_PAGE = """<!doctype html>
             <div class="remote-panel">
               <div class="remote-label">Apps</div>
               <div class="app-grid" id="rmApps"><div class="bt-empty">Carregando…</div></div>
+            </div>
+            </div>
+
+            <!-- computador (pelo maestro) -->
+            <div id="pnlComputer" style="display:none">
+              <div class="remote-panel">
+                <div class="remote-label">Sessão</div>
+                <div class="remote-row">
+                  <button class="rbtn" data-rm="lock">Bloquear</button>
+                  <button class="rbtn" data-rm="screen_off">Apagar a tela</button>
+                  <button class="rbtn" data-rm="sleep">Suspender</button>
+                </div>
+                <div class="remote-label">Energia</div>
+                <div class="remote-row">
+                  <button class="rbtn power-off" data-rm-confirm="shutdown" data-rm="shutdown">Desligar</button>
+                  <button class="rbtn" data-rm-confirm="restart" data-rm="restart">Reiniciar</button>
+                  <button class="rbtn" data-rm="cancel_shutdown">Cancelar desligamento</button>
+                </div>
+              </div>
+              <div class="remote-panel">
+                <div class="remote-label">Som e mídia</div>
+                <div class="remote-row">
+                  <button class="rbtn" data-rm="volume_down">Vol −</button>
+                  <button class="rbtn" data-rm="mute">Mudo</button>
+                  <button class="rbtn" data-rm="volume_up">Vol +</button>
+                </div>
+                <div class="remote-row">
+                  <button class="rbtn" data-rm="previous">⏮</button>
+                  <button class="rbtn" data-rm="play_pause">⏯</button>
+                  <button class="rbtn" data-rm="next">⏭</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- lâmpada -->
+            <div id="pnlLight" style="display:none">
+              <div class="remote-panel">
+                <div class="remote-row">
+                  <button class="rbtn power-on" data-rm="light_on">Acender</button>
+                  <button class="rbtn power-off" data-rm="light_off">Apagar</button>
+                </div>
+                <div class="remote-label">Brilho <span id="lgBrightVal"></span></div>
+                <input type="range" id="lgBright" min="10" max="100" step="5" value="100" style="accent-color:var(--amber)"/>
+                <div class="remote-label">Tom: quente ↔ frio <span id="lgTempVal"></span></div>
+                <input type="range" id="lgTemp" min="2200" max="6500" step="100" value="4000" style="accent-color:var(--brand)"/>
+                <div class="remote-label">Cor</div>
+                <div class="remote-row" id="lgColors"></div>
+              </div>
+            </div>
+
+            <!-- caixa de som (Spotify Connect) -->
+            <div id="pnlSpeaker" style="display:none">
+              <div class="remote-panel">
+                <div class="remote-row"><button class="rbtn power-on" data-rm="play_here">Tocar aqui (Spotify)</button></div>
+                <div class="remote-label">Volume</div>
+                <input type="range" id="spkVol" min="0" max="100" step="5" value="50" style="accent-color:#1ed760"/>
+                <div class="remote-row">
+                  <button class="rbtn" data-rm="previous">⏮</button>
+                  <button class="rbtn" data-rm="play_pause">⏯</button>
+                  <button class="rbtn" data-rm="next">⏭</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- rede: vale para todo aparelho -->
+            <div class="remote-panel" id="pnlNet">
+              <div class="remote-label">Rede</div>
+              <div class="dv-sub" id="rmNetInfo" style="text-align:center">—</div>
+              <div class="remote-row">
+                <a class="btn btn-ghost btn-sm" id="rmPage" target="_blank" rel="noopener" style="display:none;text-decoration:none">Abrir página do aparelho</a>
+                <button class="rbtn" data-rm="wake" id="rmWake">Ligar pela rede</button>
+              </div>
             </div>
             <div class="remote-msg" id="rmMsg"></div>
           </div>
@@ -2100,11 +2173,11 @@ function renderDevices(d){
   document.getElementById("dvCount").textContent=`${saved.length} conectado${saved.length===1?"":"s"}`;
   const catOptions=cur=>Object.keys(DV_CATEGORIES).map(c=>`<option value="${c}" ${c===cur?"selected":""}>${dvLabel(c)}</option>`).join("");
   document.getElementById("dvSaved").innerHTML=saved.length?saved.map(x=>`
-    <div class="dv-card${x.remote?" clickable":""}" ${x.remote?`data-dv-open="${esc(x.id)}"`:""}>
+    <div class="dv-card clickable" data-dv-open="${esc(x.id)}">
       <div class="dv-head"><div class="dv-icon">${dvIcon(x.category)}</div><div style="min-width:0;flex:1"><div class="dv-name">${esc(x.name)}</div><div class="dv-sub"><span class="dv-dot ${x.online?"on":""}"></span>${x.online?"online":"fora do ar"} · ${esc(dvLabel(x.category))}${x.model?" · "+esc(x.model):""}</div></div></div>
       <div class="dv-actions">
-        ${x.remote?`<button class="btn btn-primary btn-sm" data-dv-open="${esc(x.id)}">Controlar</button>`:`<span class="info-chip" title="A Cassandra ainda não sabe controlar este tipo de aparelho">sem controle ainda</span>`}
-        ${x.remote?(x.default?'<span class="info-chip">padrão da voz</span>':`<button class="btn btn-ghost btn-sm" data-dv-act="default" data-id="${esc(x.id)}">Tornar padrão</button>`):""}
+        <button class="btn btn-primary btn-sm" data-dv-open="${esc(x.id)}">Controlar</button>
+        ${x.panel==="tv"?(x.default?'<span class="info-chip">padrão da voz</span>':`<button class="btn btn-ghost btn-sm" data-dv-act="default" data-id="${esc(x.id)}">Tornar padrão</button>`):""}
         <button class="btn btn-ghost btn-sm" data-dv-act="rename" data-id="${esc(x.id)}">Renomear</button>
         <button class="btn btn-danger btn-sm" data-dv-act="forget" data-id="${esc(x.id)}" data-name="${esc(x.name)}">Esquecer</button>
         <select class="settings-select" data-dv-cat="${esc(x.id)}" title="Tipo do aparelho (corrija se a Cassandra errou)" style="min-width:150px;max-width:190px;flex:1">${catOptions(x.category)}</select>
@@ -2139,8 +2212,24 @@ async function dvScan(){
   try{renderDevices(await api("/api/devices/scan","POST",{}));const n=(dvState.found||[]).length;dvSay(n?`${n} aparelho${n>1?"s":""} encontrado${n>1?"s":""}.`:"Nenhum aparelho novo encontrado. Ele está ligado e no mesmo Wi-Fi?",n?"ok":"error");}
   catch(e){dvSay(e.message,"error");document.getElementById("dvScan").disabled=false;}
 }
+const LIGHT_COLORS=["#ff3b30","#ff9500","#ffcc00","#34c759","#00c7be","#007aff","#af52de","#ff2d55","#ffffff"];
+let lgTimer=null, spkTimer=null;
 function openRemote(id){
-  const x=(dvState&&dvState.devices||[]).find(d=>d.id===id); if(!x||!x.remote) return;
+  const x=(dvState&&dvState.devices||[]).find(d=>d.id===id); if(!x) return;
+  const panel=x.panel||"generic";
+  ["pnlTv","pnlComputer","pnlLight","pnlSpeaker"].forEach(p=>document.getElementById(p).style.display="none");
+  const show={tv:"pnlTv",computer:"pnlComputer",light:"pnlLight",speaker:"pnlSpeaker"}[panel];
+  if(show) document.getElementById(show).style.display="";
+  const page=document.getElementById("rmPage");
+  if(x.page_url){page.href=x.page_url;page.style.display="";}else page.style.display="none";
+  document.getElementById("rmNetInfo").textContent=[x.host,x.mac?`MAC ${x.mac}`:"",x.manufacturer,x.model].filter(Boolean).join(" · ");
+  document.getElementById("lgColors").innerHTML=LIGHT_COLORS.map(c=>`<button class="rbtn" data-rm-color="${c}" title="${c}" style="min-width:40px;background:${c}"></button>`).join("");
+  if(panel==="light"){
+    api(`/api/devices/${encodeURIComponent(id)}/state`).then(st=>{
+      if(st.brightness){document.getElementById("lgBright").value=st.brightness;document.getElementById("lgBrightVal").textContent=st.brightness+"%";}
+      if(st.color_temp){document.getElementById("lgTemp").value=st.color_temp;document.getElementById("lgTempVal").textContent=st.color_temp+" K";}
+    }).catch(()=>{});
+  }
   dvCurrent=x;
   document.getElementById("dvList").style.display="none"; document.getElementById("dvRemote").style.display="";
   document.getElementById("rmName").textContent=x.name;
@@ -2148,12 +2237,15 @@ function openRemote(id){
   const caps=new Set(x.capabilities||[]);
   document.querySelectorAll("#dvRemote [data-rm]").forEach(b=>b.disabled=!caps.has(b.dataset.rm));
   const note=document.getElementById("rmNote");
-  if(x.control==="dial"){note.style.display="";note.textContent="Este aparelho só aceita abrir e fechar apps pela rede. Para ligar, desligar e volume, use o controle dele, um Fire TV plugado nele ou um emissor infravermelho.";}
+  if(panel==="computer"){note.style.display="";note.textContent="Controlado pelo Maestro, que roda neste computador. Desligar e reiniciar esperam 1 minuto — dá para cancelar.";}
+  else if(panel==="generic"){note.style.display="";note.textContent="A Cassandra ainda não tem controle próprio para este tipo de aparelho. Dá para abrir a página de configuração dele (no mesmo Wi-Fi) e, se ele aceitar, ligá-lo pela rede.";}
+  else if(x.control==="dial"){note.style.display="";note.textContent="Este aparelho só aceita abrir e fechar apps pela rede. Para ligar, desligar e volume, use o controle dele, um Fire TV plugado nele ou um emissor infravermelho.";}
   else if(x.control==="firetv"){note.style.display="";note.textContent="Ligar/desligar e volume passam pelo HDMI (CEC): funcionam se a TV tiver o CEC ativado (Anynet+, SimpLink, Bravia Sync…).";}
   else note.style.display="none";
   document.getElementById("rmInputsPanel").style.display=caps.has("input")?"":"none";
   document.getElementById("rmInputs").innerHTML=[1,2,3,4].map(n=>`<button class="rbtn" data-rm-input="${n}">HDMI ${n}</button>`).join("");
   rmSay("");
+  if(panel!=="tv") return;
   document.getElementById("rmApps").innerHTML='<div class="bt-empty">Carregando…</div>';
   api(`/api/devices/${encodeURIComponent(id)}/apps`).then(d=>{
     const apps=d.apps||[];
@@ -2167,6 +2259,9 @@ async function rmCommand(action,value){
   catch(e){rmSay(e.message,"error");}
 }
 document.getElementById("dvScan").addEventListener("click",dvScan);
+document.getElementById("lgBright").addEventListener("input",e=>{document.getElementById("lgBrightVal").textContent=e.target.value+"%";clearTimeout(lgTimer);lgTimer=setTimeout(()=>rmCommand("brightness",+e.target.value),250);});
+document.getElementById("lgTemp").addEventListener("input",e=>{document.getElementById("lgTempVal").textContent=e.target.value+" K";clearTimeout(lgTimer);lgTimer=setTimeout(()=>rmCommand("color_temp",+e.target.value),250);});
+document.getElementById("spkVol").addEventListener("input",e=>{clearTimeout(spkTimer);spkTimer=setTimeout(()=>rmCommand("volume",+e.target.value),250);});
 document.getElementById("rmBack").addEventListener("click",dvOpen);
 document.getElementById("tab-devices").addEventListener("change",async e=>{
   const sel=e.target.closest("[data-dv-cat]"); if(!sel) return;
@@ -2191,6 +2286,13 @@ document.getElementById("tab-devices").addEventListener("click",async e=>{
   if(con){try{renderDevices(await api("/api/devices/connect","POST",{host:con.dataset.dvConnect}));}catch(err){dvSay(err.message,"error");}return;}
   const bt=e.target.closest("[data-dv-bt]");
   if(bt){bt.disabled=true;try{await api(`/api/bluetooth/${bt.dataset.dvBt}`,"POST",{mac:bt.dataset.mac});}catch(err){alert(err.message);}setTimeout(loadDeviceBt,bt.dataset.dvBt==="connect"?6000:800);return;}
+  const conf=e.target.closest("[data-rm-confirm]");
+  if(conf){
+    const what=conf.dataset.rmConfirm==="shutdown"?"Desligar":"Reiniciar";
+    if(confirm(`${what} o computador? Ele espera 1 minuto — dá para cancelar.`)) rmCommand(conf.dataset.rmConfirm,60);
+    return;
+  }
+  const col=e.target.closest("[data-rm-color]"); if(col){rmCommand("color",col.dataset.rmColor);return;}
   const rm=e.target.closest("[data-rm]"); if(rm){rmCommand(rm.dataset.rm);return;}
   const inp=e.target.closest("[data-rm-input]"); if(inp){rmCommand("input",+inp.dataset.rmInput);return;}
   const app=e.target.closest("[data-rm-app]"); if(app){rmCommand("app",app.dataset.rmApp);return;}
@@ -2635,6 +2737,13 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                 return
             if parsed.path == "/api/devices":
                 self._send_json(network_devices.manager.status())
+                return
+            m = re.match(r"^/api/devices/([a-z0-9-]+)/state$", parsed.path)
+            if m:
+                try:
+                    self._send_json(network_devices.manager.light_state(m.group(1)))
+                except Exception as exc:  # noqa: BLE001
+                    self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_GATEWAY)
                 return
             m = re.match(r"^/api/devices/([a-z0-9-]+)/apps$", parsed.path)
             if m:

@@ -57,7 +57,13 @@ APPS: dict[str, dict[str, str]] = {
 # Ações de controle remoto que a UI e a skill conhecem.
 REMOTE_KEYS = ["up", "down", "left", "right", "ok", "back", "home", "menu", "play_pause", "rewind", "forward"]
 ACTIONS = ["power_on", "power_off", "volume_up", "volume_down", "mute", "channel_up", "channel_down",
-           *REMOTE_KEYS, "input", "app", "close_app"]
+           *REMOTE_KEYS, "input", "app", "close_app",
+           # computador (pelo maestro)
+           "lock", "sleep", "shutdown", "restart", "cancel_shutdown", "screen_off", "next", "previous",
+           # lâmpada
+           "light_on", "light_off", "brightness", "color_temp", "color",
+           # caixa de som (Spotify) e genérico
+           "play_here", "volume", "wake"]
 
 
 class DeviceError(Exception):
@@ -98,6 +104,13 @@ def _mac_of(host: str) -> str | None:
         return None
     m = re.search(r"lladdr ([0-9a-f:]{17})", out)
     return m.group(1) if m else None
+
+
+def _page_url(host: str) -> str | None:
+    for port, scheme in ((80, "http"), (443, "https"), (8080, "http")):
+        if _port_open(host, port, 0.6):
+            return f"{scheme}://{host}" + ("" if port in (80, 443) else f":{port}")
+    return None
 
 
 def _wake_on_lan(mac: str) -> None:
@@ -278,13 +291,93 @@ def _control_for(info: dict[str, Any]) -> str | None:
     return None
 
 
+def _wiz(found: dict, timeout: float) -> None:
+    """Lâmpadas/tomadas WiZ respondem a um broadcast UDP na porta 38899 (controle local, sem nuvem)."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    sock.settimeout(0.5)
+    try:
+        sock.sendto(b'{"method":"getSystemConfig","params":{}}', ("255.255.255.255", 38899))
+    except OSError:
+        sock.close()
+        return
+    end = time.time() + min(timeout, 3)
+    while time.time() < end:
+        try:
+            data, addr = sock.recvfrom(4096)
+        except socket.timeout:
+            continue
+        except OSError:
+            break
+        try:
+            result = json.loads(data.decode(errors="replace")).get("result") or {}
+        except ValueError:
+            continue
+        entry = _entry(found, addr[0])
+        entry["wiz"] = True
+        entry["manufacturer"] = entry["manufacturer"] or "WiZ"
+        entry["model"] = entry["model"] or str(result.get("moduleName") or "lâmpada WiZ")
+        entry["names"].append(f"Lâmpada WiZ {addr[0].split('.')[-1]}")
+    sock.close()
+
+
+def _yeelight(found: dict, timeout: float) -> None:
+    """Lâmpadas Yeelight (com o "Controle pela LAN" ligado no app) respondem a um SSDP próprio na porta 1982."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+    sock.settimeout(0.5)
+    msg = 'M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1982\r\nMAN: "ssdp:discover"\r\nST: wifi_bulb\r\n\r\n'
+    try:
+        sock.sendto(msg.encode(), ("239.255.255.250", 1982))
+    except OSError:
+        sock.close()
+        return
+    end = time.time() + min(timeout, 3)
+    while time.time() < end:
+        try:
+            data, addr = sock.recvfrom(4096)
+        except socket.timeout:
+            continue
+        except OSError:
+            break
+        text = data.decode(errors="replace")
+        if "yeelight://" not in text:
+            continue
+        entry = _entry(found, addr[0])
+        entry["yeelight"] = True
+        entry["manufacturer"] = entry["manufacturer"] or "Yeelight"
+        m = re.search(r"(?im)^model:\s*(\S+)", text)
+        entry["model"] = entry["model"] or (m.group(1) if m else "lâmpada")
+        m = re.search(r"(?im)^name:\s*(.+)$", text)
+        entry["names"].append(m.group(1).strip() if m and m.group(1).strip() else f"Lâmpada Yeelight {addr[0].split('.')[-1]}")
+    sock.close()
+
+
+def _maestro_hosts() -> set[str]:
+    """IPs do computador onde o maestro roda (MAESTRO_URL) — esse computador é controlável pelo maestro."""
+    hosts: set[str] = set()
+    raw = os.getenv("MAESTRO_URL") or os.getenv("ORCHESTRATOR_URL") or ""
+    for url in raw.split(","):
+        host = urllib.parse.urlparse(url.strip()).hostname
+        if not host:
+            continue
+        try:
+            hosts.add(socket.gethostbyname(host))
+        except OSError:
+            if re.fullmatch(r"[0-9.]+", host):
+                hosts.add(host)
+    return hosts
+
+
 def discover(timeout: float = 4.0) -> list[dict[str, Any]]:
     """Todos os aparelhos que se anunciam na rede (menos o próprio Pi), com o que se sabe de cada um."""
     found: dict[str, dict[str, Any]] = {}
-    mdns = threading.Thread(target=_mdns, args=(found, timeout), daemon=True)
-    mdns.start()
+    extra = [threading.Thread(target=f, args=(found, timeout), daemon=True) for f in (_mdns, _wiz, _yeelight)]
+    for t in extra:
+        t.start()
     _ssdp(found, timeout)
-    mdns.join(timeout + 4)
+    for t in extra:
+        t.join(timeout + 4)
+    maestro_hosts = _maestro_hosts()
     own = _own_ips()
     out = []
     for host, info in list(found.items()):
@@ -297,7 +390,10 @@ def discover(timeout: float = 4.0) -> list[dict[str, Any]]:
         out.append({
             "host": host, "name": name, "manufacturer": info["manufacturer"], "model": info["model"],
             "hostname": info["hostname"], "dial_url": info["dial_url"],
-            "category": classify(info), "control": _control_for(info),
+            "category": "computer" if host in maestro_hosts else ("light" if info.get("wiz") or info.get("yeelight")
+                                                                   else classify(info)),
+            "control": ("maestro_pc" if host in maestro_hosts else "wiz" if info.get("wiz")
+                        else "yeelight" if info.get("yeelight") else _control_for(info)),
             "services": sorted(info["mdns"] | {s for s in info["ssdp"] if not s.startswith("uuid:")})[:12],
             "ports": sorted(info["ports"])[:10],
         })
@@ -619,11 +715,195 @@ class SamsungDriver(_Driver):
         raise DeviceError("não suportado nesta TV")
 
 
-DRIVERS = {d.kind: d for d in (FireTvDriver, DialDriver, RokuDriver, WebOsDriver, SamsungDriver)}
+class MaestroPcDriver(_Driver):
+    """O computador onde o maestro roda: bloquear, suspender, desligar/reiniciar (com prazo), volume, mídia."""
+    kind = "maestro_pc"
+    capabilities = {"lock", "sleep", "shutdown", "restart", "cancel_shutdown", "screen_off", "volume_up",
+                    "volume_down", "mute", "play_pause", "next", "previous", "wake"}
+
+    @staticmethod
+    def _link():
+        from cassandra.maestro_link import MaestroLink  # noqa: PLC0415
+        link = MaestroLink.from_env(agent_name="personal-assistant")
+        base = link.refresh()
+        if not base:
+            raise DeviceError("o maestro está fora do ar (o computador está desligado?)")
+        return link, base
+
+    def online(self) -> bool:
+        return _port_open(self.host, 8090)
+
+    def command(self, action: str, value: Any = None) -> str:
+        link, base = self._link()
+        body: dict[str, Any] = {"action": action}
+        if action in ("volume_up", "volume_down"):
+            body["times"] = int(value or 2)
+        if action in ("shutdown", "restart"):
+            body["delay"] = int(value or 60)
+        status, payload = link._http(base, "POST", "/maestro/pc/action", body, timeout=15)
+        if status != 200:
+            raise DeviceError(str(payload.get("detail") or payload or f"erro {status}"))
+        return str(payload.get("message") or "ok")
+
+
+class _LightDriver(_Driver):
+    """Base das lâmpadas: ligar/desligar, brilho (1-100), temperatura de cor (K) e cor (#rrggbb)."""
+    capabilities = {"light_on", "light_off", "brightness", "color_temp", "color", "wake"}
+
+    @staticmethod
+    def _rgb(value: Any) -> tuple[int, int, int]:
+        text = str(value or "#ffffff").lstrip("#")
+        if not re.fullmatch(r"[0-9a-fA-F]{6}", text):
+            raise DeviceError("cor inválida (use #rrggbb)")
+        return int(text[0:2], 16), int(text[2:4], 16), int(text[4:6], 16)
+
+
+class WizDriver(_LightDriver):
+    kind = "wiz"
+
+    def _send(self, method: str, params: dict | None = None) -> dict:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.settimeout(2)
+            sock.sendto(json.dumps({"method": method, "params": params or {}}).encode(), (self.host, 38899))
+            try:
+                data, _ = sock.recvfrom(4096)
+            except socket.timeout as exc:
+                raise DeviceError("a lâmpada não respondeu") from exc
+        return json.loads(data.decode(errors="replace"))
+
+    def online(self) -> bool:
+        try:
+            self._send("getPilot")
+            return True
+        except Exception:  # noqa: BLE001
+            return False
+
+    def state(self) -> dict[str, Any]:
+        r = self._send("getPilot").get("result") or {}
+        return {"on": r.get("state"), "brightness": r.get("dimming"), "color_temp": r.get("temp")}
+
+    def command(self, action: str, value: Any = None) -> str:
+        if action == "light_on":
+            self._send("setPilot", {"state": True})
+        elif action == "light_off":
+            self._send("setPilot", {"state": False})
+        elif action == "brightness":
+            self._send("setPilot", {"state": True, "dimming": max(10, min(100, int(value or 100)))})
+        elif action == "color_temp":
+            self._send("setPilot", {"state": True, "temp": max(2200, min(6500, int(value or 4000)))})
+        elif action == "color":
+            r, g, b = self._rgb(value)
+            self._send("setPilot", {"state": True, "r": r, "g": g, "b": b})
+        else:
+            raise DeviceError("não suportado nesta lâmpada")
+        return "ok"
+
+
+class YeelightDriver(_LightDriver):
+    kind = "yeelight"
+
+    def _send(self, method: str, params: list) -> dict:
+        try:
+            with socket.create_connection((self.host, 55443), timeout=3) as sock:
+                sock.sendall((json.dumps({"id": 1, "method": method, "params": params}) + "\r\n").encode())
+                data = sock.recv(4096).decode(errors="replace")
+        except OSError as exc:
+            raise DeviceError(f"a lâmpada não respondeu ({exc})") from exc
+        reply = json.loads(data.splitlines()[0]) if data.strip() else {}
+        if reply.get("error"):
+            raise DeviceError(str(reply["error"].get("message") or reply["error"]))
+        return reply
+
+    def online(self) -> bool:
+        return _port_open(self.host, 55443)
+
+    def state(self) -> dict[str, Any]:
+        r = (self._send("get_prop", ["power", "bright", "ct"]).get("result") or [None, None, None])
+        return {"on": r[0] == "on", "brightness": int(r[1]) if r[1] else None, "color_temp": int(r[2]) if r[2] else None}
+
+    def command(self, action: str, value: Any = None) -> str:
+        if action == "light_on":
+            self._send("set_power", ["on", "smooth", 300])
+        elif action == "light_off":
+            self._send("set_power", ["off", "smooth", 300])
+        elif action == "brightness":
+            self._send("set_power", ["on", "smooth", 300])
+            self._send("set_bright", [max(1, min(100, int(value or 100))), "smooth", 300])
+        elif action == "color_temp":
+            self._send("set_power", ["on", "smooth", 300])
+            self._send("set_ct_abx", [max(1700, min(6500, int(value or 4000))), "smooth", 300])
+        elif action == "color":
+            r, g, b = self._rgb(value)
+            self._send("set_power", ["on", "smooth", 300])
+            self._send("set_rgb", [(r << 16) + (g << 8) + b, "smooth", 300])
+        else:
+            raise DeviceError("não suportado nesta lâmpada")
+        return "ok"
+
+
+class SpotifySpeakerDriver(_Driver):
+    """Caixa de som que aparece no Spotify (Spotify Connect): tocar nela, volume, play/pausa."""
+    kind = "spotify"
+    capabilities = {"play_here", "volume", "play_pause", "next", "previous", "wake"}
+
+    def _device(self) -> dict[str, Any]:
+        from cassandra.spotify import client  # noqa: PLC0415
+        wanted = (self.device.get("spotify_name") or self.device.get("name") or "").lower()
+        dev = next((d for d in client.devices() if (d.get("name") or "").lower() == wanted), None)
+        if not dev:
+            raise DeviceError("a caixa não aparece no seu Spotify agora (está ligada?)")
+        return dev
+
+    def online(self) -> bool:
+        return True
+
+    def command(self, action: str, value: Any = None) -> str:
+        from cassandra.spotify import client  # noqa: PLC0415
+        dev = self._device()
+        if action == "play_here":
+            client.transfer(dev["id"], play=True)
+            return f"Tocando em {dev['name']}."
+        if action == "volume":
+            client.api("PUT", "/me/player/volume", {"volume_percent": max(0, min(100, int(value or 50))),
+                                                    "device_id": dev["id"]})
+            return "ok"
+        if action == "play_pause":
+            state = client.playback() or {}
+            if state.get("is_playing"):
+                client.pause()
+            else:
+                client.api("PUT", "/me/player/play", {"device_id": dev["id"]})
+            return "ok"
+        if action == "next":
+            client.next()
+            return "ok"
+        if action == "previous":
+            client.previous()
+            return "ok"
+        raise DeviceError("não suportado nesta caixa")
+
+
+class BasicDriver(_Driver):
+    """Qualquer aparelho sem controle próprio: só "acordar" pela rede (Wake-on-LAN), se tiver o MAC."""
+    kind = "basic"
+    capabilities = {"wake"}
+
+    def online(self) -> bool:
+        ports = self.device.get("ports") or [80]
+        return any(_port_open(self.host, int(p), 0.6) for p in ports[:3])
+
+
+DRIVERS = {d.kind: d for d in (FireTvDriver, DialDriver, RokuDriver, WebOsDriver, SamsungDriver, MaestroPcDriver,
+                               WizDriver, YeelightDriver, SpotifySpeakerDriver, BasicDriver)}
 CONTROL_LABELS = {"firetv": "Fire TV / Android TV (ADB)", "dial": "só abrir apps (DIAL)", "roku": "Roku",
-                  "webos": "LG webOS", "samsung": "Samsung"}
+                  "webos": "LG webOS", "samsung": "Samsung", "maestro_pc": "pelo Maestro", "wiz": "WiZ",
+                  "yeelight": "Yeelight", "spotify": "Spotify Connect", "basic": "básico"}
+# Tela de controle de cada controle (a UI escolhe o painel por aqui).
+PANELS = {"firetv": "tv", "dial": "tv", "roku": "tv", "webos": "tv", "samsung": "tv", "maestro_pc": "computer",
+          "wiz": "light", "yeelight": "light", "spotify": "speaker", "basic": "generic"}
 # Categorias com tela de controle remoto de TV na UI (a UI escolhe a tela pela categoria).
 TV_LIKE = {"tv", "streaming"}
+TV_CONTROLS = {"firetv", "dial", "roku", "webos", "samsung"}
 
 
 def find_app(text: str) -> str | None:
@@ -660,6 +940,25 @@ class DeviceManager:
                     d["adb_port"] = d.pop("port")
         return devices
 
+    def refresh_details(self) -> None:
+        """Completa MAC e página de configuração de aparelhos conectados antes disso existir."""
+        devices = self._load()
+        changed = False
+        for d in devices:
+            if "page_url" not in d:
+                d["page_url"] = _page_url(d["host"])
+                changed = True
+            if not d.get("mac"):
+                mac = _mac_of(d["host"])
+                if mac:
+                    d["mac"] = mac
+                    changed = True
+            if d["host"] in _maestro_hosts() and d.get("control") in (None, "basic"):
+                d["control"], d["category"] = "maestro_pc", "computer"
+                changed = True
+        if changed:
+            self._save(devices)
+
     def _save(self, devices: list[dict[str, Any]]) -> None:
         DEVICES_FILE.parent.mkdir(parents=True, exist_ok=True)
         tmp = DEVICES_FILE.with_suffix(".tmp")
@@ -677,7 +976,9 @@ class DeviceManager:
         return next((d for d in self._load() if d["id"] == device_id), None)
 
     def _controllable(self, category: set[str] | None = None) -> list[dict[str, Any]]:
-        return [d for d in self._load() if d.get("control") and (category is None or d.get("category") in category)]
+        """Aparelhos de TV com controle de TV (é o que os comandos de voz de TV usam)."""
+        return [d for d in self._load() if d.get("control") in TV_CONTROLS
+                and (category is None or d.get("category") in category)]
 
     def default(self) -> dict[str, Any] | None:
         """O aparelho dos comandos de voz sem nome ("desliga a TV"): o marcado como padrão, senão o 1º que
@@ -713,25 +1014,31 @@ class DeviceManager:
 
     @staticmethod
     def public(device: dict[str, Any], check_online: bool = False) -> dict[str, Any]:
-        control = device.get("control")
-        driver = DRIVERS.get(control) if control else None
+        control = device.get("control") or "basic"
+        driver = DRIVERS.get(control, BasicDriver)
         view = {k: device.get(k) for k in ("id", "name", "host", "model", "manufacturer", "category", "control",
-                                           "default")}
-        view["control_label"] = CONTROL_LABELS.get(control or "", "")
-        view["capabilities"] = sorted(driver.capabilities) if driver else []
-        view["remote"] = "tv" if driver and device.get("category") in TV_LIKE else None  # qual tela de controle
+                                           "default", "mac", "page_url")}
+        view["control_label"] = CONTROL_LABELS.get(control, "")
+        caps = set(driver.capabilities)
+        if not device.get("mac"):
+            caps.discard("wake")
+        view["capabilities"] = sorted(caps)
+        view["panel"] = PANELS.get(control, "generic")  # qual tela de controle a UI mostra
+        view["remote"] = view["panel"]  # nome antigo
         if check_online:
             try:
-                if driver:
-                    view["online"] = driver(device).online()
-                else:
-                    ports = device.get("ports") or [80]
-                    view["online"] = any(_port_open(device["host"], int(p), 0.6) for p in ports[:3])
+                view["online"] = driver(device).online()
             except Exception:  # noqa: BLE001
                 view["online"] = False
         return view
 
     def status(self) -> dict[str, Any]:
+        if not getattr(self, "_details_done", False):
+            self._details_done = True
+            try:
+                self.refresh_details()
+            except Exception:  # noqa: BLE001 — só completa informação
+                pass
         with self._lock:
             jobs = {k: dict(v) for k, v in self._jobs.items()}
         saved = self._load()
@@ -770,7 +1077,8 @@ class DeviceManager:
                   "category": found["category"], "control": found.get("control"),
                   "model": found.get("model"), "manufacturer": found.get("manufacturer"),
                   "hostname": found.get("hostname"), "dial_url": found.get("dial_url"),
-                  "services": found.get("services"), "ports": found.get("ports"), "mac": _mac_of(host)}
+                  "services": found.get("services"), "ports": found.get("ports"), "mac": _mac_of(host),
+                  "page_url": _page_url(host)}
         try:
             if device["control"]:
                 device.update({k: v for k, v in DRIVERS[device["control"]](device).pair().items() if v})
@@ -780,15 +1088,14 @@ class DeviceManager:
                                     "message": f"Não conectou em {found['name']}: {exc}"}
             return
         devices = [d for d in self._load() if d["host"] != host]
-        if device["control"] and device["category"] in TV_LIKE:
+        if device["control"] in TV_CONTROLS and device["category"] in TV_LIKE:
             device["default"] = not any(d.get("default") for d in devices)
         devices.append(device)
         self._save(devices)
         label = CATEGORY_LABELS.get(device["category"], "aparelho")
         with self._lock:
             self._jobs[host] = {"state": "ok", "at": time.time(),
-                                "message": f"{found['name']} conectado — identificado como {label.lower()}."
-                                           + ("" if device["control"] else " (sem controle disponível ainda)")}
+                                "message": f"{found['name']} conectado — identificado como {label.lower()}."}
 
     def forget(self, device_id: str) -> None:
         devices = [d for d in self._load() if d["id"] != device_id]
@@ -825,15 +1132,22 @@ class DeviceManager:
         device = self.get(device_id)
         if not device:
             raise DeviceError("aparelho não encontrado")
-        if not device.get("control"):
-            raise DeviceError(f"{device['name']} ainda não tem controle pela Cassandra")
-        return device, DRIVERS[device["control"]](device)
+        return device, DRIVERS.get(device.get("control") or "basic", BasicDriver)(device)
+
+    def light_state(self, device_id: str) -> dict[str, Any]:
+        device, driver = self._driver(device_id)
+        return driver.state() if hasattr(driver, "state") else {}
 
     def apps(self, device_id: str) -> list[dict[str, str]]:
         return self._driver(device_id)[1].apps()
 
     def command(self, device_id: str, action: str, value: Any = None) -> str:
         device, driver = self._driver(device_id)
+        if action == "wake":
+            if not device.get("mac"):
+                raise DeviceError("não sei o MAC deste aparelho para ligá-lo pela rede")
+            _wake_on_lan(device["mac"])
+            return "Sinal de ligar enviado (funciona se o aparelho tiver o Wake-on-LAN ativado)."
         if action not in driver.capabilities:
             if device["control"] == "dial":
                 return driver.command(action, value)  # a mensagem explica o que dá para fazer
