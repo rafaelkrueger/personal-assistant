@@ -387,7 +387,10 @@ HTML_PAGE = """<!doctype html>
     .mu-hero{display:flex;gap:18px;align-items:center;flex-wrap:wrap;background:var(--glass);border:1px solid var(--border);border-radius:var(--rx);padding:18px;backdrop-filter:blur(12px);margin-bottom:16px;position:relative;overflow:hidden}
     .mu-hero::before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 0% 0%,rgba(30,215,96,.10),transparent 55%);pointer-events:none}
     .mu-cover{width:132px;height:132px;border-radius:14px;object-fit:cover;background:rgba(255,255,255,.05);flex-shrink:0;box-shadow:0 8px 28px rgba(0,0,0,.45)}
-    @media(max-width:560px){.mu-cover{width:100%;height:auto;aspect-ratio:1/1;max-width:260px;margin:0 auto}}
+    .mu-cover.empty{display:none}
+    @media(max-width:560px){.mu-hero{padding:14px}.mu-cover{width:min(62vw,220px);height:auto;aspect-ratio:1/1;margin:0 auto}.mu-main{min-width:0;flex-basis:100%}.mu-title{font-size:18px}}
+    .mu-banner{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;padding:12px 14px;margin-bottom:14px;border-radius:var(--rl);border:1px solid rgba(251,191,36,.3);background:var(--amber-dim);color:#fde68a;font-size:13px}
+    .mu-banner span{flex:1;min-width:180px}
     .mu-main{flex:1;min-width:220px;position:relative}
     .mu-title{font-size:20px;font-weight:800;letter-spacing:-.03em;overflow-wrap:anywhere}
     .mu-sub{font-size:13px;color:var(--text2);margin-top:3px;overflow-wrap:anywhere}
@@ -548,6 +551,7 @@ HTML_PAGE = """<!doctype html>
         </div>
 
         <div id="muBody" style="display:none">
+          <div class="mu-banner" id="muBanner" style="display:none"><span id="muBannerText"></span><button class="btn btn-warn btn-sm" id="muLinkBtn">Conectar a caixa Cassandra</button></div>
           <div class="mu-hero">
             <img class="mu-cover" id="muCover" alt=""/>
             <div class="mu-main">
@@ -568,7 +572,6 @@ HTML_PAGE = """<!doctype html>
                 <select id="muDevice" class="settings-select" title="Tocar em"></select>
               </div>
               <div class="mu-msg" id="muMsg"></div>
-              <button class="btn btn-warn btn-sm" id="muLinkBtn" style="display:none;margin-top:8px">Conectar a caixa Cassandra</button>
             </div>
           </div>
 
@@ -1891,17 +1894,20 @@ function renderMusic(v){
   connect.style.display="none"; body.style.display="";
   badge.textContent=v.device_online?`Caixa ${v.device_name} conectada`:`Caixa ${v.device_name} desconectada`;
   const link=document.getElementById("muLinkBtn");
-  link.style.display=v.device_online?"none":"";
-  link.textContent=v.needs_renew?"Renovar credenciais para conectar a caixa":`Conectar a caixa ${v.device_name}`;
+  document.getElementById("muBanner").style.display=v.device_online?"none":"";
+  document.getElementById("muBannerText").textContent=v.needs_renew
+    ?`Falta um passo: renove o login do Spotify uma vez para a caixa ${v.device_name} (o Raspberry Pi) entrar na sua conta.`
+    :`A caixa ${v.device_name} (o Raspberry Pi) não está conectada ao Spotify.`;
+  link.textContent=v.needs_renew?"Renovar credenciais":`Conectar a caixa`;
   badge.style.color=v.device_online?"var(--green)":"var(--amber)";
   const t=v.track;
   document.getElementById("muTitle").textContent=t?t.name:"Nada tocando";
-  document.getElementById("muSub").textContent=t?[t.subtitle,t.album].filter(Boolean).join(" · "):(v.device_online?'Busque abaixo ou diga "Cassandra, toca …"':(v.needs_renew?"Renove as credenciais uma vez para a caixa Cassandra entrar na sua conta":`Toque em "Conectar a caixa ${v.device_name}"`));
+  document.getElementById("muSub").textContent=t?[t.subtitle,t.album].filter(Boolean).join(" · "):'Busque abaixo ou diga "Cassandra, toca …"';
   const cover=document.getElementById("muCover");
-  if(t&&(t.image_large||t.image)){cover.src=t.image_large||t.image;cover.style.visibility="";}else{cover.removeAttribute("src");cover.style.visibility="hidden";}
+  if(t&&(t.image_large||t.image)){cover.src=t.image_large||t.image;cover.classList.remove("empty");}else{cover.removeAttribute("src");cover.classList.add("empty");}
   document.getElementById("muToggleIcon").innerHTML=v.is_playing?'<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>':'<path d="M8 5v14l11-7z"/>';
   document.getElementById("muShuffle").classList.toggle("on",!!v.shuffle);
-  document.getElementById("muRepeat").classList.toggle("on",v.repeat&&v.repeat!=="off");
+  document.getElementById("muRepeat").classList.toggle("on",!!(v.repeat&&v.repeat!=="off"));
   document.getElementById("muRepeatOne").style.display=v.repeat==="track"?"":"none";
   const like=document.getElementById("muLike");
   like.classList.toggle("liked",!!(t&&t.liked));
