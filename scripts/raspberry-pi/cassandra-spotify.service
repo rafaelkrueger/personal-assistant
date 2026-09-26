@@ -1,8 +1,8 @@
 # Spotify Connect: o Pi aparece como o dispositivo "Cassandra" no Spotify e toca na saída padrão (PipeWire:
 # a soundbar Bluetooth, quando conectada). A Cassandra manda tocar/pausar/pular pela Web API do Spotify.
 # Binário: librespot (extraído do pacote do raspotify, sem sudo) em ~/.local/bin/librespot.
-# Login: na 1ª vez, escolha "Cassandra" na lista de dispositivos do app do Spotify (mesmo Wi-Fi); a credencial
-# fica guardada no cache e ele entra sozinho depois de reboots. Conta Premium é obrigatória.
+# Login: sozinho, com o login do Spotify feito na UI (ver ~/.local/bin/cassandra-spotify.sh); a credencial
+# fica no cache e ele entra sozinho depois de reboots. Conta Premium é obrigatória.
 # Logs: /tmp/cassandra-spotify.log  |  controle: systemctl --user {status,restart,stop} cassandra-spotify
 [Unit]
 Description=Cassandra - Spotify Connect (librespot)
@@ -11,9 +11,7 @@ Wants=pipewire-pulse.service
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/librespot --name Cassandra --device-type speaker --backend pulseaudio \
-  --bitrate 320 --initial-volume 70 --enable-volume-normalisation \
-  --cache %h/.cache/cassandra-spotify --system-cache %h/.local/state/cassandra-spotify --cache-size-limit 500M
+ExecStart=%h/.local/bin/cassandra-spotify.sh
 Restart=always
 RestartSec=10
 StandardOutput=truncate:/tmp/cassandra-spotify.log

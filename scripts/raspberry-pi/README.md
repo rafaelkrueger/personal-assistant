@@ -10,6 +10,7 @@ e scripts de apoio.
 | `cassandra-netlify-sync.service` | `~/.config/systemd/user/` | Republica o site no Netlify quando a URL do túnel (ou a página) muda — ex.: depois de um reboot |
 | `cassandra-netlify-sync.py` | `~/.local/bin/` | O sincronizador (só biblioteca padrão do Python) |
 | `cassandra-spotify.service` | `~/.config/systemd/user/` | Spotify Connect: o Pi vira o dispositivo "Cassandra" no Spotify (librespot → PipeWire). Log: `/tmp/cassandra-spotify.log` |
+| `cassandra-spotify.sh` | `~/.local/bin/` | Sobe o librespot; no 1º login usa o token que a Cassandra deixa no cache |
 | `cassandra-start.sh` | `~/.local/bin/` | Reinicia a Cassandra e mostra o fim do log |
 | `cassandra-tunnel.sh` | `~/.local/bin/` | Reinicia o túnel e imprime a URL nova |
 
@@ -56,9 +57,12 @@ cd /tmp && curl -sSL -o raspotify.deb \
   https://github.com/dtcooper/raspotify/releases/download/0.48.3/raspotify_0.48.3.librespot.v0.8.0-939dc5e_arm64.deb
 dpkg-deb -x raspotify.deb rsp && cp rsp/usr/bin/librespot ~/.local/bin/
 cp ~/Desktop/personal-assistant/scripts/raspberry-pi/cassandra-spotify.service ~/.config/systemd/user/
+cp ~/Desktop/personal-assistant/scripts/raspberry-pi/cassandra-spotify.sh ~/.local/bin/ && chmod +x ~/.local/bin/cassandra-spotify.sh
 systemctl --user daemon-reload && systemctl --user enable --now cassandra-spotify
 ```
 
-Na primeira vez, abra o app do Spotify no celular (mesmo Wi-Fi) e escolha **Cassandra** na lista de
-dispositivos: a credencial fica no cache e ele entra sozinho depois de reboots. Depois conecte a conta na UI
-(Configurações > Spotify) para a Cassandra poder mandar tocar.
+Depois é só conectar a conta na UI (Configurações > Spotify). O login pede o escopo `streaming`, e a Cassandra
+passa o token para o librespot (arquivo `~/.cache/cassandra-spotify/access_token`, apagado assim que lido): ele
+entra na conta, guarda a própria credencial no cache e entra sozinho depois de reboots. Se a caixa sumir, o
+botão "Conectar a caixa Cassandra" (aba Música) repete isso. Alternativa manual: escolher **Cassandra** na
+lista de dispositivos do app do Spotify (mesmo Wi-Fi).

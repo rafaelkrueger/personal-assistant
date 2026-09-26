@@ -568,6 +568,7 @@ HTML_PAGE = """<!doctype html>
                 <select id="muDevice" class="settings-select" title="Tocar em"></select>
               </div>
               <div class="mu-msg" id="muMsg"></div>
+              <button class="btn btn-warn btn-sm" id="muLinkBtn" style="display:none;margin-top:8px">Conectar a caixa Cassandra</button>
             </div>
           </div>
 
@@ -1083,9 +1084,14 @@ let currentSettings = {};
 // ── Utils ──
 const esc = t=>(t||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 async function api(path,method="GET",body=null){
-  const r=await fetch(path,{method,headers:{"Content-Type":"application/json"},body:body?JSON.stringify(body):null});
-  const d=await r.json();
-  if(!r.ok) throw new Error(d.error||"Erro na API");
+  let r;
+  try{r=await fetch(path,{method,headers:{"Content-Type":"application/json"},body:body?JSON.stringify(body):null});}
+  catch(e){throw new Error("Sem conexão com a Cassandra. Tente de novo.");}
+  const text=await r.text();
+  let d;
+  try{d=text?JSON.parse(text):{};}
+  catch(e){throw new Error(r.ok?"Resposta inválida da Cassandra.":`A Cassandra não respondeu a tempo (HTTP ${r.status}). Tente de novo.`);}
+  if(!r.ok) throw new Error(d.error||`Erro na API (HTTP ${r.status})`);
   return d;
 }
 function enter(el,fn){el.addEventListener("keydown",e=>{if(e.key==="Enter")fn()});}
@@ -1824,7 +1830,7 @@ function renderSpotify(d){
   chip.style.color=d.device_online?"var(--green)":"var(--amber)";
   document.getElementById("sp-device-desc").textContent=d.device_online
     ?"O Raspberry Pi toca no Spotify pela saída de áudio atual"
-    :`Na 1ª vez: abra o app do Spotify no celular (mesmo Wi-Fi), toque no ícone de dispositivos e escolha "${d.device_name}"`;
+    :(d.needs_renew?"Clique em Renovar credenciais uma vez para a caixa entrar na sua conta":"Desconectada — conecte pela aba Música");
   const np=d.now_playing;
   document.getElementById("sp-title").textContent=np?np.title:"Nada tocando";
   document.getElementById("sp-artist").textContent=np?(np.artist+(np.device&&np.device!==d.device_name?` · em ${np.device}`:"")):'Peça "Cassandra, toca …" ou use o campo abaixo';
@@ -1883,11 +1889,14 @@ function renderMusic(v){
     badge.textContent="Spotify desconectado"; return;
   }
   connect.style.display="none"; body.style.display="";
-  badge.textContent=v.device_online?`${v.device_name} online`:`${v.device_name} fora do ar`;
+  badge.textContent=v.device_online?`Caixa ${v.device_name} conectada`:`Caixa ${v.device_name} desconectada`;
+  const link=document.getElementById("muLinkBtn");
+  link.style.display=v.device_online?"none":"";
+  link.textContent=v.needs_renew?"Renovar credenciais para conectar a caixa":`Conectar a caixa ${v.device_name}`;
   badge.style.color=v.device_online?"var(--green)":"var(--amber)";
   const t=v.track;
   document.getElementById("muTitle").textContent=t?t.name:"Nada tocando";
-  document.getElementById("muSub").textContent=t?[t.subtitle,t.album].filter(Boolean).join(" · "):(v.device_online?'Busque abaixo ou diga "Cassandra, toca …"':`Abra o app do Spotify no celular (mesmo Wi-Fi) e escolha "${v.device_name}" uma vez`);
+  document.getElementById("muSub").textContent=t?[t.subtitle,t.album].filter(Boolean).join(" · "):(v.device_online?'Busque abaixo ou diga "Cassandra, toca …"':(v.needs_renew?"Renove as credenciais uma vez para a caixa Cassandra entrar na sua conta":`Toque em "Conectar a caixa ${v.device_name}"`));
   const cover=document.getElementById("muCover");
   if(t&&(t.image_large||t.image)){cover.src=t.image_large||t.image;cover.style.visibility="";}else{cover.removeAttribute("src");cover.style.visibility="hidden";}
   document.getElementById("muToggleIcon").innerHTML=v.is_playing?'<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>':'<path d="M8 5v14l11-7z"/>';
@@ -1962,6 +1971,11 @@ async function muSearch(){
 document.getElementById("muSearchBtn").addEventListener("click",muSearch);
 enter(document.getElementById("muQuery"),muSearch);
 document.getElementById("muConnectBtn").addEventListener("click",spLogin);
+document.getElementById("muLinkBtn").addEventListener("click",async e=>{
+  if(muView&&muView.needs_renew){spLogin();return;}
+  e.currentTarget.disabled=true; muSay("Conectando a caixa… (até 15 s)");
+  await muControl("link_device"); e.currentTarget.disabled=false;
+});
 document.getElementById("muToggle").addEventListener("click",()=>muControl(muView&&muView.is_playing?"pause":"resume"));
 document.getElementById("muShuffle").addEventListener("click",()=>muControl("shuffle",{on:!(muView&&muView.shuffle)}));
 document.getElementById("muRepeat").addEventListener("click",()=>{
@@ -2069,6 +2083,11 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                     return None
                 sp.transfer(device_id, play=True)
                 return "Tocando no dispositivo escolhido."
+            if what == "link_device":
+                if not sp.link_device():
+                    raise spotify_api.SpotifyError(
+                        "A caixa Cassandra não apareceu no Spotify. Veja se o Pi está ligado e tente de novo.")
+                return "Caixa Cassandra conectada."
             if what in ("liked", "top"):
                 return skill._run({"action": "play", "kind": what})
             if what in ("play_uri", "queue"):
