@@ -1994,7 +1994,7 @@ function renderDevices(d){
         ${x.remote?(x.default?'<span class="info-chip">padrão da voz</span>':`<button class="btn btn-ghost btn-sm" data-dv-act="default" data-id="${esc(x.id)}">Tornar padrão</button>`):""}
         <button class="btn btn-ghost btn-sm" data-dv-act="rename" data-id="${esc(x.id)}">Renomear</button>
         <button class="btn btn-danger btn-sm" data-dv-act="forget" data-id="${esc(x.id)}" data-name="${esc(x.name)}">Esquecer</button>
-        <select class="settings-select" data-dv-cat="${esc(x.id)}" title="Tipo do aparelho (corrija se a Cassandra errou)" style="max-width:170px">${catOptions(x.category)}</select>
+        <select class="settings-select" data-dv-cat="${esc(x.id)}" title="Tipo do aparelho (corrija se a Cassandra errou)" style="min-width:150px;max-width:190px;flex:1">${catOptions(x.category)}</select>
       </div></div>`).join(""):'<div class="bt-empty">Nenhum aparelho conectado. Toque em "Procurar aparelhos".</div>';
   const scan=document.getElementById("dvScan");
   scan.disabled=!!d.scanning; scan.textContent=d.scanning?"Procurando…":"Procurar aparelhos";
