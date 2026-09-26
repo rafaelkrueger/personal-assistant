@@ -18,9 +18,9 @@ FRAME_SIZE = int(SAMPLE_RATE * FRAME_MS / 1000)  # samples per frame = 480
 # O limite de fala acompanha o ruído do ambiente: fala = pelo menos NOISE_FACTOR vezes o chiado medido (e nunca
 # menos que o VAD_ENERGY_THRESHOLD). Microfones baratos têm um chiado quase no limite fixo; sem isso, trechos de
 # puro ruído viram "fala" e a transcrição inventa texto.
-NOISE_FACTOR = 2.5
+NOISE_FACTOR = 2.0
 # Menos que isso de fala (quadros acima do limite) não é pedido: é estalo, bip ou ruído — nem vai para transcrever.
-MIN_SPEECH_SECONDS = 0.35
+MIN_SPEECH_SECONDS = 0.18
 # Taxas tentadas ao abrir o microfone. Muitos microfones USB só gravam a 48 kHz: abre na taxa que ele aceita e
 # converte para 16 kHz (o que a transcrição e o Vosk esperam).
 _CAPTURE_RATES = (16_000, 48_000, 44_100, 32_000, 22_050, 96_000)
@@ -137,10 +137,14 @@ class VadRecorder:
         return value
 
     def _learn_noise(self, energy: float, threshold: float) -> None:
-        """Média móvel do chiado, só com quadros que não parecem fala (abaixo do limite atual)."""
-        if energy >= threshold:
+        """Média móvel do chiado, só com quadros claramente sem fala (perto do ruído atual) — o fim das falas,
+        mais alto que o chiado, não pode puxar o limite para cima."""
+        if self._noise is None:
+            if energy < threshold:
+                self._noise = energy
             return
-        self._noise = energy if self._noise is None else self._noise * 0.98 + energy * 0.02
+        if energy < self._noise * 1.5 or energy < self.energy_threshold * 0.5:
+            self._noise = self._noise * 0.98 + energy * 0.02
 
     @staticmethod
     def _rms(frame: bytes) -> float:
@@ -216,6 +220,7 @@ class VadRecorder:
                             break
                     else:
                         silent_frames = 0
+                    if energy >= threshold * 0.8:  # sílabas mais fracas contam; o chiado (bem abaixo) não
                         speech_frames += 1
         finally:
             stream.stop_stream()

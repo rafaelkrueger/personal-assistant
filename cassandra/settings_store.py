@@ -17,7 +17,7 @@ _DEFAULTS: dict = {
         "enabled": True,
         # auto = OpenAI enquanto houver chave/créditos, senão voz feminina grátis (espeak); openai | espeak | piper
         "engine": "auto",
-        "tts_model": "tts-1",
+        "tts_model": "gpt-4o-mini-tts",
         "tts_voice": "nova",
         "fallback_lang": "pt",
         "fallback_rate": 160,

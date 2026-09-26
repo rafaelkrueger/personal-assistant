@@ -122,6 +122,14 @@ class LLMService:
         )
         return response.content
 
+    def stream_speech(self, text: str, model: str = "gpt-4o-mini-tts", voice: str = "nova"):
+        """Voz em streaming: gera pedaços de PCM 16-bit mono 24 kHz enquanto a OpenAI produz o áudio."""
+        client = llm_settings.audio_client().with_options(max_retries=0)
+        with client.audio.speech.with_streaming_response.create(
+            model=model, voice=voice, input=text, response_format="pcm",
+        ) as response:
+            yield from response.iter_bytes(4096)
+
     def transcribe_audio_file(
         self,
         audio_path: str,

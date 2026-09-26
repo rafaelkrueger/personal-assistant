@@ -177,11 +177,8 @@ class CassandraAssistant:
 
             raw_text = event.text.strip()
             if not raw_text:
-                if active_until is not None:
-                    retry = "Nao entendi. Pode repetir, por favor?"
-                    self.voice_output.speak(retry)
-                    print(f"Cassandra: {retry}")
-                    self.sound_player.play(self.settings.on_sound_path)
+                # Ruído/som curto durante a sessão: segue ouvindo em silêncio (falar "não entendi" a cada ruído
+                # travava o microfone por ~2 s e irritava).
                 continue
 
             if self.settings.mic_debug and self.settings.input_mode in {"mic", "auto"}:
@@ -203,7 +200,7 @@ class CassandraAssistant:
                 if not command:
                     # Wake word said alone — wait for the follow-up utterance. Espera o bip de ativação terminar
                     # (inclusive o atraso da caixa Bluetooth) para o microfone não captar o próprio bip.
-                    time.sleep(0.6)
+                    time.sleep(0.3)
                     mic_monitor.set(phase="ouvindo o pedido")
                     follow_event = self.input_source.read()
                     if follow_event.exit_requested:
@@ -212,7 +209,7 @@ class CassandraAssistant:
                     command = follow_event.text.strip()
                     command_source = "wake_followup"
                     if not command:
-                        retry = "Nao entendi. Pode repetir, por favor?"
+                        retry = "Não entendi, pode repetir?"
                         self.voice_output.speak(retry)
                         print(f"Cassandra: {retry}")
                         self.sound_player.play(self.settings.on_sound_path)

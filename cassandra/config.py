@@ -23,8 +23,8 @@ class Settings:
     transcription_prompt: str = "Cassandra, toca Legião Urbana no Spotify. Que horas são? Liga a TV e coloca na Netflix."
     # VAD (Voice Activity Detection) settings
     vad_energy_threshold: int = 400
-    vad_silence_duration: float = 0.8
-    vad_wake_silence_duration: float = 0.5
+    vad_silence_duration: float = 0.6
+    vad_wake_silence_duration: float = 0.4
     vad_max_duration: float = 30.0
     mic_debug: bool = True
     wake_timeout_seconds: int = 30
@@ -73,8 +73,8 @@ def load_settings() -> Settings:
     )
     # VAD settings
     vad_energy_threshold = int(os.getenv("VAD_ENERGY_THRESHOLD", "400").strip() or "400")
-    vad_silence_duration = float(os.getenv("VAD_SILENCE_DURATION", "0.8").strip() or "0.8")
-    vad_wake_silence_duration = float(os.getenv("VAD_WAKE_SILENCE_DURATION", "0.5").strip() or "0.5")
+    vad_silence_duration = float(os.getenv("VAD_SILENCE_DURATION", "0.6").strip() or "0.6")
+    vad_wake_silence_duration = float(os.getenv("VAD_WAKE_SILENCE_DURATION", "0.4").strip() or "0.4")
     vad_max_duration = float(os.getenv("VAD_MAX_DURATION", "30.0").strip() or "30.0")
 
     mic_debug = os.getenv("MIC_DEBUG", "true").strip().lower() in {"1", "true", "yes", "on"}

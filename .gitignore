@@ -17,3 +17,5 @@ data/adbkey
 data/adbkey.pub
 # modelo de voz local (Vosk), baixado sozinho na primeira vez
 models/
+# frases curtas da voz já geradas (cache)
+data/tts_cache/

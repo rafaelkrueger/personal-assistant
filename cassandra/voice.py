@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import queue
 import shutil
@@ -8,6 +9,7 @@ import tempfile
 import threading
 import time
 from collections.abc import Iterator
+from pathlib import Path
 
 
 def _split_sentences(text: str) -> tuple[list[str], str]:
@@ -42,6 +44,12 @@ _OPENAI_RETRY_AFTER = 600  # depois de uma falha da voz da OpenAI (ex.: sem cré
 # Variante feminina do espeak-ng. Medido num Raspberry Pi 3: ~80 ms por frase. As alternativas femininas
 # grátis foram bem mais lentas (Edge TTS ~4,5 s, Kokoro ~25 s) e o Piper não tem voz feminina em português.
 ESPEAK_FEMALE_VARIANT = "f4"
+# Voz da OpenAI em streaming: PCM 16-bit mono 24 kHz tocado pelo pw-play enquanto chega (o 1º som sai em ~0,5 s
+# com o gpt-4o-mini-tts, contra ~1,8 s esperando o arquivo inteiro).
+_STREAM_RATE = 24_000
+# Frases curtas (ex.: "Não entendi.", "Pausei.") ficam guardadas: da 2ª vez em diante tocam na hora, sem API.
+_TTS_CACHE = Path("data/tts_cache")
+_CACHE_MAX_CHARS = 80
 
 
 def detect_player() -> str | None:
@@ -122,9 +130,71 @@ class VoiceOutput:
         cleaned = text.strip()
         if not cleaned:
             return
+        if self._speak_openai_stream(cleaned):
+            return
         path = self._synthesize(cleaned)
         if path:
             self._play_file(path)
+
+    # ── Voz da OpenAI em streaming ────────────────────────────────────────────
+
+    def _can_stream(self) -> bool:
+        return (self._player == "pw-play" and self.llm is not None
+                and self._engine_order()[0] == "openai")
+
+    def _cache_path(self, text: str) -> Path | None:
+        if len(text) > _CACHE_MAX_CHARS:
+            return None
+        key = hashlib.sha1(f"{self.tts_model}|{self.tts_voice}|{text}".encode()).hexdigest()[:20]
+        return _TTS_CACHE / f"{key}.pcm"
+
+    def _speak_openai_stream(self, text: str) -> bool:
+        """Fala `text` com a voz da OpenAI tocando enquanto ela gera. False se não deu (a voz grátis assume)."""
+        if not self._can_stream():
+            return False
+        cache = self._cache_path(text)
+        play = ["pw-play", "--format", "s16", "--rate", str(_STREAM_RATE), "--channels", "1", "-"]
+        with self._play_lock:
+            if cache and cache.exists():
+                with open(cache, "rb") as fh:
+                    subprocess.run(play, stdin=fh, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+                return True
+            proc = None
+            got: list[bytes] = []
+            try:
+                stream = self.llm.stream_speech(text, model=self.tts_model, voice=self.tts_voice)
+                for chunk in stream:
+                    if proc is None:
+                        proc = subprocess.Popen(play, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                                                stderr=subprocess.DEVNULL)
+                        if self._last_engine != "openai":
+                            print("[VOZ] Falando com: openai (streaming)", flush=True)
+                            self._last_engine = "openai"
+                    proc.stdin.write(chunk)
+                    if cache:
+                        got.append(chunk)
+            except Exception as exc:  # noqa: BLE001 — sem créditos, rede...: a voz grátis assume
+                if proc is None:
+                    self._openai_down_until = time.monotonic() + _OPENAI_RETRY_AFTER
+                    print(f"[VOZ] Voz da OpenAI falhou ({str(exc)[:120]}); usando a voz grátis por 10 min.",
+                          flush=True)
+                    return False
+            finally:
+                if proc is not None:
+                    try:
+                        proc.stdin.close()
+                    except OSError:
+                        pass
+                    proc.wait()
+            if proc is None:
+                return False
+            if cache and got:
+                try:
+                    _TTS_CACHE.mkdir(parents=True, exist_ok=True)
+                    cache.write_bytes(b"".join(got))
+                except OSError:
+                    pass
+            return True
 
     def speak_stream(self, token_iter: Iterator[str]) -> str:
         """Stream LLM tokens, pipeline TTS per sentence, return full text.
@@ -157,6 +227,23 @@ class VoiceOutput:
                 errors.append(exc)
             finally:
                 sentence_q.put(None)
+
+        if self._can_stream():
+            # Voz em streaming: fala cada frase assim que o LLM a termina (o som começa ~0,5 s depois).
+            threading.Thread(target=collect, daemon=True).start()
+            parts_stream: list[str] = []
+            while True:
+                sentence = sentence_q.get()
+                if sentence is None:
+                    break
+                parts_stream.append(sentence)
+                if not self._speak_openai_stream(sentence):
+                    path = self._synthesize(sentence)
+                    if path:
+                        self._play_file(path)
+            if errors:
+                raise errors[0]
+            return " ".join(parts_stream)
 
         def generate_tts() -> None:
             while True:

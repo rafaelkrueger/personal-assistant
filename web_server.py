@@ -965,10 +965,11 @@ HTML_PAGE = """<!doctype html>
               </div>
             </div>
             <div class="settings-row">
-              <div class="settings-row-info"><div class="settings-row-label">Modelo TTS</div><div class="settings-row-desc">Voz da OpenAI: tts-1 é mais rápido, tts-1-hd tem mais qualidade</div></div>
+              <div class="settings-row-info"><div class="settings-row-label">Modelo TTS</div><div class="settings-row-desc">Voz da OpenAI: gpt-4o-mini-tts começa a falar mais rápido (~0,5 s)</div></div>
               <div class="settings-row-control">
                 <select id="voice-tts-model" class="settings-select">
-                  <option value="tts-1">tts-1 (rápido)</option>
+                  <option value="gpt-4o-mini-tts">gpt-4o-mini-tts (mais rápido)</option>
+                  <option value="tts-1">tts-1</option>
                   <option value="tts-1-hd">tts-1-hd (HD)</option>
                 </select>
               </div>
@@ -1449,7 +1450,7 @@ function applySettingsToForm(s){
   const v=s.voice||{};
   document.getElementById("voice-enabled").checked=v.enabled!==false;
   document.getElementById("voice-engine").value=v.engine||"auto";
-  document.getElementById("voice-tts-model").value=v.tts_model||"tts-1";
+  document.getElementById("voice-tts-model").value=v.tts_model||"gpt-4o-mini-tts";
   document.getElementById("voice-tts-voice").value=v.tts_voice||"nova";
   document.getElementById("voice-fallback-lang").value=v.fallback_lang||"pt";
   const rate=v.fallback_rate||160;
