@@ -28,6 +28,12 @@ técnicos e exemplos de API estão em [`API.md`](./API.md) — este arquivo é s
   próprio Pi (dispositivo Spotify Connect "Cassandra", pela saída de áudio
   atual — a soundbar, quando conectada). Por voz, pela UI ou pela API
   (`/api/spotify/*`).
+- **Controlar TVs e players no mesmo Wi-Fi** (aba Aparelhos, voz, chat ou API `/api/devices`): procura na
+  rede, conecta (a TV pede confirmação na tela uma vez) e controla — ligar/desligar, volume, mudo, canais,
+  abrir Netflix/YouTube/Prime Video/Disney+/Globoplay/Max/Spotify, trocar HDMI, setas/OK/voltar/início,
+  play/pausa. Por voz: "desliga a TV", "coloca na Netflix", "HDMI 2", "aumenta o volume da TV".
+  Tipos: Fire TV/Android TV (ADB — controle completo, liga/desliga a TV pelo HDMI-CEC), LG webOS, Samsung
+  Tizen, Roku e TVs que só anunciam DIAL (ex.: Multilaser — só abrir/fechar apps).
 - **Bluetooth**: listar os aparelhos pareados e conectados, conectar,
   desconectar e esquecer, e procurar e parear um aparelho novo (caixas de som
   e fones, que não pedem PIN) pela interface/API (`/api/bluetooth`).

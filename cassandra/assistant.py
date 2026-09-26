@@ -26,6 +26,7 @@ from skills.general_chat.skill import GeneralChatSkill
 from skills.schedule.skill import ScheduleSkill
 from skills.shopping_list.skill import ShoppingListSkill
 from skills.spotify.skill import SpotifySkill
+from skills.tv.skill import TvSkill
 from skills.timer.skill import TimerSkill
 from skills.todo.skill import TodoSkill
 from skills.routine.skill import RoutineSkill
@@ -61,9 +62,11 @@ class CassandraAssistant:
         self.shopping_skill = ShoppingListSkill()
         self.todo_skill = TodoSkill()
         self.spotify_skill = SpotifySkill(self.llm)
+        self.tv_skill = TvSkill(self.llm)
         _skills: list = [
             AlarmSkill(self.alarm_manager),
             TimerSkill(self.timer_manager),
+            self.tv_skill,  # antes do Spotify e do volume: "pausa a TV", "volume da TV" são dela
             self.spotify_skill,  # antes do volume: "abaixa a música" é o volume do Spotify
             VolumeSkill(),
             ScheduleSkill(self.calendar, self.llm),

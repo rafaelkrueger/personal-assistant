@@ -11,5 +11,9 @@ data/alarms.json
 data/llm_settings.json
 # login da conta do Spotify (token de acesso)
 data/spotify_token.json
+# TVs conectadas (chaves de pareamento) e a chave ADB da Cassandra
+data/devices.json
+data/adbkey
+data/adbkey.pub
 # modelo de voz local (Vosk), baixado sozinho na primeira vez
 models/

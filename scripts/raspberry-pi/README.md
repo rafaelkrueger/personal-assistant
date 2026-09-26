@@ -49,6 +49,12 @@ Sem o `netlify.env` o serviço de sincronização simplesmente não inicia (a Ca
 - Áudio: os players usam `pw-play` (PipeWire). Para o microfone plugado depois ser adotado sozinho, instale
   `sudo apt install pipewire-alsa`.
 
+## TVs (aba Aparelhos)
+
+As bibliotecas estão no `requirements.txt` (`adb-shell`, `pywebostv`, `samsungtvws`) — nada de sudo. Fire TV:
+ative em Configurações > Minha Fire TV > Opções do desenvolvedor > **Depuração ADB** (o da casa já está
+ligado). A chave ADB da Cassandra é gerada em `data/adbkey` na primeira conexão.
+
 ## Spotify (librespot, sem sudo)
 
 ```bash

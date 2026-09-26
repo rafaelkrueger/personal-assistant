@@ -391,6 +391,50 @@ Esquece o login da conta.
 
 ---
 
+## 10d. Aparelhos (TVs e players)
+
+Código em `cassandra/tv_devices.py` (descoberta SSDP/DIAL + um "driver" por tipo) e a skill de voz em
+`skills/tv/skill.py`. Aparelhos conectados em `data/devices.json` (com as chaves de pareamento — fora do git).
+
+| `kind` | O que é | Controle |
+|---|---|---|
+| `firetv` | Fire TV / Android TV com depuração pela rede (ADB, 5555) | tudo, menos HDMI; liga/desliga a TV e volume pelo HDMI-CEC |
+| `webos` | LG webOS | tudo (ligar = Wake-on-LAN) |
+| `samsung` | Samsung Tizen 2016+ | tudo (ligar = Wake-on-LAN) |
+| `roku` | Roku / TVs Roku | tudo, sem pareamento |
+| `dial` | TV que só anuncia DIAL (ex.: Multilaser) | só abrir/fechar apps |
+
+### `GET /api/devices`
+`{ "devices": [ { "id": "firetvstick-de-dandara-54", "name": "...", "kind": "firetv", "kind_label": "...",
+  "host": "192.168.100.54", "online": true, "default": true, "capabilities": ["app", "power_off", ...] } ],
+  "found": [ { "host": "...", "kind": "dial", "name": "MULTILASER", "model": "TL019" } ],
+  "scanning": false, "jobs": { "<host>": { "state": "running|ok|error", "message": "...", "at": 0 } } }`
+
+`devices` = conectados; `found` = achados na última busca e ainda não conectados; `default` = a TV dos
+comandos de voz sem nome ("desliga a TV").
+
+### `POST /api/devices/scan`
+Procura na rede (~4 s) e devolve o mesmo que `GET /api/devices`.
+
+### `POST /api/devices/connect`
+**Body:** `{ "host": "192.168.100.54" }` (de `found`). Pareia **em segundo plano** — a TV pede confirmação na
+tela (Fire TV: "Permitir depuração USB?"; LG/Samsung: permitir a Cassandra). Acompanhe por `jobs[host]`.
+
+### `POST /api/devices/{id}/command`
+**Body:** `{ "action": "...", "value": ... }`. Ações: `power_on`, `power_off`, `volume_up`, `volume_down`,
+`mute`, `channel_up`, `channel_down`, `up`, `down`, `left`, `right`, `ok`, `back`, `home`, `menu`,
+`play_pause`, `rewind`, `forward`, `input` (`value`: número do HDMI), `app` (`value`: `netflix`, `youtube`,
+`prime`, `disney`, `globoplay`, `max`, `spotify`, `twitch`), `close_app`. Só as de `capabilities` do
+aparelho valem. Resposta `{ "ok": true, "message": "Abrindo Netflix" }`; `502` com `error` se a TV não
+responder ou recusar.
+
+### `GET /api/devices/{id}/apps`
+Apps que dá para abrir nele: `{ "apps": [ { "id": "netflix", "label": "Netflix" } ] }`.
+
+### `POST /api/devices/{id}/forget` · `/rename` (`{ "name": "TV da sala" }`) · `/default`
+
+---
+
 ## 11. Página
 
 ### `GET /`

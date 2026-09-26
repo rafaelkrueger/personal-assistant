@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
@@ -10,6 +11,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 from cassandra import audio_devices, llm_settings
 from cassandra import spotify as spotify_api
+from cassandra import tv_devices
 from cassandra.assistant import CassandraAssistant
 
 HTML_PAGE = """<!doctype html>
@@ -383,6 +385,42 @@ HTML_PAGE = """<!doctype html>
     .sp-play-row{display:flex;gap:8px;margin-top:12px}
     .sp-play-row input{flex:1;min-width:0}
     .sp-green{color:#1ed760}
+    /* ═══ APARELHOS ═══ */
+    .dv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin-bottom:8px}
+    .dv-card{background:var(--glass);border:1px solid var(--border);border-radius:var(--rl);padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0}
+    .dv-card.clickable{cursor:pointer;transition:all .15s}
+    .dv-card.clickable:hover{border-color:rgba(91,154,255,.35);transform:translateY(-2px)}
+    .dv-head{display:flex;align-items:center;gap:10px;min-width:0}
+    .dv-icon{width:40px;height:40px;border-radius:12px;background:var(--brand-dim);color:var(--brand2);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+    .dv-icon svg{width:20px;height:20px}
+    .dv-name{font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .dv-sub{font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .dv-dot{width:8px;height:8px;border-radius:50%;background:var(--text3);display:inline-block;margin-right:6px;vertical-align:1px}
+    .dv-dot.on{background:var(--green);box-shadow:0 0 8px var(--green-glow)}
+    .dv-actions{display:flex;gap:6px;flex-wrap:wrap}
+    .dv-section-title{font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.08em;margin:18px 0 10px;display:flex;align-items:center;gap:10px}
+    .dv-section-title span{flex:1}
+    .remote{max-width:430px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+    .remote-top{display:flex;align-items:center;gap:10px}
+    .remote-panel{background:var(--glass);border:1px solid var(--border);border-radius:var(--rx);padding:16px;display:flex;flex-direction:column;gap:14px}
+    .remote-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap}
+    .rbtn{min-width:52px;height:48px;padding:0 14px;border-radius:14px;border:1px solid var(--border);background:rgba(255,255,255,.04);color:var(--text);display:inline-flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;font-family:inherit;font-weight:700;font-size:13px;transition:all .12s}
+    .rbtn:hover{background:rgba(255,255,255,.08);border-color:var(--border2)}
+    .rbtn:active{transform:scale(.94)}
+    .rbtn svg{width:18px;height:18px}
+    .rbtn[disabled]{opacity:.28;cursor:not-allowed}
+    .rbtn.power-off{color:#fca5a5;border-color:rgba(248,113,113,.3)}
+    .rbtn.power-on{color:var(--green);border-color:rgba(52,211,153,.3)}
+    .dpad{display:grid;grid-template-columns:repeat(3,64px);grid-template-rows:repeat(3,64px);gap:8px;justify-content:center}
+    .dpad .rbtn{width:64px;height:64px;min-width:0;padding:0;border-radius:18px}
+    .dpad .ok{border-radius:50%;background:var(--brand-dim);color:var(--brand2);border-color:rgba(91,154,255,.35)}
+    .remote-label{font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.08em;text-align:center}
+    .app-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+    .app-btn{height:52px;border-radius:12px;border:none;color:#fff;font-weight:800;font-size:13px;cursor:pointer;font-family:inherit;transition:transform .12s,filter .12s}
+    .app-btn:hover{filter:brightness(1.12)}.app-btn:active{transform:scale(.95)}
+    .remote-msg{font-size:12.5px;text-align:center;min-height:18px;color:var(--text2)}
+    .remote-msg.ok{color:var(--green)}.remote-msg.error{color:#fca5a5}
+    .remote-note{font-size:12.5px;color:#fde68a;background:var(--amber-dim);border:1px solid rgba(251,191,36,.3);border-radius:var(--r);padding:10px 12px}
     /* ═══ MÚSICA ═══ */
     .mu-hero{display:flex;gap:18px;align-items:center;flex-wrap:wrap;background:var(--glass);border:1px solid var(--border);border-radius:var(--rx);padding:18px;backdrop-filter:blur(12px);margin-bottom:16px;position:relative;overflow:hidden}
     .mu-hero::before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 0% 0%,rgba(30,215,96,.10),transparent 55%);pointer-events:none}
@@ -598,6 +636,71 @@ HTML_PAGE = """<!doctype html>
         </div>
       </div>
 
+      <!-- ══ APARELHOS ══ -->
+      <div class="tab-panel hidden" id="tab-devices">
+        <div id="dvList">
+          <div class="sec-hdr"><span class="sec-title">Aparelhos</span><span class="count-badge" id="dvCount">—</span></div>
+          <div class="dv-section-title"><span>TVs e players</span></div>
+          <div class="dv-grid" id="dvSaved"><div class="bt-empty">Carregando…</div></div>
+          <div class="dv-section-title"><span>Na mesma rede</span><button class="btn btn-primary btn-sm" id="dvScan">Procurar TVs</button></div>
+          <div class="settings-row-desc" style="margin-bottom:10px">A TV precisa estar ligada e no mesmo Wi-Fi. Ao conectar, confirme o pedido que aparecer na tela dela.</div>
+          <div class="dv-grid" id="dvFound"></div>
+          <div class="bt-job" id="dvJob"></div>
+          <div class="dv-section-title"><span>Bluetooth</span><button class="btn btn-ghost btn-sm" onclick="gotoTab('settings')">Gerenciar</button></div>
+          <div class="dv-grid" id="dvBt"><div class="bt-empty">Carregando…</div></div>
+        </div>
+
+        <div id="dvRemote" style="display:none">
+          <div class="remote">
+            <div class="remote-top">
+              <button class="btn btn-ghost btn-sm" id="rmBack">← Aparelhos</button>
+              <div style="flex:1;min-width:0"><div class="dv-name" id="rmName">TV</div><div class="dv-sub" id="rmSub">—</div></div>
+            </div>
+            <div class="remote-note" id="rmNote" style="display:none"></div>
+            <div class="remote-panel">
+              <div class="remote-row">
+                <button class="rbtn power-on" data-rm="power_on" title="Ligar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>Ligar</button>
+                <button class="rbtn power-off" data-rm="power_off" title="Desligar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>Desligar</button>
+              </div>
+              <div class="remote-label">Volume</div>
+              <div class="remote-row">
+                <button class="rbtn" data-rm="volume_down" title="Diminuir">Vol −</button>
+                <button class="rbtn" data-rm="mute" title="Mudo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg></button>
+                <button class="rbtn" data-rm="volume_up" title="Aumentar">Vol +</button>
+                <button class="rbtn" data-rm="channel_down" title="Canal anterior">Ch −</button>
+                <button class="rbtn" data-rm="channel_up" title="Próximo canal">Ch +</button>
+              </div>
+            </div>
+            <div class="remote-panel">
+              <div class="dpad">
+                <span></span><button class="rbtn" data-rm="up" title="Cima">▲</button><span></span>
+                <button class="rbtn" data-rm="left" title="Esquerda">◀</button><button class="rbtn ok" data-rm="ok" title="OK">OK</button><button class="rbtn" data-rm="right" title="Direita">▶</button>
+                <span></span><button class="rbtn" data-rm="down" title="Baixo">▼</button><span></span>
+              </div>
+              <div class="remote-row">
+                <button class="rbtn" data-rm="back" title="Voltar">↩ Voltar</button>
+                <button class="rbtn" data-rm="home" title="Início">⌂ Início</button>
+                <button class="rbtn" data-rm="menu" title="Menu">☰</button>
+              </div>
+              <div class="remote-row">
+                <button class="rbtn" data-rm="rewind" title="Voltar">⏪</button>
+                <button class="rbtn" data-rm="play_pause" title="Play/pausa">⏯</button>
+                <button class="rbtn" data-rm="forward" title="Avançar">⏩</button>
+              </div>
+            </div>
+            <div class="remote-panel" id="rmInputsPanel">
+              <div class="remote-label">Entradas</div>
+              <div class="remote-row" id="rmInputs"></div>
+            </div>
+            <div class="remote-panel">
+              <div class="remote-label">Apps</div>
+              <div class="app-grid" id="rmApps"><div class="bt-empty">Carregando…</div></div>
+            </div>
+            <div class="remote-msg" id="rmMsg"></div>
+          </div>
+        </div>
+      </div>
+
       <!-- ══ SHOPPING ══ -->
       <div class="tab-panel hidden" id="tab-shopping">
         <div class="sec-hdr"><span class="sec-title">Lista de compras</span><span class="count-badge" id="shopCount">0 itens</span></div>
@@ -765,6 +868,10 @@ HTML_PAGE = """<!doctype html>
             <div class="settings-row">
               <div class="settings-row-info"><div class="settings-row-label">Música</div><div class="settings-row-desc">Spotify: tocar, buscar, playlists e controles</div></div>
               <div class="settings-row-control"><label class="toggle"><input type="checkbox" id="mod-music" checked/><span class="toggle-slider"></span></label></div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-info"><div class="settings-row-label">Aparelhos</div><div class="settings-row-desc">TVs, Fire TV e Bluetooth: conectar e controlar</div></div>
+              <div class="settings-row-control"><label class="toggle"><input type="checkbox" id="mod-devices" checked/><span class="toggle-slider"></span></label></div>
             </div>
             <div class="settings-row">
               <div class="settings-row-info"><div class="settings-row-label">Compras</div><div class="settings-row-desc">Lista de compras com voz</div></div>
@@ -1051,6 +1158,7 @@ HTML_PAGE = """<!doctype html>
 const IC = {
   dashboard:`<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`,
   chat:     `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>`,
+  devices:  `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="13" rx="2"/><polyline points="17 2 12 7 7 2"/></svg>`,
   music:    `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`,
   shopping: `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg>`,
   todos:    `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>`,
@@ -1069,6 +1177,7 @@ const ALL_TABS = [
   {id:"dashboard", label:"Dashboard"},
   {id:"chat",      label:"Chat"},
   {id:"music",     label:"Música"},
+  {id:"devices",   label:"Aparelhos"},
   {id:"shopping",  label:"Compras"},
   {id:"todos",     label:"Tarefas"},
   {id:"alarms",    label:"Alarmes"},
@@ -1077,7 +1186,7 @@ const ALL_TABS = [
   {id:"settings",  label:"Config."},
 ];
 const PAGE_TITLES = {
-  dashboard:"Dashboard",chat:"Chat",music:"Música",shopping:"Compras",
+  dashboard:"Dashboard",chat:"Chat",music:"Música",devices:"Aparelhos",shopping:"Compras",
   todos:"Tarefas",alarms:"Alarmes",routines:"Rotinas",agenda:"Agenda",settings:"Configurações",
 };
 const DAY_NAMES = ["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"];
@@ -1149,6 +1258,7 @@ function gotoTab(tab){
   document.getElementById("pageTitle").textContent=PAGE_TITLES[tab]||tab;
   closeMobileMenu();
   if(tab==="music") muOpen();
+  if(tab==="devices") dvOpen();
 }
 
 // ── Sidebar ──
@@ -1284,6 +1394,7 @@ function applySettingsToForm(s){
   const m=s.modules||{};
   document.getElementById("mod-chat").checked=m.chat!==false;
   document.getElementById("mod-music").checked=m.music!==false;
+  document.getElementById("mod-devices").checked=m.devices!==false;
   document.getElementById("mod-shopping").checked=m.shopping!==false;
   document.getElementById("mod-todos").checked=m.todos!==false;
   document.getElementById("mod-alarms").checked=m.alarms!==false;
@@ -1314,6 +1425,7 @@ function collectSettingsFromForm(){
     modules:{
       chat:document.getElementById("mod-chat").checked,
       music:document.getElementById("mod-music").checked,
+      devices:document.getElementById("mod-devices").checked,
       shopping:document.getElementById("mod-shopping").checked,
       todos:document.getElementById("mod-todos").checked,
       alarms:document.getElementById("mod-alarms").checked,
@@ -1865,6 +1977,107 @@ async function spPlay(){
 }
 document.getElementById("sp-play").addEventListener("click",spPlay);
 enter(document.getElementById("sp-query"),spPlay);
+// ── Aba Aparelhos ──
+const APP_COLORS={netflix:"#e50914",youtube:"#ff0033",prime:"#00a8e1",disney:"#113ccf",globoplay:"#f15a24",max:"#5822b4",spotify:"#1db954",twitch:"#9146ff"};
+const DV_TV_ICON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="13" rx="2"/><polyline points="17 2 12 7 7 2"/></svg>';
+const DV_BT_ICON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6.5 6.5 17.5 17.5 12 23 12 1 17.5 6.5 6.5 17.5"/></svg>';
+let dvState=null, dvCurrent=null, dvPoll=null;
+function dvSay(text,state){const m=document.getElementById("dvJob");m.className="bt-job "+(state||"");m.textContent=text||"";}
+function rmSay(text,state){const m=document.getElementById("rmMsg");m.className="remote-msg "+(state||"");m.textContent=text||"";}
+function renderDevices(d){
+  dvState=d;
+  const saved=d.devices||[], found=d.found||[];
+  document.getElementById("dvCount").textContent=`${saved.length} TV${saved.length===1?"":"s"}`;
+  document.getElementById("dvSaved").innerHTML=saved.length?saved.map(x=>`
+    <div class="dv-card clickable" data-dv-open="${esc(x.id)}">
+      <div class="dv-head"><div class="dv-icon">${DV_TV_ICON}</div><div style="min-width:0;flex:1"><div class="dv-name">${esc(x.name)}</div><div class="dv-sub"><span class="dv-dot ${x.online?"on":""}"></span>${x.online?"online":"fora do ar"} · ${esc(x.kind_label)}</div></div></div>
+      <div class="dv-actions">
+        <button class="btn btn-primary btn-sm" data-dv-open="${esc(x.id)}">Controlar</button>
+        ${x.default?'<span class="info-chip">padrão da voz</span>':`<button class="btn btn-ghost btn-sm" data-dv-act="default" data-id="${esc(x.id)}">Tornar padrão</button>`}
+        <button class="btn btn-ghost btn-sm" data-dv-act="rename" data-id="${esc(x.id)}">Renomear</button>
+        <button class="btn btn-danger btn-sm" data-dv-act="forget" data-id="${esc(x.id)}" data-name="${esc(x.name)}">Esquecer</button>
+      </div></div>`).join(""):'<div class="bt-empty">Nenhuma TV conectada. Toque em "Procurar TVs".</div>';
+  const scan=document.getElementById("dvScan");
+  scan.disabled=!!d.scanning; scan.textContent=d.scanning?"Procurando…":"Procurar TVs";
+  const jobs=d.jobs||{};
+  document.getElementById("dvFound").innerHTML=found.map(f=>{
+    const job=jobs[f.host];
+    return `<div class="dv-card"><div class="dv-head"><div class="dv-icon">${DV_TV_ICON}</div><div style="min-width:0;flex:1"><div class="dv-name">${esc(f.name)}</div><div class="dv-sub">${esc(f.kind_label)} · ${esc(f.host)}${f.model?" · "+esc(f.model):""}</div></div></div>
+      <div class="dv-actions"><button class="btn btn-primary btn-sm" data-dv-connect="${esc(f.host)}" ${job&&job.state==="running"?"disabled":""}>${job&&job.state==="running"?"Conectando…":"Conectar"}</button></div></div>`;
+  }).join("");
+  const running=Object.values(jobs).find(j=>j.state==="running");
+  const last=Object.values(jobs).sort((a,b)=>b.at-a.at)[0];
+  if(running) dvSay(running.message,"running"); else if(last&&Date.now()/1000-last.at<90) dvSay(last.message,last.state); else dvSay("");
+  if(running){if(!dvPoll) dvPoll=setInterval(loadDevices,2500);} else if(dvPoll){clearInterval(dvPoll);dvPoll=null;}
+}
+async function loadDevices(){try{renderDevices(await api("/api/devices"));}catch(e){dvSay(e.message,"error");}}
+async function loadDeviceBt(){
+  try{
+    const d=await api("/api/bluetooth");
+    const paired=(d.devices||[]).filter(x=>x.paired);
+    document.getElementById("dvBt").innerHTML=!d.available?'<div class="bt-empty">Bluetooth indisponível.</div>':(paired.length?paired.map(x=>`
+      <div class="dv-card"><div class="dv-head"><div class="dv-icon">${DV_BT_ICON}</div><div style="min-width:0;flex:1"><div class="dv-name">${esc(x.name)}</div><div class="dv-sub"><span class="dv-dot ${x.connected?"on":""}"></span>${x.connected?"conectado":"desconectado"}</div></div></div>
+      <div class="dv-actions">${x.connected?`<button class="btn btn-ghost btn-sm" data-dv-bt="disconnect" data-mac="${esc(x.mac)}">Desconectar</button>`:`<button class="btn btn-primary btn-sm" data-dv-bt="connect" data-mac="${esc(x.mac)}">Conectar</button>`}</div></div>`).join(""):'<div class="bt-empty">Nenhum aparelho Bluetooth pareado.</div>');
+  }catch(e){document.getElementById("dvBt").innerHTML=`<div class="bt-empty">${esc(e.message)}</div>`;}
+}
+function dvOpen(){document.getElementById("dvList").style.display="";document.getElementById("dvRemote").style.display="none";loadDevices();loadDeviceBt();}
+async function dvScan(){
+  document.getElementById("dvScan").disabled=true; dvSay("Procurando TVs na rede…","running");
+  try{renderDevices(await api("/api/devices/scan","POST",{}));const n=(dvState.found||[]).length;dvSay(n?`${n} aparelho${n>1?"s":""} encontrado${n>1?"s":""}.`:"Nenhuma TV nova encontrada. Ela está ligada e no mesmo Wi-Fi?",n?"ok":"error");}
+  catch(e){dvSay(e.message,"error");document.getElementById("dvScan").disabled=false;}
+}
+function openRemote(id){
+  const x=(dvState&&dvState.devices||[]).find(d=>d.id===id); if(!x) return;
+  dvCurrent=x;
+  document.getElementById("dvList").style.display="none"; document.getElementById("dvRemote").style.display="";
+  document.getElementById("rmName").textContent=x.name;
+  document.getElementById("rmSub").textContent=`${x.online?"online":"fora do ar"} · ${x.kind_label} · ${x.host}`;
+  const caps=new Set(x.capabilities||[]);
+  document.querySelectorAll("#dvRemote [data-rm]").forEach(b=>b.disabled=!caps.has(b.dataset.rm));
+  const note=document.getElementById("rmNote");
+  if(x.kind==="dial"){note.style.display="";note.textContent="Esta TV só aceita abrir e fechar apps pela rede. Para ligar, desligar e volume, use o controle dela, um Fire TV plugado nela ou um emissor infravermelho.";}
+  else if(x.kind==="firetv"){note.style.display="";note.textContent="Ligar/desligar e volume passam pelo HDMI (CEC): funcionam se a TV tiver o CEC ativado (Anynet+, SimpLink, Bravia Sync…).";}
+  else note.style.display="none";
+  document.getElementById("rmInputsPanel").style.display=caps.has("input")?"":"none";
+  document.getElementById("rmInputs").innerHTML=[1,2,3,4].map(n=>`<button class="rbtn" data-rm-input="${n}">HDMI ${n}</button>`).join("");
+  rmSay("");
+  document.getElementById("rmApps").innerHTML='<div class="bt-empty">Carregando…</div>';
+  api(`/api/devices/${encodeURIComponent(id)}/apps`).then(d=>{
+    const apps=d.apps||[];
+    document.getElementById("rmApps").innerHTML=apps.length?apps.map(a=>`<button class="app-btn" style="background:${APP_COLORS[a.id]||"#334155"}" data-rm-app="${esc(a.id)}">${esc(a.label)}</button>`).join(""):'<div class="bt-empty">Nenhum app conhecido.</div>';
+  }).catch(e=>{document.getElementById("rmApps").innerHTML=`<div class="bt-empty">${esc(e.message)}</div>`;});
+}
+async function rmCommand(action,value){
+  if(!dvCurrent) return;
+  rmSay("…");
+  try{const d=await api(`/api/devices/${encodeURIComponent(dvCurrent.id)}/command`,"POST",{action,value});rmSay(d.message&&d.message!=="ok"?d.message:"Feito.","ok");}
+  catch(e){rmSay(e.message,"error");}
+}
+document.getElementById("dvScan").addEventListener("click",dvScan);
+document.getElementById("rmBack").addEventListener("click",dvOpen);
+document.getElementById("tab-devices").addEventListener("click",async e=>{
+  const open=e.target.closest("[data-dv-open]"); const act=e.target.closest("[data-dv-act]");
+  if(act){
+    e.stopPropagation();
+    const id=act.dataset.id, what=act.dataset.dvAct;
+    try{
+      if(what==="forget"){if(!confirm(`Esquecer ${act.dataset.name}? Para usar de novo, será preciso conectar outra vez.`))return;await api(`/api/devices/${encodeURIComponent(id)}/forget`,"POST",{});}
+      else if(what==="rename"){const name=prompt("Nome da TV (ex.: TV da sala):");if(!name)return;await api(`/api/devices/${encodeURIComponent(id)}/rename`,"POST",{name});}
+      else if(what==="default"){await api(`/api/devices/${encodeURIComponent(id)}/default`,"POST",{});}
+      loadDevices();
+    }catch(err){dvSay(err.message,"error");}
+    return;
+  }
+  if(open){openRemote(open.dataset.dvOpen);return;}
+  const con=e.target.closest("[data-dv-connect]");
+  if(con){try{renderDevices(await api("/api/devices/connect","POST",{host:con.dataset.dvConnect}));}catch(err){dvSay(err.message,"error");}return;}
+  const bt=e.target.closest("[data-dv-bt]");
+  if(bt){bt.disabled=true;try{await api(`/api/bluetooth/${bt.dataset.dvBt}`,"POST",{mac:bt.dataset.mac});}catch(err){alert(err.message);}setTimeout(loadDeviceBt,bt.dataset.dvBt==="connect"?6000:800);return;}
+  const rm=e.target.closest("[data-rm]"); if(rm){rmCommand(rm.dataset.rm);return;}
+  const inp=e.target.closest("[data-rm-input]"); if(inp){rmCommand("input",+inp.dataset.rmInput);return;}
+  const app=e.target.closest("[data-rm-app]"); if(app){rmCommand("app",app.dataset.rmApp);return;}
+});
+
 // ── Aba Música ──
 let muView=null, muTick=null, muPoll=null, muLibLoaded=false, muVolTimer=null;
 const muFmt=ms=>{ms=Math.max(0,ms||0);const s=Math.floor(ms/1000);return Math.floor(s/60)+":"+String(s%60).padStart(2,"0");};
@@ -2070,6 +2283,45 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
             self.send_header("Content-Length", "0")
             self.end_headers()
 
+        def _devices_post(self, action: str, data: dict) -> None:
+            mgr = tv_devices.manager
+            try:
+                if action == "scan":
+                    mgr.scan()
+                elif action == "connect":
+                    mgr.start_connect(str(data.get("host", "")))
+                else:
+                    m = re.match(r"^([a-z0-9-]+)/(command|forget|rename|default)$", action)
+                    if not m:
+                        self._send_json({"error": "Not found."}, status=HTTPStatus.NOT_FOUND)
+                        return
+                    device_id, what = m.groups()
+                    if not mgr.get(device_id):
+                        self._send_json({"error": "Aparelho não encontrado."}, status=HTTPStatus.NOT_FOUND)
+                        return
+                    if what == "command":
+                        cmd = str(data.get("action", ""))
+                        if cmd not in tv_devices.ACTIONS:
+                            self._send_json({"error": "ação inválida"}, status=HTTPStatus.BAD_REQUEST)
+                            return
+                        message = mgr.command(device_id, cmd, data.get("value"))
+                        self._send_json({"ok": True, "message": message})
+                        return
+                    if what == "forget":
+                        mgr.forget(device_id)
+                    elif what == "rename":
+                        mgr.rename(device_id, str(data.get("name", "")))
+                    else:
+                        mgr.set_default(device_id)
+            except tv_devices.DeviceError as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_GATEWAY)
+                return
+            except Exception as exc:  # noqa: BLE001 — TV desligada/fora da rede
+                self._send_json({"error": f"A TV não respondeu ({type(exc).__name__}: {exc})"},
+                                status=HTTPStatus.BAD_GATEWAY)
+                return
+            self._send_json(mgr.status())
+
         @staticmethod
         def _spotify_control(sp, skill, what: str, data: dict) -> str | None:
             """Botões da aba Música. None = ação desconhecida."""
@@ -2222,6 +2474,16 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
             if parsed.path == "/api/audio":
                 self._send_json(audio_devices.audio_status())
                 return
+            if parsed.path == "/api/devices":
+                self._send_json(tv_devices.manager.status())
+                return
+            m = re.match(r"^/api/devices/([a-z0-9-]+)/apps$", parsed.path)
+            if m:
+                try:
+                    self._send_json({"apps": tv_devices.manager.apps(m.group(1))})
+                except tv_devices.DeviceError as exc:
+                    self._send_json({"error": str(exc)}, status=HTTPStatus.NOT_FOUND)
+                return
             if parsed.path == "/api/spotify/status":
                 self._send_json(spotify_api.client.status())
                 return
@@ -2355,6 +2617,10 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                     self._send_json({"error": "Not found."}, status=HTTPStatus.NOT_FOUND)
                     return
                 self._send_json(bt.status())
+                return
+
+            if parsed.path.startswith("/api/devices/"):
+                self._devices_post(parsed.path[len("/api/devices/"):], self._read_json_body())
                 return
 
             if parsed.path.startswith("/api/spotify/"):

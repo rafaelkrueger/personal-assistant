@@ -8,6 +8,7 @@ _DEFAULTS: dict = {
     "modules": {
         "chat": True,
         "music": True,
+        "devices": True,
         "shopping": True,
         "todos": True,
         "alarms": True,
