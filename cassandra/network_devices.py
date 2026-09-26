@@ -1,14 +1,19 @@
-"""TVs e players na mesma rede: descobrir, conectar (parear) e controlar — ligar/desligar, volume, apps (Netflix,
-YouTube...), HDMI, setas/OK/voltar/início, play/pause. Usado pela aba "Aparelhos" da UI e pela skill de TV (voz/chat).
+"""Aparelhos da mesma rede: descobrir (SSDP/UPnP, mDNS e portas de controle), conectar, classificar e controlar.
 
-Tipos suportados (cada um com o próprio "driver"):
+Nada aqui é "só TV": a descoberta mostra qualquer aparelho que se anuncia na rede (nome, fabricante, modelo).
+Ao conectar, o aparelho é classificado pelo que ele mesmo anuncia (tipo UPnP, serviços mDNS, fabricante) —
+TV, player de streaming, computador, roteador, caixa de som, lâmpada, casa inteligente, impressora... — e,
+se existir um controle para ele (um "driver"), a UI mostra "Controlar" com a tela certa para a categoria
+(TV e player de streaming: o controle remoto). Usado pela aba "Aparelhos", pela skill de voz/chat e pela API.
+
+Controles (drivers) que existem hoje:
   firetv   Fire TV / Android TV com depuração pela rede (ADB, porta 5555). Controle completo; liga/desliga a TV pelo
            HDMI-CEC. Na 1ª conexão a TV pergunta "Permitir depuração?" — marque "sempre" e aceite.
   webos    LG webOS (porta 3000/3001). Na 1ª conexão a TV pede para aceitar a Cassandra.
   samsung  Samsung Tizen (2016+, porta 8001/8002). Na 1ª conexão a TV pede para permitir.
   roku     Roku / TVs Roku (ECP, porta 8060). Sem pareamento.
-  dial     Qualquer TV que só anuncia DIAL (ex.: Multilaser): abre e fecha apps (YouTube, Netflix...), mais nada.
-Ligar uma TV desligada: firetv (CEC) e roku ligam; webos/samsung usam Wake-on-LAN (precisa estar ativado na TV).
+  dial     Qualquer aparelho que anuncia DIAL (ex.: TV Multilaser): abre e fecha apps (YouTube, Netflix...), mais nada.
+Para uma categoria nova (ex.: lâmpadas), basta um driver novo em DRIVERS e a tela dela na UI.
 
 Os aparelhos conectados ficam em data/devices.json (com a chave de pareamento de cada um — fora do git).
 """
@@ -62,7 +67,7 @@ class DeviceError(Exception):
 def _slug(text: str) -> str:
     text = unicodedata.normalize("NFKD", text or "")
     text = "".join(c for c in text if not unicodedata.combining(c)).lower()
-    return re.sub(r"[^a-z0-9]+", "-", text).strip("-")[:40] or "tv"
+    return re.sub(r"[^a-z0-9]+", "-", text).strip("-")[:40] or "aparelho"
 
 
 def _http(method: str, url: str, body: bytes | None = None, timeout: float = 5,
@@ -106,12 +111,30 @@ def _wake_on_lan(mac: str) -> None:
 
 # ── Descoberta ────────────────────────────────────────────────────────────────
 
-_SSDP_TARGETS = ["ssdp:all", "urn:dial-multiscreen-org:service:dial:1", "urn:lge-com:service:webos-second-screen:1",
-                 "urn:samsung.com:device:RemoteControlReceiver:1", "roku:ecp"]
+_SSDP_TARGETS = ["ssdp:all", "upnp:rootdevice", "urn:dial-multiscreen-org:service:dial:1",
+                 "urn:lge-com:service:webos-second-screen:1", "urn:samsung.com:device:RemoteControlReceiver:1",
+                 "roku:ecp"]
+# Portas que indicam um controle conhecido (checadas só nos aparelhos achados).
+_CONTROL_PORTS = {5555: "firetv", 8060: "roku", 3000: "webos", 3001: "webos", 8002: "samsung", 8001: "samsung"}
 
 
-def discover(timeout: float = 4.0) -> list[dict[str, Any]]:
-    """TVs e players que se anunciam na rede (SSDP/DIAL), com o tipo de controle que cada um aceita."""
+def _own_ips() -> set[str]:
+    ips = {"127.0.0.1"}
+    try:
+        out = subprocess.run(["hostname", "-I"], capture_output=True, text=True, timeout=3).stdout
+        ips.update(out.split())
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return ips
+
+
+def _entry(found: dict, host: str) -> dict[str, Any]:
+    return found.setdefault(host, {"host": host, "ssdp": set(), "device_types": set(), "mdns": set(),
+                                   "names": [], "manufacturer": "", "model": "", "dial_url": None,
+                                   "hostname": "", "ports": set()})
+
+
+def _ssdp(found: dict, timeout: float) -> None:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
     sock.settimeout(0.5)
@@ -121,7 +144,7 @@ def discover(timeout: float = 4.0) -> list[dict[str, Any]]:
             sock.sendto(msg.encode(), ("239.255.255.250", 1900))
         except OSError:
             pass
-    seen: dict[str, dict[str, Any]] = {}
+    locations: dict[str, set[str]] = {}
     end = time.time() + timeout
     while time.time() < end:
         try:
@@ -131,59 +154,154 @@ def discover(timeout: float = 4.0) -> list[dict[str, Any]]:
         except OSError:
             break
         text = data.decode(errors="replace")
-        info = seen.setdefault(addr[0], {"host": addr[0], "st": set(), "locations": set(), "server": ""})
-        for key, target in (("st", r"(?im)^(?:st|nt):\s*(.+)$"), ("locations", r"(?im)^location:\s*(\S+)")):
-            m = re.search(target, text)
-            if m:
-                info[key].add(m.group(1).strip())
-        m = re.search(r"(?im)^server:\s*(.+)$", text)
+        info = _entry(found, addr[0])
+        m = re.search(r"(?im)^(?:st|nt):\s*(.+)$", text)
         if m:
-            info["server"] = m.group(1).strip()
+            info["ssdp"].add(m.group(1).strip())
+        m = re.search(r"(?im)^location:\s*(\S+)", text)
+        if m:
+            locations.setdefault(addr[0], set()).add(m.group(1).strip())
     sock.close()
-
-    found = []
-    for host, info in seen.items():
-        st = " ".join(info["st"]).lower()
-        name = manufacturer = model = ""
-        dial_url = None
-        for loc in info["locations"]:
+    for host, locs in locations.items():
+        info = found[host]
+        for loc in locs:
             try:
                 status, xml, headers = _http("GET", loc, timeout=3)
             except DeviceError:
                 continue
             if status != 200:
                 continue
-            dial_url = dial_url or next((v for k, v in headers.items() if k.lower() == "application-url"), None)
-            for tag in ("friendlyName", "manufacturer", "modelName"):
+            port = urllib.parse.urlparse(loc).port
+            if port:
+                info["ports"].add(port)
+            info["dial_url"] = info["dial_url"] or next(
+                (v for k, v in headers.items() if k.lower() == "application-url"), None)
+            for tag, key in (("deviceType", "device_types"),):
+                info[key].update(x.strip() for x in re.findall(rf"<{tag}>(.*?)</{tag}>", xml))
+            m = re.search(r"<friendlyName>(.*?)</friendlyName>", xml)
+            if m and m.group(1).strip():
+                info["names"].insert(0, m.group(1).strip())
+            for tag, key in (("manufacturer", "manufacturer"), ("modelName", "model")):
                 m = re.search(rf"<{tag}>(.*?)</{tag}>", xml)
-                if m and not {"friendlyName": name, "manufacturer": manufacturer, "modelName": model}[tag]:
-                    value = m.group(1).strip()
-                    if tag == "friendlyName":
-                        name = value
-                    elif tag == "manufacturer":
-                        manufacturer = value
-                    else:
-                        model = value
-        if "internetgatewaydevice" in st and not dial_url:
-            continue  # o roteador
-        kind = None
-        if "webos" in st or "lge" in st:
-            kind = "webos"
-        elif "samsung" in st or "samsung" in manufacturer.lower():
-            kind = "samsung"
-        elif "roku" in st or "roku" in manufacturer.lower():
-            kind = "roku"
-        elif _port_open(host, 5555):
-            kind = "firetv"  # ADB pela rede (Fire TV, Android TV com depuração ligada)
-        elif dial_url or "dial" in st:
-            kind = "dial"
-        if not kind:
+                if m and not info[key]:
+                    info[key] = m.group(1).strip()
+
+
+def _mdns(found: dict, timeout: float) -> None:
+    """Todos os tipos de serviço anunciados por mDNS (nada fixo): _googlecast, _hap, _ipp, _spotify-connect..."""
+    try:
+        from zeroconf import ServiceBrowser, Zeroconf, ZeroconfServiceTypes
+    except ImportError:
+        return
+    try:
+        types = ZeroconfServiceTypes.find(timeout=min(3.0, timeout))
+    except Exception:  # noqa: BLE001 — rede sem multicast etc.
+        return
+    zc = Zeroconf()
+
+    class _Listener:
+        def add_service(self, z, service_type, name):
+            try:
+                info = z.get_service_info(service_type, name, timeout=1500)
+            except Exception:  # noqa: BLE001
+                return
+            if not info:
+                return
+            for addr in info.parsed_addresses():
+                if ":" in addr:
+                    continue
+                entry = _entry(found, addr)
+                entry["mdns"].add(service_type.replace(".local.", ""))
+                instance = name.replace("." + service_type, "")
+                if instance and not re.fullmatch(r"[0-9A-Fa-f]{12,}", instance) and ":" not in instance:
+                    entry["names"].append(re.sub(r"\s*\[[0-9a-f:]{17}\]$", "", instance))
+                if info.server and not entry["hostname"]:
+                    entry["hostname"] = info.server.rstrip(".")
+                if info.port:
+                    entry["ports"].add(info.port)
+
+        update_service = add_service
+
+        def remove_service(self, *args):
+            pass
+
+    try:
+        browsers = [ServiceBrowser(zc, t, _Listener()) for t in types]
+        time.sleep(timeout)
+        for b in browsers:
+            b.cancel()
+    finally:
+        zc.close()
+
+
+# Classificação: o que o próprio aparelho anuncia -> categoria. É a única "tabela"; a UI só mostra o resultado.
+_CATEGORY_RULES: list[tuple[str, str]] = [
+    ("router", r"internetgatewaydevice|wanconnectiondevice"),
+    ("streaming", r"\baft[a-z]*\b|firetv|fire tv|chromecast|_googlecast|_amzn-wplay|roku (stick|express|streaming)"),
+    ("tv", r"tvdevice|_androidtvremote|webos|samsung.*tv|remotecontrolreceiver|\btv\b|dial:1|mdx-netflix"),
+    ("speaker", r"_spotify-connect|_raop|_sonos|zoneplayer|speaker|soundbar"),
+    ("light", r"_hue|lightbulb|\blight|lamp|lampada|yeelight|_lifx|dimmablelight"),
+    ("printer", r"_ipp|_printer|_pdl-datastream|printer"),
+    ("computer", r"_workstation|_dosvc|_smb|_sftp|_ssh|_rdp|windows|macbook|desktop-"),
+    ("smart_home", r"_hap|_matter|_homekit|_miio|tuya"),
+    ("media_server", r"mediaserver|_daap|plex"),
+]
+
+
+def classify(info: dict[str, Any]) -> str:
+    text = " ".join([*info.get("ssdp", []), *info.get("device_types", []), *info.get("mdns", []),
+                     *info.get("names", []), info.get("manufacturer") or "", info.get("model") or "",
+                     info.get("hostname") or ""]).lower()
+    for category, pattern in _CATEGORY_RULES:
+        if re.search(pattern, text):
+            return category
+    return "other"
+
+
+def _control_for(info: dict[str, Any]) -> str | None:
+    """O driver que controla este aparelho, pelo que ele anuncia e pelas portas abertas."""
+    st = " ".join(info.get("ssdp", [])).lower()
+    manufacturer = (info.get("manufacturer") or "").lower()
+    if "webos" in st or "lge" in st:
+        return "webos"
+    if "samsung" in st or ("samsung" in manufacturer and "remotecontrol" in st):
+        return "samsung"
+    if "roku" in st or "roku" in manufacturer:
+        return "roku"
+    for port, driver in _CONTROL_PORTS.items():
+        if driver in ("webos", "samsung") and not (info.get("ssdp") or info.get("device_types")):
+            continue  # porta genérica demais sem nenhum anúncio que confirme
+        if _port_open(info["host"], port):
+            return driver
+    if info.get("dial_url"):
+        return "dial"
+    return None
+
+
+def discover(timeout: float = 4.0) -> list[dict[str, Any]]:
+    """Todos os aparelhos que se anunciam na rede (menos o próprio Pi), com o que se sabe de cada um."""
+    found: dict[str, dict[str, Any]] = {}
+    mdns = threading.Thread(target=_mdns, args=(found, timeout), daemon=True)
+    mdns.start()
+    _ssdp(found, timeout)
+    mdns.join(timeout + 4)
+    own = _own_ips()
+    out = []
+    for host, info in list(found.items()):
+        if host in own:
             continue
-        found.append({
-            "host": host, "kind": kind, "name": name or model or host,
-            "manufacturer": manufacturer, "model": model, "dial_url": dial_url,
+        names = [n for n in info["names"] if n]
+        name = names[0] if names else (info["model"] or info["hostname"].split(".")[0] or host)
+        if name.isupper() and name.isalpha() and len(name) > 3:
+            name = name.title()  # "MULTILASER" -> "Multilaser"
+        out.append({
+            "host": host, "name": name, "manufacturer": info["manufacturer"], "model": info["model"],
+            "hostname": info["hostname"], "dial_url": info["dial_url"],
+            "category": classify(info), "control": _control_for(info),
+            "services": sorted(info["mdns"] | {s for s in info["ssdp"] if not s.startswith("uuid:")})[:12],
+            "ports": sorted(info["ports"])[:10],
         })
-    return sorted(found, key=lambda d: d["host"])
+    return sorted(out, key=lambda d: [int(x) for x in d["host"].split(".")])
 
 
 # ── Drivers ───────────────────────────────────────────────────────────────────
@@ -239,7 +357,7 @@ class FireTvDriver(_Driver):
 
     def _conn(self, auth_timeout: float = 3):
         from adb_shell.adb_device import AdbDeviceTcp
-        port = int(self.device.get("port") or 5555)
+        port = int(self.device.get("adb_port") or 5555)
         key = f"{self.host}:{port}"
         conn = self._conns.get(key)
         if conn is not None and conn.available:
@@ -259,7 +377,7 @@ class FireTvDriver(_Driver):
             except DeviceError:
                 raise
             except Exception:  # conexão caiu: reconecta uma vez
-                self._conns.pop(f"{self.host}:{int(self.device.get('port') or 5555)}", None)
+                self._conns.pop(f"{self.host}:{int(self.device.get('adb_port') or 5555)}", None)
                 return self._conn().shell(cmd, timeout_s=10) or ""
 
     def pair(self) -> dict[str, Any]:
@@ -269,7 +387,7 @@ class FireTvDriver(_Driver):
         return {"model": model} if model else {}
 
     def online(self) -> bool:
-        return _port_open(self.host, int(self.device.get("port") or 5555))
+        return _port_open(self.host, int(self.device.get("adb_port") or 5555))
 
     def apps(self) -> list[dict[str, str]]:
         try:
@@ -502,8 +620,10 @@ class SamsungDriver(_Driver):
 
 
 DRIVERS = {d.kind: d for d in (FireTvDriver, DialDriver, RokuDriver, WebOsDriver, SamsungDriver)}
-KIND_LABELS = {"firetv": "Fire TV / Android TV", "dial": "Smart TV (só apps)", "roku": "Roku",
-               "webos": "LG webOS", "samsung": "Samsung"}
+CONTROL_LABELS = {"firetv": "Fire TV / Android TV (ADB)", "dial": "só abrir apps (DIAL)", "roku": "Roku",
+                  "webos": "LG webOS", "samsung": "Samsung"}
+# Categorias com tela de controle remoto de TV na UI (a UI escolhe a tela pela categoria).
+TV_LIKE = {"tv", "streaming"}
 
 
 def find_app(text: str) -> str | None:
@@ -529,9 +649,16 @@ class DeviceManager:
     def _load(self) -> list[dict[str, Any]]:
         try:
             data = json.loads(DEVICES_FILE.read_text(encoding="utf-8"))
-            return data if isinstance(data, list) else []
         except (OSError, ValueError):
             return []
+        devices = data if isinstance(data, list) else []
+        for d in devices:  # formato antigo (só TVs): "kind" era o driver
+            if "kind" in d and "control" not in d:
+                d["control"] = d.pop("kind")
+                d.setdefault("category", "streaming" if d["control"] == "firetv" else "tv")
+                if "port" in d:
+                    d["adb_port"] = d.pop("port")
+        return devices
 
     def _save(self, devices: list[dict[str, Any]]) -> None:
         DEVICES_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -549,33 +676,45 @@ class DeviceManager:
     def get(self, device_id: str) -> dict[str, Any] | None:
         return next((d for d in self._load() if d["id"] == device_id), None)
 
+    def _controllable(self, category: set[str] | None = None) -> list[dict[str, Any]]:
+        return [d for d in self._load() if d.get("control") and (category is None or d.get("category") in category)]
+
     def default(self) -> dict[str, Any] | None:
-        """A TV "padrão" para comandos de voz: a marcada como padrão, senão a 1ª conectada."""
-        devices = self._load()
-        return next((d for d in devices if d.get("default")), devices[0] if devices else None)
+        """O aparelho dos comandos de voz sem nome ("desliga a TV"): o marcado como padrão, senão o 1º que
+        tem controle de TV."""
+        tvs = self._controllable(TV_LIKE)
+        return next((d for d in tvs if d.get("default")), tvs[0] if tvs else None)
 
     def pick(self, text: str = "") -> dict[str, Any] | None:
         """O aparelho citado no pedido ("na TV da sala", "no fire tv"); sem citação, o padrão."""
         t = _slug(text).replace("-", " ")
-        for d in self._load():
+        controllable = self._controllable()
+        for d in controllable:
             name = _slug(d.get("name", "")).replace("-", " ")
             if name and name in t:
                 return d
         if "fire" in t:
-            fire = next((d for d in self._load() if d["kind"] == "firetv"), None)
+            fire = next((d for d in controllable if d["control"] == "firetv"), None)
             if fire:
                 return fire
         return self.default()
 
     @staticmethod
     def public(device: dict[str, Any], check_online: bool = False) -> dict[str, Any]:
-        driver = DRIVERS[device["kind"]]
-        view = {k: device.get(k) for k in ("id", "name", "kind", "host", "model", "manufacturer", "default")}
-        view["kind_label"] = KIND_LABELS.get(device["kind"], device["kind"])
-        view["capabilities"] = sorted(driver.capabilities)
+        control = device.get("control")
+        driver = DRIVERS.get(control) if control else None
+        view = {k: device.get(k) for k in ("id", "name", "host", "model", "manufacturer", "category", "control",
+                                           "default")}
+        view["control_label"] = CONTROL_LABELS.get(control or "", "")
+        view["capabilities"] = sorted(driver.capabilities) if driver else []
+        view["remote"] = "tv" if driver and device.get("category") in TV_LIKE else None  # qual tela de controle
         if check_online:
             try:
-                view["online"] = driver(device).online()
+                if driver:
+                    view["online"] = driver(device).online()
+                else:
+                    ports = device.get("ports") or [80]
+                    view["online"] = any(_port_open(device["host"], int(p), 0.6) for p in ports[:3])
             except Exception:  # noqa: BLE001
                 view["online"] = False
         return view
@@ -587,8 +726,9 @@ class DeviceManager:
         hosts = {d["host"] for d in saved}
         return {
             "devices": [self.public(d, check_online=True) for d in saved],
-            "found": [{**f, "kind_label": KIND_LABELS.get(f["kind"], f["kind"])} for f in self._found
-                      if f["host"] not in hosts],
+            # antes de conectar: só o que o aparelho anuncia (nome, fabricante, modelo) — a classificação vem ao conectar
+            "found": [{k: f.get(k) for k in ("host", "name", "manufacturer", "model", "hostname")}
+                      for f in self._found if f["host"] not in hosts],
             "scanning": self._scanning,
             "jobs": jobs,
         }
@@ -609,33 +749,40 @@ class DeviceManager:
         with self._lock:
             if self._jobs.get(host, {}).get("state") == "running":
                 return
-            self._jobs[host] = {"state": "running", "message": _pair_hint(found["kind"]), "at": time.time()}
-        threading.Thread(target=self._connect, args=(found,), daemon=True, name="tv-pair").start()
+            self._jobs[host] = {"state": "running", "message": _pair_hint(found.get("control")), "at": time.time()}
+        threading.Thread(target=self._connect, args=(found,), daemon=True, name="device-pair").start()
 
     def _connect(self, found: dict[str, Any]) -> None:
         host = found["host"]
-        device = {"id": _slug(found["name"]) + "-" + host.split(".")[-1], "name": found["name"],
-                  "kind": found["kind"], "host": host, "model": found.get("model"),
-                  "manufacturer": found.get("manufacturer"), "dial_url": found.get("dial_url"),
-                  "mac": _mac_of(host)}
+        device = {"id": _slug(found["name"]) + "-" + host.split(".")[-1], "name": found["name"], "host": host,
+                  "category": found["category"], "control": found.get("control"),
+                  "model": found.get("model"), "manufacturer": found.get("manufacturer"),
+                  "hostname": found.get("hostname"), "dial_url": found.get("dial_url"),
+                  "services": found.get("services"), "ports": found.get("ports"), "mac": _mac_of(host)}
         try:
-            device.update({k: v for k, v in DRIVERS[device["kind"]](device).pair().items() if v})
+            if device["control"]:
+                device.update({k: v for k, v in DRIVERS[device["control"]](device).pair().items() if v})
         except Exception as exc:  # noqa: BLE001 — o erro vai para a UI
             with self._lock:
                 self._jobs[host] = {"state": "error", "at": time.time(),
                                     "message": f"Não conectou em {found['name']}: {exc}"}
             return
         devices = [d for d in self._load() if d["host"] != host]
-        device["default"] = not any(d.get("default") for d in devices)
+        if device["control"] and device["category"] in TV_LIKE:
+            device["default"] = not any(d.get("default") for d in devices)
         devices.append(device)
         self._save(devices)
+        label = CATEGORY_LABELS.get(device["category"], "aparelho")
         with self._lock:
-            self._jobs[host] = {"state": "ok", "message": f"{found['name']} conectada.", "at": time.time()}
+            self._jobs[host] = {"state": "ok", "at": time.time(),
+                                "message": f"{found['name']} conectado — identificado como {label.lower()}."
+                                           + ("" if device["control"] else " (sem controle disponível ainda)")}
 
     def forget(self, device_id: str) -> None:
         devices = [d for d in self._load() if d["id"] != device_id]
-        if devices and not any(d.get("default") for d in devices):
-            devices[0]["default"] = True
+        tvs = [d for d in devices if d.get("control") and d.get("category") in TV_LIKE]
+        if tvs and not any(d.get("default") for d in tvs):
+            tvs[0]["default"] = True
         self._save(devices)
 
     def rename(self, device_id: str, name: str) -> None:
@@ -651,31 +798,48 @@ class DeviceManager:
             d["default"] = d["id"] == device_id
         self._save(devices)
 
+    def set_category(self, device_id: str, category: str) -> None:
+        """Corrige a classificação (se o aparelho se anunciou de um jeito enganoso)."""
+        if category not in CATEGORY_LABELS:
+            raise DeviceError("categoria inválida")
+        devices = self._load()
+        for d in devices:
+            if d["id"] == device_id:
+                d["category"] = category
+        self._save(devices)
+
     # controlar
-    def apps(self, device_id: str) -> list[dict[str, str]]:
+    def _driver(self, device_id: str):
         device = self.get(device_id)
         if not device:
             raise DeviceError("aparelho não encontrado")
-        return DRIVERS[device["kind"]](device).apps()
+        if not device.get("control"):
+            raise DeviceError(f"{device['name']} ainda não tem controle pela Cassandra")
+        return device, DRIVERS[device["control"]](device)
+
+    def apps(self, device_id: str) -> list[dict[str, str]]:
+        return self._driver(device_id)[1].apps()
 
     def command(self, device_id: str, action: str, value: Any = None) -> str:
-        device = self.get(device_id)
-        if not device:
-            raise DeviceError("aparelho não encontrado")
-        driver = DRIVERS[device["kind"]](device)
+        device, driver = self._driver(device_id)
         if action not in driver.capabilities:
-            if device["kind"] == "dial":
+            if device["control"] == "dial":
                 return driver.command(action, value)  # a mensagem explica o que dá para fazer
             raise DeviceError(f"{device['name']} não aceita esse comando")
         return driver.command(action, value)
 
 
-def _pair_hint(kind: str) -> str:
+CATEGORY_LABELS = {"tv": "TV", "streaming": "Player de streaming", "speaker": "Caixa de som", "light": "Lâmpada",
+                   "computer": "Computador", "router": "Roteador", "printer": "Impressora",
+                   "smart_home": "Casa inteligente", "media_server": "Servidor de mídia", "other": "Aparelho"}
+
+
+def _pair_hint(kind: str | None) -> str:
     return {
         "firetv": "Olhe a TV: aceite \"Permitir depuração USB?\" (marque \"Sempre permitir\"). Até 40 s.",
         "webos": "Olhe a TV: aceite o pedido de conexão da Cassandra. Até 60 s.",
         "samsung": "Olhe a TV: escolha \"Permitir\" para a Cassandra. Até 40 s.",
-    }.get(kind, "Conectando…")
+    }.get(kind or "", "Conectando…")
 
 
 manager = DeviceManager()

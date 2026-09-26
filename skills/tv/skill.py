@@ -2,7 +2,7 @@
 "aumenta o volume da TV", "muta a TV", "pausa a TV", "volta", "vai pro início"...
 
 Os comandos comuns são reconhecidos direto; o resto passa pelo LLM, que só devolve a ação (JSON).
-Quem executa é o cassandra/tv_devices.py (a TV citada no pedido, ou a padrão da aba Aparelhos).
+Quem executa é o cassandra/network_devices.py (a TV citada no pedido, ou a padrão da aba Aparelhos).
 """
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import re
 import unicodedata
 
 from cassandra.openai_client import LLMService
-from cassandra.tv_devices import APPS, DeviceError, DeviceManager, find_app, manager as default_manager
+from cassandra.network_devices import APPS, DeviceError, DeviceManager, find_app, manager as default_manager
 from skills.base import Skill
 
 

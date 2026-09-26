@@ -391,47 +391,55 @@ Esquece o login da conta.
 
 ---
 
-## 10d. Aparelhos (TVs e players)
+## 10d. Aparelhos (qualquer um na mesma rede)
 
-Código em `cassandra/tv_devices.py` (descoberta SSDP/DIAL + um "driver" por tipo) e a skill de voz em
-`skills/tv/skill.py`. Aparelhos conectados em `data/devices.json` (com as chaves de pareamento — fora do git).
+Código em `cassandra/network_devices.py` e a skill de voz em `skills/tv/skill.py`. A busca é genérica — SSDP/UPnP,
+mDNS (todos os tipos de serviço anunciados, via `zeroconf`) e as portas de controle conhecidas — e mostra
+qualquer aparelho (menos o próprio Pi) pelo nome/fabricante/modelo. **Ao conectar**, ele é classificado pelo
+que anuncia (`category`) e ganha um controle (`control`) se existir um para ele. A UI escolhe a tela pela
+categoria (`remote: "tv"` = controle remoto de TV). Conectados em `data/devices.json` (fora do git).
 
-| `kind` | O que é | Controle |
-|---|---|---|
-| `firetv` | Fire TV / Android TV com depuração pela rede (ADB, 5555) | tudo, menos HDMI; liga/desliga a TV e volume pelo HDMI-CEC |
-| `webos` | LG webOS | tudo (ligar = Wake-on-LAN) |
-| `samsung` | Samsung Tizen 2016+ | tudo (ligar = Wake-on-LAN) |
-| `roku` | Roku / TVs Roku | tudo, sem pareamento |
-| `dial` | TV que só anuncia DIAL (ex.: Multilaser) | só abrir/fechar apps |
+`category`: `tv`, `streaming`, `speaker`, `light`, `computer`, `router`, `printer`, `smart_home`,
+`media_server`, `other` (dá para corrigir: `POST /api/devices/{id}/category`).
+
+| `control` | O que controla |
+|---|---|
+| `firetv` | Fire TV / Android TV com depuração pela rede (ADB, 5555): tudo, menos HDMI; liga/desliga a TV e volume pelo HDMI-CEC |
+| `webos` | LG webOS: tudo (ligar = Wake-on-LAN) |
+| `samsung` | Samsung Tizen 2016+: tudo (ligar = Wake-on-LAN) |
+| `roku` | Roku: tudo, sem pareamento |
+| `dial` | aparelhos que só anunciam DIAL (ex.: TV Multilaser): só abrir/fechar apps |
+| `null` | ainda sem controle (roteador, computador...): fica na lista, com online/offline |
 
 ### `GET /api/devices`
-`{ "devices": [ { "id": "firetvstick-de-dandara-54", "name": "...", "kind": "firetv", "kind_label": "...",
-  "host": "192.168.100.54", "online": true, "default": true, "capabilities": ["app", "power_off", ...] } ],
-  "found": [ { "host": "...", "kind": "dial", "name": "MULTILASER", "model": "TL019" } ],
+`{ "devices": [ { "id": "firetvstick-de-dandara-54", "name": "...", "host": "192.168.100.54", "category": "streaming",
+  "control": "firetv", "control_label": "...", "remote": "tv", "online": true, "default": true,
+  "capabilities": ["app", "power_off", ...] } ],
+  "found": [ { "host": "...", "name": "Multilaser", "manufacturer": "Mstar", "model": "TL019" } ],
   "scanning": false, "jobs": { "<host>": { "state": "running|ok|error", "message": "...", "at": 0 } } }`
 
-`devices` = conectados; `found` = achados na última busca e ainda não conectados; `default` = a TV dos
-comandos de voz sem nome ("desliga a TV").
+`found` = achados na última busca e ainda não conectados (sem classificação). `default` = o aparelho dos
+comandos de voz sem nome ("desliga a TV"), entre os de categoria `tv`/`streaming` com controle.
 
 ### `POST /api/devices/scan`
-Procura na rede (~4 s) e devolve o mesmo que `GET /api/devices`.
+Procura na rede (~5 s) e devolve o mesmo que `GET /api/devices`.
 
 ### `POST /api/devices/connect`
-**Body:** `{ "host": "192.168.100.54" }` (de `found`). Pareia **em segundo plano** — a TV pede confirmação na
-tela (Fire TV: "Permitir depuração USB?"; LG/Samsung: permitir a Cassandra). Acompanhe por `jobs[host]`.
+**Body:** `{ "host": "192.168.100.54" }` (de `found`). Conecta **em segundo plano** e classifica; se houver
+controle, pareia — alguns pedem confirmação na tela (Fire TV: "Permitir depuração USB?"; LG/Samsung: permitir a
+Cassandra). Acompanhe por `jobs[host]`.
 
 ### `POST /api/devices/{id}/command`
 **Body:** `{ "action": "...", "value": ... }`. Ações: `power_on`, `power_off`, `volume_up`, `volume_down`,
 `mute`, `channel_up`, `channel_down`, `up`, `down`, `left`, `right`, `ok`, `back`, `home`, `menu`,
 `play_pause`, `rewind`, `forward`, `input` (`value`: número do HDMI), `app` (`value`: `netflix`, `youtube`,
-`prime`, `disney`, `globoplay`, `max`, `spotify`, `twitch`), `close_app`. Só as de `capabilities` do
-aparelho valem. Resposta `{ "ok": true, "message": "Abrindo Netflix" }`; `502` com `error` se a TV não
-responder ou recusar.
+`prime`, `disney`, `globoplay`, `max`, `spotify`, `twitch`), `close_app`. Só as de `capabilities` valem.
+Resposta `{ "ok": true, "message": "Abrindo Netflix" }`; `502` com `error` se o aparelho não responder.
 
 ### `GET /api/devices/{id}/apps`
 Apps que dá para abrir nele: `{ "apps": [ { "id": "netflix", "label": "Netflix" } ] }`.
 
-### `POST /api/devices/{id}/forget` · `/rename` (`{ "name": "TV da sala" }`) · `/default`
+### `POST /api/devices/{id}/forget` · `/rename` (`{ "name": "TV da sala" }`) · `/default` · `/category` (`{ "category": "tv" }`)
 
 ---
 

@@ -11,7 +11,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 from cassandra import audio_devices, llm_settings
 from cassandra import spotify as spotify_api
-from cassandra import tv_devices
+from cassandra import network_devices
 from cassandra.assistant import CassandraAssistant
 
 HTML_PAGE = """<!doctype html>
@@ -631,10 +631,10 @@ HTML_PAGE = """<!doctype html>
       <div class="tab-panel hidden" id="tab-devices">
         <div id="dvList">
           <div class="sec-hdr"><span class="sec-title">Aparelhos</span><span class="count-badge" id="dvCount">—</span></div>
-          <div class="dv-section-title"><span>TVs e players</span></div>
+          <div class="dv-section-title"><span>Conectados</span></div>
           <div class="dv-grid" id="dvSaved"><div class="bt-empty">Carregando…</div></div>
-          <div class="dv-section-title"><span>Na mesma rede</span><button class="btn btn-primary btn-sm" id="dvScan">Procurar TVs</button></div>
-          <div class="settings-row-desc" style="margin-bottom:10px">A TV precisa estar ligada e no mesmo Wi-Fi. Ao conectar, confirme o pedido que aparecer na tela dela.</div>
+          <div class="dv-section-title"><span>Na mesma rede</span><button class="btn btn-primary btn-sm" id="dvScan">Procurar aparelhos</button></div>
+          <div class="settings-row-desc" style="margin-bottom:10px">O aparelho precisa estar ligado e no mesmo Wi-Fi. Ao conectar, a Cassandra identifica o que ele é e, se der para controlá-lo, mostra a opção Controlar. Alguns pedem uma confirmação na própria tela.</div>
           <div class="dv-grid" id="dvFound"></div>
           <div class="bt-job" id="dvJob"></div>
           <div class="dv-section-title"><span>Bluetooth</span><button class="btn btn-ghost btn-sm" onclick="gotoTab('settings')">Gerenciar</button></div>
@@ -1163,18 +1163,20 @@ const IC = {
 };
 
 // All possible tabs (settings always shown)
+// Grupos da barra lateral: "" = sem título (o topo).
 const ALL_TABS = [
-  {id:"dashboard", label:"Dashboard"},
-  {id:"chat",      label:"Chat"},
-  {id:"music",     label:"Música"},
-  {id:"devices",   label:"Aparelhos"},
-  {id:"shopping",  label:"Compras"},
-  {id:"todos",     label:"Tarefas"},
-  {id:"alarms",    label:"Alarmes"},
-  {id:"routines",  label:"Rotinas"},
-  {id:"agenda",    label:"Agenda"},
-  {id:"settings",  label:"Config."},
+  {id:"dashboard", label:"Dashboard",  group:""},
+  {id:"chat",      label:"Chat",       group:""},
+  {id:"music",     label:"Música",     group:"Casa"},
+  {id:"devices",   label:"Aparelhos",  group:"Casa"},
+  {id:"shopping",  label:"Compras",    group:"Organização"},
+  {id:"todos",     label:"Tarefas",    group:"Organização"},
+  {id:"agenda",    label:"Agenda",     group:"Organização"},
+  {id:"alarms",    label:"Alarmes",    group:"Automação"},
+  {id:"routines",  label:"Rotinas",    group:"Automação"},
+  {id:"settings",  label:"Config.",    group:"Sistema"},
 ];
+let currentTab = "dashboard";
 const PAGE_TITLES = {
   dashboard:"Dashboard",chat:"Chat",music:"Música",devices:"Aparelhos",shopping:"Compras",
   todos:"Tarefas",alarms:"Alarmes",routines:"Rotinas",agenda:"Agenda",settings:"Configurações",
@@ -1210,9 +1212,12 @@ function getVisibleTabs(){
 
 // ── Build nav ──
 function buildNav(container,visibleTabs){
-  container.innerHTML=visibleTabs.map(t=>
-    `<button class="nav-item${t.id==="dashboard"?" active":""}" data-tab="${t.id}" data-label="${t.label}">${IC[t.id]}<span class="nav-label">${t.label}</span></button>`
-  ).join("");
+  let group=null;
+  container.innerHTML=visibleTabs.map(t=>{
+    const header=t.group!==group&&t.group?`<div class="nav-section-label">${t.group}</div>`:"";
+    group=t.group;
+    return header+`<button class="nav-item${t.id===currentTab?" active":""}" data-tab="${t.id}" data-label="${t.label}">${IC[t.id]}<span class="nav-label">${t.label}</span></button>`;
+  }).join("");
   container.querySelectorAll(".nav-item").forEach(b=>b.addEventListener("click",()=>gotoTab(b.dataset.tab)));
 }
 
@@ -1224,6 +1229,7 @@ function rebuildNavs(){
 
 // ── Tab switching ──
 function gotoTab(tab){
+  currentTab=tab;
   document.querySelectorAll(".tab-panel").forEach(p=>{
     const show=p.id==="tab-"+tab;
     if(show&&p.classList.contains("hidden")){
@@ -1956,7 +1962,21 @@ document.getElementById("sp-play").addEventListener("click",spPlay);
 enter(document.getElementById("sp-query"),spPlay);
 // ── Aba Aparelhos ──
 const APP_COLORS={netflix:"#e50914",youtube:"#ff0033",prime:"#00a8e1",disney:"#113ccf",globoplay:"#f15a24",max:"#5822b4",spotify:"#1db954",twitch:"#9146ff"};
-const DV_TV_ICON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="13" rx="2"/><polyline points="17 2 12 7 7 2"/></svg>';
+// Categoria vem do servidor (classificada ao conectar); aqui só o nome e o ícone de cada uma.
+const DV_CATEGORIES={
+  tv:["TV",'<rect x="2" y="7" width="20" height="13" rx="2"/><polyline points="17 2 12 7 7 2"/>'],
+  streaming:["Player de streaming",'<rect x="3" y="9" width="18" height="6" rx="2"/><line x1="7" y1="12" x2="7.01" y2="12"/><path d="M15 15v3"/>'],
+  speaker:["Caixa de som",'<rect x="5" y="2" width="14" height="20" rx="2"/><circle cx="12" cy="14" r="4"/><line x1="12" y1="6" x2="12.01" y2="6"/>'],
+  light:["Lâmpada",'<path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 00-4 12.7V17h8v-2.3A7 7 0 0012 2z"/>'],
+  computer:["Computador",'<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>'],
+  router:["Roteador",'<rect x="2" y="14" width="20" height="7" rx="2"/><path d="M6.01 17.5h.01"/><path d="M10 17.5h.01"/><path d="M15 10a4 4 0 016 0"/><path d="M13 7a8 8 0 0110 0"/>'],
+  printer:["Impressora",'<polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>'],
+  smart_home:["Casa inteligente",'<path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><circle cx="12" cy="14" r="3"/>'],
+  media_server:["Servidor de mídia",'<rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/>'],
+  other:["Aparelho",'<rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/>'],
+};
+const dvIcon=c=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${(DV_CATEGORIES[c]||DV_CATEGORIES.other)[1]}</svg>`;
+const dvLabel=c=>(DV_CATEGORIES[c]||DV_CATEGORIES.other)[0];
 const DV_BT_ICON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6.5 6.5 17.5 17.5 12 23 12 1 17.5 6.5 6.5 17.5"/></svg>';
 let dvState=null, dvCurrent=null, dvPoll=null;
 function dvSay(text,state){const m=document.getElementById("dvJob");m.className="bt-job "+(state||"");m.textContent=text||"";}
@@ -1964,23 +1984,26 @@ function rmSay(text,state){const m=document.getElementById("rmMsg");m.className=
 function renderDevices(d){
   dvState=d;
   const saved=d.devices||[], found=d.found||[];
-  document.getElementById("dvCount").textContent=`${saved.length} TV${saved.length===1?"":"s"}`;
+  document.getElementById("dvCount").textContent=`${saved.length} conectado${saved.length===1?"":"s"}`;
+  const catOptions=cur=>Object.keys(DV_CATEGORIES).map(c=>`<option value="${c}" ${c===cur?"selected":""}>${dvLabel(c)}</option>`).join("");
   document.getElementById("dvSaved").innerHTML=saved.length?saved.map(x=>`
-    <div class="dv-card clickable" data-dv-open="${esc(x.id)}">
-      <div class="dv-head"><div class="dv-icon">${DV_TV_ICON}</div><div style="min-width:0;flex:1"><div class="dv-name">${esc(x.name)}</div><div class="dv-sub"><span class="dv-dot ${x.online?"on":""}"></span>${x.online?"online":"fora do ar"} · ${esc(x.kind_label)}</div></div></div>
+    <div class="dv-card${x.remote?" clickable":""}" ${x.remote?`data-dv-open="${esc(x.id)}"`:""}>
+      <div class="dv-head"><div class="dv-icon">${dvIcon(x.category)}</div><div style="min-width:0;flex:1"><div class="dv-name">${esc(x.name)}</div><div class="dv-sub"><span class="dv-dot ${x.online?"on":""}"></span>${x.online?"online":"fora do ar"} · ${esc(dvLabel(x.category))}${x.model?" · "+esc(x.model):""}</div></div></div>
       <div class="dv-actions">
-        <button class="btn btn-primary btn-sm" data-dv-open="${esc(x.id)}">Controlar</button>
-        ${x.default?'<span class="info-chip">padrão da voz</span>':`<button class="btn btn-ghost btn-sm" data-dv-act="default" data-id="${esc(x.id)}">Tornar padrão</button>`}
+        ${x.remote?`<button class="btn btn-primary btn-sm" data-dv-open="${esc(x.id)}">Controlar</button>`:`<span class="info-chip" title="A Cassandra ainda não sabe controlar este tipo de aparelho">sem controle ainda</span>`}
+        ${x.remote?(x.default?'<span class="info-chip">padrão da voz</span>':`<button class="btn btn-ghost btn-sm" data-dv-act="default" data-id="${esc(x.id)}">Tornar padrão</button>`):""}
         <button class="btn btn-ghost btn-sm" data-dv-act="rename" data-id="${esc(x.id)}">Renomear</button>
         <button class="btn btn-danger btn-sm" data-dv-act="forget" data-id="${esc(x.id)}" data-name="${esc(x.name)}">Esquecer</button>
-      </div></div>`).join(""):'<div class="bt-empty">Nenhuma TV conectada. Toque em "Procurar TVs".</div>';
+        <select class="settings-select" data-dv-cat="${esc(x.id)}" title="Tipo do aparelho (corrija se a Cassandra errou)" style="max-width:170px">${catOptions(x.category)}</select>
+      </div></div>`).join(""):'<div class="bt-empty">Nenhum aparelho conectado. Toque em "Procurar aparelhos".</div>';
   const scan=document.getElementById("dvScan");
-  scan.disabled=!!d.scanning; scan.textContent=d.scanning?"Procurando…":"Procurar TVs";
+  scan.disabled=!!d.scanning; scan.textContent=d.scanning?"Procurando…":"Procurar aparelhos";
   const jobs=d.jobs||{};
   document.getElementById("dvFound").innerHTML=found.map(f=>{
-    const job=jobs[f.host];
-    return `<div class="dv-card"><div class="dv-head"><div class="dv-icon">${DV_TV_ICON}</div><div style="min-width:0;flex:1"><div class="dv-name">${esc(f.name)}</div><div class="dv-sub">${esc(f.kind_label)} · ${esc(f.host)}${f.model?" · "+esc(f.model):""}</div></div></div>
-      <div class="dv-actions"><button class="btn btn-primary btn-sm" data-dv-connect="${esc(f.host)}" ${job&&job.state==="running"?"disabled":""}>${job&&job.state==="running"?"Conectando…":"Conectar"}</button></div></div>`;
+    const job=jobs[f.host], busy=job&&job.state==="running";
+    const sub=[f.manufacturer,f.model,f.host].filter(Boolean).join(" · ");
+    return `<div class="dv-card"><div class="dv-head"><div class="dv-icon">${dvIcon("other")}</div><div style="min-width:0;flex:1"><div class="dv-name">${esc(f.name)}</div><div class="dv-sub">${esc(sub)}</div></div></div>
+      <div class="dv-actions"><button class="btn btn-primary btn-sm" data-dv-connect="${esc(f.host)}" ${busy?"disabled":""}>${busy?"Conectando…":"Conectar"}</button></div></div>`;
   }).join("");
   const running=Object.values(jobs).find(j=>j.state==="running");
   const last=Object.values(jobs).sort((a,b)=>b.at-a.at)[0];
@@ -1999,21 +2022,21 @@ async function loadDeviceBt(){
 }
 function dvOpen(){document.getElementById("dvList").style.display="";document.getElementById("dvRemote").style.display="none";loadDevices();loadDeviceBt();}
 async function dvScan(){
-  document.getElementById("dvScan").disabled=true; dvSay("Procurando TVs na rede…","running");
-  try{renderDevices(await api("/api/devices/scan","POST",{}));const n=(dvState.found||[]).length;dvSay(n?`${n} aparelho${n>1?"s":""} encontrado${n>1?"s":""}.`:"Nenhuma TV nova encontrada. Ela está ligada e no mesmo Wi-Fi?",n?"ok":"error");}
+  document.getElementById("dvScan").disabled=true; dvSay("Procurando aparelhos na rede…","running");
+  try{renderDevices(await api("/api/devices/scan","POST",{}));const n=(dvState.found||[]).length;dvSay(n?`${n} aparelho${n>1?"s":""} encontrado${n>1?"s":""}.`:"Nenhum aparelho novo encontrado. Ele está ligado e no mesmo Wi-Fi?",n?"ok":"error");}
   catch(e){dvSay(e.message,"error");document.getElementById("dvScan").disabled=false;}
 }
 function openRemote(id){
-  const x=(dvState&&dvState.devices||[]).find(d=>d.id===id); if(!x) return;
+  const x=(dvState&&dvState.devices||[]).find(d=>d.id===id); if(!x||!x.remote) return;
   dvCurrent=x;
   document.getElementById("dvList").style.display="none"; document.getElementById("dvRemote").style.display="";
   document.getElementById("rmName").textContent=x.name;
-  document.getElementById("rmSub").textContent=`${x.online?"online":"fora do ar"} · ${x.kind_label} · ${x.host}`;
+  document.getElementById("rmSub").textContent=`${x.online?"online":"fora do ar"} · ${dvLabel(x.category)} · ${x.control_label}`;
   const caps=new Set(x.capabilities||[]);
   document.querySelectorAll("#dvRemote [data-rm]").forEach(b=>b.disabled=!caps.has(b.dataset.rm));
   const note=document.getElementById("rmNote");
-  if(x.kind==="dial"){note.style.display="";note.textContent="Esta TV só aceita abrir e fechar apps pela rede. Para ligar, desligar e volume, use o controle dela, um Fire TV plugado nela ou um emissor infravermelho.";}
-  else if(x.kind==="firetv"){note.style.display="";note.textContent="Ligar/desligar e volume passam pelo HDMI (CEC): funcionam se a TV tiver o CEC ativado (Anynet+, SimpLink, Bravia Sync…).";}
+  if(x.control==="dial"){note.style.display="";note.textContent="Este aparelho só aceita abrir e fechar apps pela rede. Para ligar, desligar e volume, use o controle dele, um Fire TV plugado nele ou um emissor infravermelho.";}
+  else if(x.control==="firetv"){note.style.display="";note.textContent="Ligar/desligar e volume passam pelo HDMI (CEC): funcionam se a TV tiver o CEC ativado (Anynet+, SimpLink, Bravia Sync…).";}
   else note.style.display="none";
   document.getElementById("rmInputsPanel").style.display=caps.has("input")?"":"none";
   document.getElementById("rmInputs").innerHTML=[1,2,3,4].map(n=>`<button class="rbtn" data-rm-input="${n}">HDMI ${n}</button>`).join("");
@@ -2032,14 +2055,19 @@ async function rmCommand(action,value){
 }
 document.getElementById("dvScan").addEventListener("click",dvScan);
 document.getElementById("rmBack").addEventListener("click",dvOpen);
+document.getElementById("tab-devices").addEventListener("change",async e=>{
+  const sel=e.target.closest("[data-dv-cat]"); if(!sel) return;
+  try{renderDevices(await api(`/api/devices/${encodeURIComponent(sel.dataset.dvCat)}/category`,"POST",{category:sel.value}));}catch(err){dvSay(err.message,"error");}
+});
 document.getElementById("tab-devices").addEventListener("click",async e=>{
+  if(e.target.closest("[data-dv-cat]")) return;
   const open=e.target.closest("[data-dv-open]"); const act=e.target.closest("[data-dv-act]");
   if(act){
     e.stopPropagation();
     const id=act.dataset.id, what=act.dataset.dvAct;
     try{
       if(what==="forget"){if(!confirm(`Esquecer ${act.dataset.name}? Para usar de novo, será preciso conectar outra vez.`))return;await api(`/api/devices/${encodeURIComponent(id)}/forget`,"POST",{});}
-      else if(what==="rename"){const name=prompt("Nome da TV (ex.: TV da sala):");if(!name)return;await api(`/api/devices/${encodeURIComponent(id)}/rename`,"POST",{name});}
+      else if(what==="rename"){const name=prompt("Nome do aparelho (ex.: TV da sala):");if(!name)return;await api(`/api/devices/${encodeURIComponent(id)}/rename`,"POST",{name});}
       else if(what==="default"){await api(`/api/devices/${encodeURIComponent(id)}/default`,"POST",{});}
       loadDevices();
     }catch(err){dvSay(err.message,"error");}
@@ -2261,14 +2289,14 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
             self.end_headers()
 
         def _devices_post(self, action: str, data: dict) -> None:
-            mgr = tv_devices.manager
+            mgr = network_devices.manager
             try:
                 if action == "scan":
                     mgr.scan()
                 elif action == "connect":
                     mgr.start_connect(str(data.get("host", "")))
                 else:
-                    m = re.match(r"^([a-z0-9-]+)/(command|forget|rename|default)$", action)
+                    m = re.match(r"^([a-z0-9-]+)/(command|forget|rename|default|category)$", action)
                     if not m:
                         self._send_json({"error": "Not found."}, status=HTTPStatus.NOT_FOUND)
                         return
@@ -2278,7 +2306,7 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                         return
                     if what == "command":
                         cmd = str(data.get("action", ""))
-                        if cmd not in tv_devices.ACTIONS:
+                        if cmd not in network_devices.ACTIONS:
                             self._send_json({"error": "ação inválida"}, status=HTTPStatus.BAD_REQUEST)
                             return
                         message = mgr.command(device_id, cmd, data.get("value"))
@@ -2288,9 +2316,11 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                         mgr.forget(device_id)
                     elif what == "rename":
                         mgr.rename(device_id, str(data.get("name", "")))
+                    elif what == "category":
+                        mgr.set_category(device_id, str(data.get("category", "")))
                     else:
                         mgr.set_default(device_id)
-            except tv_devices.DeviceError as exc:
+            except network_devices.DeviceError as exc:
                 self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_GATEWAY)
                 return
             except Exception as exc:  # noqa: BLE001 — TV desligada/fora da rede
@@ -2452,13 +2482,13 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                 self._send_json(audio_devices.audio_status())
                 return
             if parsed.path == "/api/devices":
-                self._send_json(tv_devices.manager.status())
+                self._send_json(network_devices.manager.status())
                 return
             m = re.match(r"^/api/devices/([a-z0-9-]+)/apps$", parsed.path)
             if m:
                 try:
-                    self._send_json({"apps": tv_devices.manager.apps(m.group(1))})
-                except tv_devices.DeviceError as exc:
+                    self._send_json({"apps": network_devices.manager.apps(m.group(1))})
+                except network_devices.DeviceError as exc:
                     self._send_json({"error": str(exc)}, status=HTTPStatus.NOT_FOUND)
                 return
             if parsed.path == "/api/spotify/status":
