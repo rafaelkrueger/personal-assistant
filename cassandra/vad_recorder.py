@@ -231,12 +231,9 @@ class VadRecorder:
 
         if not recorded:
             return None
-        peak = max((self._rms(f) for f in recorded), default=0)
         speech_seconds = speech_frames * FRAME_MS / 1000
         if speech_seconds < MIN_SPEECH_SECONDS:
             return None  # estalo/ruído: descartado sem registrar (só poluía o log)
-        monitor.event("heard", f"Fala captada: {speech_seconds:.1f} s (pico {peak:.0f}, limite {threshold:.0f}, "
-                               f"ruído {self._noise or 0:.0f})")
 
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
         tmp.close()
