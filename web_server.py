@@ -1860,7 +1860,6 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                 self._send_json(assistant.get_calendar_status())
                 return
             if parsed.path == "/api/agenda/events":
-                from urllib.parse import parse_qs
                 qs = parse_qs(parsed.query)
                 days = int((qs.get("days", ["7"])[0]))
                 status = assistant.get_calendar_status()
