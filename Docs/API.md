@@ -7,7 +7,7 @@ equivalente aqui.
 
 - **Base URL (rede local):** `http://192.168.100.49:8080` (o Raspberry Pi; o nome
   `raspberrypi.local` não resolve a partir do PC Windows — use o IP).
-- **Base URL (pública):** `https://cassandra-rafaelkrueger.netlify.app` — o site
+- **Base URL (pública):** `https://cassandra-app.netlify.app` — o site
   no Netlify repassa `/api/*` para o Pi por um túnel da Cloudflare. Endereço
   estável, mas o proxy do Netlify **corta a requisição em ~26 s**.
 - **Formato:** JSON (UTF-8) em todo lugar. Todas as escritas são `POST`

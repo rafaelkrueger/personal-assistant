@@ -5,7 +5,7 @@ daqui só se manda tocar, pausar, pular, buscar... Só a biblioteca padrão do P
 
 Configuração (.env):
   SPOTIFY_CLIENT_ID      o Client ID do app no Spotify for Developers (obrigatório)
-  SPOTIFY_REDIRECT_URI   padrão https://cassandra-rafaelkrueger.netlify.app/api/spotify/callback
+  SPOTIFY_REDIRECT_URI   padrão https://cassandra-app.netlify.app/api/spotify/callback
   SPOTIFY_LOCAL_REDIRECT_URI  padrão http://127.0.0.1:8080/api/spotify/callback (quando a UI é aberta no próprio Pi)
   SPOTIFY_DEVICE_NAME    padrão Cassandra
 Os dois redirect URIs precisam estar cadastrados no app. O token fica em data/spotify_token.json (fora do git).
@@ -59,7 +59,7 @@ class SpotifyClient:
     def __init__(self) -> None:
         self.client_id = os.getenv("SPOTIFY_CLIENT_ID", "").strip()
         self.redirect_uri = os.getenv(
-            "SPOTIFY_REDIRECT_URI", "https://cassandra-rafaelkrueger.netlify.app/api/spotify/callback").strip()
+            "SPOTIFY_REDIRECT_URI", "https://cassandra-app.netlify.app/api/spotify/callback").strip()
         self.local_redirect_uri = os.getenv(
             "SPOTIFY_LOCAL_REDIRECT_URI", "http://127.0.0.1:8080/api/spotify/callback").strip()
         self.device_name = os.getenv("SPOTIFY_DEVICE_NAME", "Cassandra").strip() or "Cassandra"
