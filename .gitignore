@@ -19,3 +19,5 @@ data/adbkey.pub
 models/
 # frases curtas da voz já geradas (cache)
 data/tts_cache/
+# equalizador das caixas Bluetooth (ajustes locais)
+data/eq.json

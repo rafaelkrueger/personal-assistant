@@ -13,6 +13,7 @@ from cassandra import audio_devices, llm_settings
 from cassandra import spotify as spotify_api
 from cassandra import network_devices
 from cassandra.mic_monitor import monitor as mic_monitor
+from cassandra.bt_audio import bt_audio
 from cassandra.assistant import CassandraAssistant
 
 HTML_PAGE = """<!doctype html>
@@ -808,6 +809,29 @@ HTML_PAGE = """<!doctype html>
                   <button class="rbtn" data-rm="play_pause">⏯</button>
                   <button class="rbtn" data-rm="next">⏭</button>
                 </div>
+              </div>
+            </div>
+
+            <!-- caixa/fone Bluetooth -->
+            <div id="pnlBt" style="display:none">
+              <div class="remote-panel">
+                <div class="remote-label">Volume da caixa <span id="btVolVal"></span></div>
+                <input type="range" id="btVol" min="0" max="100" step="2" value="50" style="accent-color:var(--brand)"/>
+                <div class="remote-row">
+                  <button class="rbtn" id="btMute">Mudo</button>
+                  <button class="rbtn power-on" id="btOutput">Usar como saída</button>
+                </div>
+              </div>
+              <div class="remote-panel">
+                <div class="remote-row" style="justify-content:space-between;align-items:center">
+                  <div class="remote-label" style="text-align:left">Equalizador (grave e agudo)</div>
+                  <label class="toggle"><input type="checkbox" id="btEqOn"/><span class="toggle-slider"></span></label>
+                </div>
+                <div class="remote-label">Grave <span id="btBassVal"></span></div>
+                <input type="range" id="btBass" min="-12" max="12" step="1" value="0" style="accent-color:var(--amber)"/>
+                <div class="remote-label">Agudo <span id="btTrebleVal"></span></div>
+                <input type="range" id="btTreble" min="-12" max="12" step="1" value="0" style="accent-color:var(--green)"/>
+                <div class="remote-row" id="btPresets"></div>
               </div>
             </div>
 
@@ -2203,7 +2227,7 @@ async function loadDeviceBt(){
     const paired=(d.devices||[]).filter(x=>x.paired);
     document.getElementById("dvBt").innerHTML=!d.available?'<div class="bt-empty">Bluetooth indisponível.</div>':(paired.length?paired.map(x=>`
       <div class="dv-card"><div class="dv-head"><div class="dv-icon">${DV_BT_ICON}</div><div style="min-width:0;flex:1"><div class="dv-name">${esc(x.name)}</div><div class="dv-sub"><span class="dv-dot ${x.connected?"on":""}"></span>${x.connected?"conectado":"desconectado"}</div></div></div>
-      <div class="dv-actions">${x.connected?`<button class="btn btn-ghost btn-sm" data-dv-bt="disconnect" data-mac="${esc(x.mac)}">Desconectar</button>`:`<button class="btn btn-primary btn-sm" data-dv-bt="connect" data-mac="${esc(x.mac)}">Conectar</button>`}</div></div>`).join(""):'<div class="bt-empty">Nenhum aparelho Bluetooth pareado.</div>');
+      <div class="dv-actions">${x.connected?`<button class="btn btn-primary btn-sm" data-bt-open="${esc(x.mac)}" data-name="${esc(x.name)}">Controlar</button><button class="btn btn-ghost btn-sm" data-dv-bt="disconnect" data-mac="${esc(x.mac)}">Desconectar</button>`:`<button class="btn btn-primary btn-sm" data-dv-bt="connect" data-mac="${esc(x.mac)}">Conectar</button>`}</div></div>`).join(""):'<div class="bt-empty">Nenhum aparelho Bluetooth pareado.</div>');
   }catch(e){document.getElementById("dvBt").innerHTML=`<div class="bt-empty">${esc(e.message)}</div>`;}
 }
 function dvOpen(){document.getElementById("dvList").style.display="";document.getElementById("dvRemote").style.display="none";loadDevices();loadDeviceBt();}
@@ -2217,7 +2241,8 @@ let lgTimer=null, spkTimer=null;
 function openRemote(id){
   const x=(dvState&&dvState.devices||[]).find(d=>d.id===id); if(!x) return;
   const panel=x.panel||"generic";
-  ["pnlTv","pnlComputer","pnlLight","pnlSpeaker"].forEach(p=>document.getElementById(p).style.display="none");
+  ["pnlTv","pnlComputer","pnlLight","pnlSpeaker","pnlBt"].forEach(p=>document.getElementById(p).style.display="none");
+  document.getElementById("pnlNet").style.display="";
   const show={tv:"pnlTv",computer:"pnlComputer",light:"pnlLight",speaker:"pnlSpeaker"}[panel];
   if(show) document.getElementById(show).style.display="";
   const page=document.getElementById("rmPage");
@@ -2252,6 +2277,50 @@ function openRemote(id){
     document.getElementById("rmApps").innerHTML=apps.length?apps.map(a=>`<button class="app-btn" style="background:${APP_COLORS[a.id]||"#334155"}" data-rm-app="${esc(a.id)}">${esc(a.label)}</button>`).join(""):'<div class="bt-empty">Nenhum app conhecido.</div>';
   }).catch(e=>{document.getElementById("rmApps").innerHTML=`<div class="bt-empty">${esc(e.message)}</div>`;});
 }
+// ── Caixa/fone Bluetooth ──
+const BT_PRESETS={normal:"Normal",grave:"Mais grave",grave_forte:"Grave forte",voz:"Voz",agudo:"Mais agudo"};
+let btMac=null, btTimer=null, btState=null;
+const dbLabel=v=>(v>0?"+":"")+v+" dB";
+function btRender(st){
+  btState=st;
+  document.getElementById("rmSub").textContent=st.connected?`conectado · Bluetooth · ${st.mac}`:`desconectado · Bluetooth · ${st.mac}`;
+  if(document.activeElement!==document.getElementById("btVol")&&st.volume!=null){document.getElementById("btVol").value=st.volume;}
+  document.getElementById("btVolVal").textContent=st.volume!=null?st.volume+"%":"—";
+  document.getElementById("btMute").textContent=st.muted?"Tirar do mudo":"Mudo";
+  document.getElementById("btOutput").textContent=st.is_output?"Saída atual ✓":"Usar como saída";
+  const eq=st.eq||{};
+  document.getElementById("btEqOn").checked=!!eq.enabled;
+  if(document.activeElement!==document.getElementById("btBass")) document.getElementById("btBass").value=eq.bass||0;
+  if(document.activeElement!==document.getElementById("btTreble")) document.getElementById("btTreble").value=eq.treble||0;
+  document.getElementById("btBassVal").textContent=dbLabel(eq.bass||0);
+  document.getElementById("btTrebleVal").textContent=dbLabel(eq.treble||0);
+  document.querySelectorAll("#pnlBt input,#pnlBt button").forEach(el=>el.disabled=!st.connected);
+}
+async function btSend(body){
+  if(!btMac) return;
+  try{btRender(await api(`/api/btaudio/${btMac}`,"POST",body));rmSay("Feito.","ok");}catch(e){rmSay(e.message,"error");}
+}
+function openBtPanel(mac,name){
+  btMac=mac; dvCurrent=null;
+  document.getElementById("dvList").style.display="none"; document.getElementById("dvRemote").style.display="";
+  ["pnlTv","pnlComputer","pnlLight","pnlSpeaker"].forEach(p=>document.getElementById(p).style.display="none");
+  document.getElementById("pnlNet").style.display="none";
+  document.getElementById("pnlBt").style.display="";
+  document.getElementById("rmName").textContent=name;
+  const note=document.getElementById("rmNote"); note.style.display="";
+  note.textContent="Volume e mudo são da própria caixa (pelo Bluetooth). O grave e o agudo são aplicados pelo Raspberry Pi no som que vai para ela — os ajustes internos da caixa (modos de som do app do fabricante) usam um protocolo fechado.";
+  document.getElementById("btPresets").innerHTML=Object.entries(BT_PRESETS).map(([k,v])=>`<button class="rbtn" data-bt-preset="${k}">${v}</button>`).join("");
+  rmSay("");
+  api(`/api/btaudio/${mac}`).then(btRender).catch(e=>rmSay(e.message,"error"));
+}
+document.getElementById("btVol").addEventListener("input",e=>{document.getElementById("btVolVal").textContent=e.target.value+"%";clearTimeout(btTimer);btTimer=setTimeout(()=>btSend({volume:+e.target.value}),250);});
+document.getElementById("btBass").addEventListener("input",e=>{document.getElementById("btBassVal").textContent=dbLabel(+e.target.value);clearTimeout(btTimer);btTimer=setTimeout(()=>btSend({bass:+e.target.value}),300);});
+document.getElementById("btTreble").addEventListener("input",e=>{document.getElementById("btTrebleVal").textContent=dbLabel(+e.target.value);clearTimeout(btTimer);btTimer=setTimeout(()=>btSend({treble:+e.target.value}),300);});
+document.getElementById("btEqOn").addEventListener("change",e=>{rmSay("Aplicando…");btSend({eq_enabled:e.target.checked});});
+document.getElementById("btMute").addEventListener("click",()=>btSend({muted:!(btState&&btState.muted)}));
+document.getElementById("btOutput").addEventListener("click",()=>btSend({output:true}));
+document.getElementById("btPresets").addEventListener("click",e=>{const b=e.target.closest("[data-bt-preset]");if(b){rmSay("Aplicando…");btSend({preset:b.dataset.btPreset});}});
+
 async function rmCommand(action,value){
   if(!dvCurrent) return;
   rmSay("…");
@@ -2284,6 +2353,7 @@ document.getElementById("tab-devices").addEventListener("click",async e=>{
   if(open){openRemote(open.dataset.dvOpen);return;}
   const con=e.target.closest("[data-dv-connect]");
   if(con){try{renderDevices(await api("/api/devices/connect","POST",{host:con.dataset.dvConnect}));}catch(err){dvSay(err.message,"error");}return;}
+  const bto=e.target.closest("[data-bt-open]"); if(bto){openBtPanel(bto.dataset.btOpen,bto.dataset.name);return;}
   const bt=e.target.closest("[data-dv-bt]");
   if(bt){bt.disabled=true;try{await api(`/api/bluetooth/${bt.dataset.dvBt}`,"POST",{mac:bt.dataset.mac});}catch(err){alert(err.message);}setTimeout(loadDeviceBt,bt.dataset.dvBt==="connect"?6000:800);return;}
   const conf=e.target.closest("[data-rm-confirm]");
@@ -2728,6 +2798,13 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
             if parsed.path == "/api/audio":
                 self._send_json(audio_devices.audio_status())
                 return
+            m = re.match(r"^/api/btaudio/([0-9A-Fa-f:]{17})$", parsed.path)
+            if m:
+                try:
+                    self._send_json(bt_audio.state(m.group(1)))
+                except Exception as exc:  # noqa: BLE001
+                    self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_GATEWAY)
+                return
             if parsed.path == "/api/mic":
                 try:
                     after = int((parse_qs(parsed.query).get("after") or ["0"])[0])
@@ -2885,6 +2962,26 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                     self._send_json({"error": "Not found."}, status=HTTPStatus.NOT_FOUND)
                     return
                 self._send_json(bt.status())
+                return
+
+            m = re.match(r"^/api/btaudio/([0-9A-Fa-f:]{17})$", parsed.path)
+            if m:
+                mac, data = m.group(1), self._read_json_body()
+                try:
+                    if "volume" in data:
+                        bt_audio.set_volume(mac, int(data["volume"]))
+                    if "muted" in data:
+                        bt_audio.set_mute(mac, bool(data["muted"]))
+                    if data.get("output"):
+                        bt_audio.use_as_output(mac)
+                    if any(k in data for k in ("eq_enabled", "bass", "treble", "preset")):
+                        bt_audio.set_eq(mac, enabled=data.get("eq_enabled"), bass=data.get("bass"),
+                                        treble=data.get("treble"), preset=data.get("preset"))
+                    self._send_json(bt_audio.state(mac))
+                except (TypeError, ValueError) as exc:
+                    self._send_json({"error": f"valor inválido: {exc}"}, status=HTTPStatus.BAD_REQUEST)
+                except Exception as exc:  # noqa: BLE001 — caixa desconectada, filtro que não subiu...
+                    self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_GATEWAY)
                 return
 
             if parsed.path.startswith("/api/devices/"):
@@ -3096,6 +3193,7 @@ def start_web_server(assistant: CassandraAssistant) -> ThreadingHTTPServer:
     handler = make_handler(assistant)
     server = ThreadingHTTPServer((host, port), handler)
     Thread(target=server.serve_forever, daemon=True).start()
+    bt_audio.start()  # religa o equalizador da caixa Bluetooth (se estava ligado) e vigia a conexão
     print(f"Web chat running at http://{host}:{port}")
     return server
 
