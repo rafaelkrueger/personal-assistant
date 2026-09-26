@@ -251,7 +251,16 @@ class BluetoothManager:
                     return
             _run(["bluetoothctl", "trust", mac])  # reconecta sozinho depois de um reboot
             self._set_job("connect", mac, "running", f"Conectando em {name}…")
-            code, out = _run(["bluetoothctl", "--timeout", "20", "connect", mac], timeout=30)
+            # A 1ª tentativa às vezes falha (le-connection-abort-by-local: a BlueZ tenta LE antes do clássico);
+            # a seguinte costuma conectar.
+            for attempt in range(3):
+                code, out = _run(["bluetoothctl", "--timeout", "20", "connect", mac], timeout=30)
+                if "Connection successful" in out or mac in _devices("Connected"):
+                    break
+                if attempt == 2:
+                    break
+                self._set_job("connect", mac, "running", f"Conectando em {name}… (tentativa {attempt + 2})")
+                time.sleep(2)
             if "Connection successful" in out or mac in _devices("Connected"):
                 self._set_job("connect", mac, "ok", f"{name} conectado.")
             else:
