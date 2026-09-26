@@ -56,7 +56,7 @@ HTML_PAGE = """<!doctype html>
     ::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.14)}
 
     /* ═══ SHELL ═══ */
-    .app{display:flex;height:100vh;overflow:hidden}
+    .app{display:flex;height:100vh;height:100dvh;overflow:hidden}
     .sidebar{
       display:none;width:var(--sidebar-w);flex-shrink:0;
       background:var(--sidebar);border-right:1px solid var(--border);
@@ -137,8 +137,8 @@ HTML_PAGE = """<!doctype html>
     .alarm-pill.ringing{border-color:rgba(251,191,36,.35);background:var(--amber-dim);color:var(--amber);box-shadow:0 0 16px rgba(251,191,36,.15)}
 
     /* ═══ BODY ═══ */
-    .body{flex:1;overflow-y:auto;padding:20px 18px}
-    @media(min-width:640px){.body{padding:24px 22px}}
+    .body{flex:1;overflow-y:auto;padding:20px 18px calc(40px + env(safe-area-inset-bottom));-webkit-overflow-scrolling:touch}
+    @media(min-width:640px){.body{padding:24px 22px calc(40px + env(safe-area-inset-bottom))}}
     .tab-panel.hidden{display:none!important}
     .tab-panel{animation:fadeUp .22s cubic-bezier(.4,0,.2,1) both}
     @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
