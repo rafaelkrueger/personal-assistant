@@ -38,7 +38,7 @@ HTML_PAGE = """<!doctype html>
       --red:#f87171;--red-dim:rgba(248,113,113,0.1);
       --r:10px;--rl:14px;--rx:18px;--rxl:24px;
       --sidebar-w:236px;--sidebar-collapsed:62px;
-      --topbar-h:56px;--bottomnav-h:66px;
+      --topbar-h:56px;
       --shadow:0 8px 32px rgba(0,0,0,0.6);--shadow-sm:0 2px 12px rgba(0,0,0,0.4);
       --shadow-glow:0 0 40px rgba(91,154,255,0.08);
     }
@@ -65,8 +65,7 @@ HTML_PAGE = """<!doctype html>
     }
     .sidebar.collapsed{width:var(--sidebar-collapsed)}
     @media(min-width:768px){.sidebar{display:flex}}
-    .main{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;padding-bottom:var(--bottomnav-h)}
-    @media(min-width:768px){.main{padding-bottom:0}}
+    .main{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;padding-bottom:env(safe-area-inset-bottom)}
 
     /* ═══ SIDEBAR ═══ */
     .sb-top{display:flex;align-items:center;gap:10px;padding:14px 12px;border-bottom:1px solid var(--border);flex-shrink:0;min-height:var(--topbar-h)}
@@ -152,14 +151,6 @@ HTML_PAGE = """<!doctype html>
     @media(min-width:768px){.mobile-overlay,.mobile-sidebar{display:none!important}}
 
     /* ═══ BOTTOM NAV ═══ */
-    .bottom-nav{display:flex;position:fixed;bottom:0;left:0;right:0;height:var(--bottomnav-h);background:rgba(5,8,15,0.92);border-top:1px solid var(--border);backdrop-filter:blur(20px);z-index:50;padding-bottom:env(safe-area-inset-bottom)}
-    @media(min-width:768px){.bottom-nav{display:none}}
-    .bn-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;background:transparent;border:none;color:var(--text3);font-size:9.5px;font-weight:700;cursor:pointer;transition:all .15s;padding-top:4px;letter-spacing:.02em}
-    .bn-item svg{width:20px;height:20px;transition:all .15s}
-    .bn-item.active{color:var(--brand2)}
-    .bn-item.active svg{transform:scale(1.1);filter:drop-shadow(0 0 4px var(--brand-glow))}
-    .bn-dot{width:3px;height:3px;border-radius:50%;background:var(--brand);margin-top:2px;opacity:0;transition:opacity .15s}
-    .bn-item.active .bn-dot{opacity:1}
 
     /* ═══ BUTTONS ═══ */
     .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:9px 16px;border:none;border-radius:var(--r);font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;white-space:nowrap;font-family:inherit;letter-spacing:-.01em}
@@ -247,7 +238,7 @@ HTML_PAGE = """<!doctype html>
     .tip-example{font-size:12px;color:var(--text2);font-style:italic;line-height:1.6}
 
     /* ═══ CHAT ═══ */
-    .chat-wrap{display:flex;flex-direction:column;height:calc(100dvh - var(--bottomnav-h) - var(--topbar-h) - 88px)}
+    .chat-wrap{display:flex;flex-direction:column;height:calc(100dvh - var(--topbar-h) - 88px)}
     @media(min-width:768px){.chat-wrap{height:calc(100dvh - var(--topbar-h) - 88px)}}
     .messages{
       flex:1;overflow-y:auto;padding:18px;display:flex;flex-direction:column;gap:14px;
@@ -1152,7 +1143,6 @@ HTML_PAGE = """<!doctype html>
   </div>
 </div>
 
-<nav class="bottom-nav" id="bottomNav"></nav>
 
 <script>
 const IC = {
@@ -1226,23 +1216,10 @@ function buildNav(container,visibleTabs){
   container.querySelectorAll(".nav-item").forEach(b=>b.addEventListener("click",()=>gotoTab(b.dataset.tab)));
 }
 
-function buildBottomNav(visibleTabs){
-  const BN=document.getElementById("bottomNav");
-  // Até 6 itens: os 5 primeiros e Configurações sempre por último (as outras abas ficam no menu ☰)
-  const items=[...visibleTabs.filter(t=>t.id!=="settings").slice(0,5),...visibleTabs.filter(t=>t.id==="settings")];
-  BN.innerHTML=items.map(t=>
-    `<button class="bn-item${t.id==="dashboard"?" active":""}" data-tab="${t.id}">
-      ${IC[t.id]}<span>${t.label}</span><div class="bn-dot"></div>
-    </button>`
-  ).join("");
-  BN.querySelectorAll(".bn-item").forEach(b=>b.addEventListener("click",()=>gotoTab(b.dataset.tab)));
-}
-
 function rebuildNavs(){
   const vis=getVisibleTabs();
   buildNav(document.getElementById("desktopNav"),vis);
   buildNav(document.getElementById("mobileNav"),vis);
-  buildBottomNav(vis);
 }
 
 // ── Tab switching ──
