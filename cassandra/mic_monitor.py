@@ -24,6 +24,7 @@ class MicMonitor:
         self.rate = 0
         self.phase = "iniciando"
         self.threshold = 0
+        self.noise = 0
         self._level = 0.0
         self._level_at = 0.0
         self._peak = 0.0
@@ -58,6 +59,7 @@ class MicMonitor:
             "level": round(self._level if live else 0.0),
             "peak": round(self._peak if live else 0.0),
             "threshold": self.threshold,
+            "noise": self.noise,
             "events": events,
         }
 

@@ -201,7 +201,10 @@ class CassandraAssistant:
                 command = wake_command
                 command_source = "wake_inline"
                 if not command:
-                    # Wake word said alone — wait for the follow-up utterance.
+                    # Wake word said alone — wait for the follow-up utterance. Espera o bip de ativação terminar
+                    # (inclusive o atraso da caixa Bluetooth) para o microfone não captar o próprio bip.
+                    time.sleep(0.6)
+                    mic_monitor.set(phase="ouvindo o pedido")
                     follow_event = self.input_source.read()
                     if follow_event.exit_requested:
                         self._shutdown_with_goodbye()

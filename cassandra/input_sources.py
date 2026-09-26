@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import glob
 import os
+import re
 import threading
 import time
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime
 from difflib import SequenceMatcher
@@ -12,6 +14,10 @@ from cassandra import llm_settings
 from cassandra.mic_monitor import monitor
 from cassandra.openai_client import LLMService
 
+# Frases que modelos de transcrição "alucinam" com silêncio/ruído (vêm de legendas de vídeos).
+_HALLUCINATIONS = ("legendas pela comunidade", "amaraorg", "obrigado por assistir", "obrigada por assistir",
+                   "inscrevase no canal", "se inscreva no canal", "legenda adriana", "transcricao e legendas",
+                   "subtitles by", "thanks for watching", "thank you for watching")
 _OPENAI_RETRY_AFTER = 600  # depois de uma falha da OpenAI (ex.: sem créditos), usa só o local por 10 min
 
 
@@ -146,7 +152,11 @@ class MicrophoneInputSource:
             os.unlink(wav_path)
 
         text = (text or "").strip()
-        monitor.event("transcribed", f"Transcrito: “{text}”" if text else "Transcrição vazia (silêncio ou ruído)")
+        if text and self._hallucinated(text):
+            monitor.event("transcribed", f"Descartado (a transcrição inventou texto com áudio ruim): “{text}”")
+            text = ""
+        else:
+            monitor.event("transcribed", f"Transcrito: “{text}”" if text else "Transcrição vazia (silêncio ou ruído)")
 
         if self.debug:
             ts = datetime.now().strftime("%H:%M:%S")
@@ -197,6 +207,21 @@ class MicrophoneInputSource:
         if not self._local_ready():
             raise RuntimeError("Sem transcrição disponível: nem chave da OpenAI nem modelo local (Vosk).")
         return self.local.transcribe(wav_path)
+
+    def _hallucinated(self, text: str) -> bool:
+        """Com áudio ruim o modelo de transcrição inventa: repete o texto de instrução (TRANSCRIPTION_PROMPT)
+        ou solta frases de legenda. Isso nunca é um pedido de verdade."""
+        norm = lambda t: re.sub(r"[^a-z0-9 ]+", "", unicodedata.normalize("NFKD", t.lower())  # noqa: E731
+                                .encode("ascii", "ignore").decode()).strip()
+        t = norm(text)
+        if not t:
+            return False
+        prompt = norm(self.transcription_prompt or "")
+        # só quando repete a maior parte do texto de instrução (um pedido curto que aparece nele é legítimo)
+        if prompt and len(t) >= 0.6 * len(prompt) and (t in prompt or prompt in t
+                                                      or SequenceMatcher(None, t, prompt).ratio() >= 0.6):
+            return True
+        return any(p in t for p in _HALLUCINATIONS)
 
     def _with_wake_word(self, text: str) -> str:
         """O nome foi detectado localmente, mas a transcrição completa às vezes o erra ("sandra que horas

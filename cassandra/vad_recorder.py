@@ -15,6 +15,12 @@ CHANNELS = 1
 SAMPLE_WIDTH = 2  # 16-bit PCM
 FRAME_MS = 30  # frame duration in milliseconds
 FRAME_SIZE = int(SAMPLE_RATE * FRAME_MS / 1000)  # samples per frame = 480
+# O limite de fala acompanha o ruído do ambiente: fala = pelo menos NOISE_FACTOR vezes o chiado medido (e nunca
+# menos que o VAD_ENERGY_THRESHOLD). Microfones baratos têm um chiado quase no limite fixo; sem isso, trechos de
+# puro ruído viram "fala" e a transcrição inventa texto.
+NOISE_FACTOR = 2.5
+# Menos que isso de fala (quadros acima do limite) não é pedido: é estalo, bip ou ruído — nem vai para transcrever.
+MIN_SPEECH_SECONDS = 0.35
 # Taxas tentadas ao abrir o microfone. Muitos microfones USB só gravam a 48 kHz: abre na taxa que ele aceita e
 # converte para 16 kHz (o que a transcrição e o Vosk esperam).
 _CAPTURE_RATES = (16_000, 48_000, 44_100, 32_000, 22_050, 96_000)
@@ -67,6 +73,7 @@ class VadRecorder:
         self._pa = None
         monitor.set(threshold=energy_threshold)
         self._rate: int | None = None  # a taxa que o microfone atual aceitou
+        self._noise: float | None = None  # chiado do ambiente (média móvel dos quadros sem fala)
 
     def _ensure_pyaudio(self):
         if self._pa is None:
@@ -123,6 +130,18 @@ class VadRecorder:
             return stream, rate, frames
         raise last_error or RuntimeError("nenhum microfone")
 
+    def _threshold(self) -> float:
+        noise = self._noise or 0.0
+        value = max(float(self.energy_threshold), noise * NOISE_FACTOR)
+        monitor.set(threshold=round(value), noise=round(noise))
+        return value
+
+    def _learn_noise(self, energy: float, threshold: float) -> None:
+        """Média móvel do chiado, só com quadros que não parecem fala (abaixo do limite atual)."""
+        if energy >= threshold:
+            return
+        self._noise = energy if self._noise is None else self._noise * 0.98 + energy * 0.02
+
     @staticmethod
     def _rms(frame: bytes) -> float:
         count = len(frame) // 2
@@ -162,7 +181,9 @@ class VadRecorder:
         recorded: list[bytes] = []
         speaking = False
         silent_frames = 0
+        speech_frames = 0
         interrupted = False
+        threshold = self._threshold()
 
         try:
             for _ in range(max_frames):
@@ -175,23 +196,27 @@ class VadRecorder:
                 monitor.level(energy)
 
                 if not speaking:
+                    self._learn_noise(energy, threshold)
+                    threshold = self._threshold()
                     pre_roll.append(frame)
                     if len(pre_roll) > self.pre_roll_frames:
                         pre_roll.pop(0)
-                    if energy > self.energy_threshold:
+                    if energy > threshold:
                         speaking = True
                         recorded.extend(pre_roll)
                         pre_roll.clear()
                         recorded.append(frame)
                         silent_frames = 0
+                        speech_frames = 1
                 else:
                     recorded.append(frame)
-                    if energy < self.energy_threshold:
+                    if energy < threshold:
                         silent_frames += 1
                         if silent_frames >= silence_frames_needed:
                             break
                     else:
                         silent_frames = 0
+                        speech_frames += 1
         finally:
             stream.stop_stream()
             stream.close()
@@ -202,8 +227,13 @@ class VadRecorder:
         if not recorded:
             return None
         peak = max((self._rms(f) for f in recorded), default=0)
-        monitor.event("heard", f"Som captado: {len(recorded) * FRAME_MS / 1000:.1f} s (pico {peak:.0f}, "
-                               f"limite {self.energy_threshold})")
+        speech_seconds = speech_frames * FRAME_MS / 1000
+        if speech_seconds < MIN_SPEECH_SECONDS:
+            monitor.event("heard", f"Som curto descartado: {speech_seconds:.2f} s de fala (pico {peak:.0f}, "
+                                   f"limite {threshold:.0f})")
+            return None
+        monitor.event("heard", f"Fala captada: {speech_seconds:.1f} s (pico {peak:.0f}, limite {threshold:.0f}, "
+                               f"ruído {self._noise or 0:.0f})")
 
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
         tmp.close()

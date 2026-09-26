@@ -19,10 +19,8 @@ class Settings:
     transcription_provider: str = "auto"
     vosk_model_path: str = "models/vosk-model-small-pt-0.3"
     transcription_language: str = "pt"
-    transcription_prompt: str = (
-        "A fala principal e em portugues do Brasil. "
-        "Preserve nomes proprios e titulos de musicas no idioma original."
-    )
+    # Exemplos no estilo das falas (vocabulário, nomes): é contexto para a transcrição, não instrução.
+    transcription_prompt: str = "Cassandra, toca Legião Urbana no Spotify. Que horas são? Liga a TV e coloca na Netflix."
     # VAD (Voice Activity Detection) settings
     vad_energy_threshold: int = 400
     vad_silence_duration: float = 0.8
@@ -69,11 +67,9 @@ def load_settings() -> Settings:
     transcription_prompt = (
         os.getenv(
             "TRANSCRIPTION_PROMPT",
-            "A fala principal e em portugues do Brasil. "
-            "Preserve nomes proprios e titulos de musicas no idioma original.",
+            "Cassandra, toca Legião Urbana no Spotify. Que horas são? Liga a TV e coloca na Netflix.",
         ).strip()
-        or "A fala principal e em portugues do Brasil. "
-        "Preserve nomes proprios e titulos de musicas no idioma original."
+        or "Cassandra, toca Legião Urbana no Spotify. Que horas são? Liga a TV e coloca na Netflix."
     )
     # VAD settings
     vad_energy_threshold = int(os.getenv("VAD_ENERGY_THRESHOLD", "400").strip() or "400")
