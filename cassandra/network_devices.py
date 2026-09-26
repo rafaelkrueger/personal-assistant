@@ -378,6 +378,14 @@ def discover(timeout: float = 4.0) -> list[dict[str, Any]]:
     for t in extra:
         t.join(timeout + 4)
     maestro_hosts = _maestro_hosts()
+    # O computador do maestro nem sempre se anuncia na rede (o Windows é intermitente): entra se o maestro responde.
+    for host in maestro_hosts:
+        if host not in found and _port_open(host, 8090):
+            entry = _entry(found, host)
+            raw = os.getenv("MAESTRO_URL") or ""
+            name = next((urllib.parse.urlparse(u.strip()).hostname for u in raw.split(",")
+                         if urllib.parse.urlparse(u.strip()).hostname and not re.fullmatch(r"[0-9.]+", urllib.parse.urlparse(u.strip()).hostname)), "")
+            entry["names"].append((name or "Computador").split(".")[0].upper())
     own = _own_ips()
     out = []
     for host, info in list(found.items()):
