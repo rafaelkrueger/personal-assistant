@@ -256,6 +256,11 @@ sudo apt-get update && sudo apt-get install -y alsa-utils
 
 Assim cada habilidade fica isolada e facil de evoluir.
 
+## Rodando no Raspberry Pi (serviços que sobem no boot)
+
+Os serviços systemd, o túnel e a sincronização do site com o Netlify que rodam no Pi estão em
+[`scripts/raspberry-pi/`](scripts/raspberry-pi/README.md), com o passo a passo de instalação.
+
 ## CI/CD para Raspberry Pi (deploy automatico no push)
 
 Este projeto inclui workflow em `.github/workflows/deploy-raspberry.yml` para deploy automatico no `push` da branch `main`.

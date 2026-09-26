@@ -1,0 +1,19 @@
+# Cassandra: sobe no boot (linger ligado: não precisa de login) e reinicia se cair.
+# Logs: /tmp/personal-assistant.log  |  controle: systemctl --user {status,restart,stop} cassandra-assistant
+[Unit]
+Description=Cassandra assistente pessoal
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Desktop/personal-assistant
+Environment=PYTHONUNBUFFERED=1
+# Entrada aberta e vazia: no modo text o input() espera para sempre em vez de dar EOF e derrubar tudo
+# (no modo mic a entrada nem é usada).
+ExecStart=/bin/sh -c 'tail -f /dev/null | exec %h/Desktop/personal-assistant/.venv/bin/python main.py'
+Restart=always
+RestartSec=10
+StandardOutput=append:/tmp/personal-assistant.log
+StandardError=append:/tmp/personal-assistant.log
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,17 @@
+# Republica o site da Cassandra no Netlify sempre que a URL do túnel (ou a página) muda — ex.: depois de um
+# reboot. Só roda se existir ~/.config/cassandra/netlify.env (token + site). Log: /tmp/netlify-sync.log
+[Unit]
+Description=Mantem o site da Cassandra (Netlify) apontando para o tunel atual
+After=cassandra-tunnel.service
+ConditionPathExists=%h/.config/cassandra/netlify.env
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/.local/bin/cassandra-netlify-sync.py
+Restart=always
+RestartSec=30
+StandardOutput=append:/tmp/netlify-sync.log
+StandardError=append:/tmp/netlify-sync.log
+
+[Install]
+WantedBy=default.target
