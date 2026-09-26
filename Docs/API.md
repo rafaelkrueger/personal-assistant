@@ -335,6 +335,41 @@ Todas devolvem o mesmo que `GET /api/bluetooth`.
 
 ---
 
+## 10c. Spotify
+
+Controle pela Web API do Spotify (`cassandra/spotify.py`, login OAuth com PKCE —
+só o `SPOTIFY_CLIENT_ID`, sem client secret) e o dispositivo Spotify Connect
+"Cassandra" no Pi (serviço `cassandra-spotify`, librespot), que toca na saída de
+áudio atual. Conta Premium obrigatória. Token em `data/spotify_token.json`
+(fora do git; o Spotify pede novo login a cada 180 dias em apps em modo de
+desenvolvimento). A skill de voz é `skills/spotify/skill.py`.
+
+### `GET /api/spotify/status`
+`{ "configured": true, "connected": true, "device_name": "Cassandra", "user": "...", "premium": true,
+   "device_online": true, "devices": [ { "name": "Cassandra", "active": true, "volume": 70 } ],
+   "now_playing": { "title": "...", "artist": "...", "is_playing": true, "device": "Cassandra",
+                    "image": "https://...", "shuffle": false, "repeat": "off" } }`
+
+### `GET /api/spotify/login?origin=<origem da página>`
+Redireciona para o login do Spotify. Volta em `GET /api/spotify/callback`, que
+guarda o token e redireciona para `/?spotify=ok` (ou `?spotify=<erro>`). Com
+`origin` em `http://127.0.0.1…` usa `SPOTIFY_LOCAL_REDIRECT_URI`; senão,
+`SPOTIFY_REDIRECT_URI` (o site do Netlify).
+
+### `POST /api/spotify/play`
+**Body:** `{ "query": "Legião Urbana" }` — o mesmo que falar "toca …" (música,
+artista, álbum, "a playlist X", "minhas curtidas", "um rock"...).
+Resposta `{ "ok": true, "message": "Tocando Legião Urbana." }`; erros do Spotify
+(sem dispositivo, sem Premium, login expirado) voltam com 502 e `error`.
+
+### `POST /api/spotify/control`
+**Body:** `{ "action": "pause" | "resume" | "next" | "previous" }`.
+
+### `POST /api/spotify/disconnect`
+Esquece o login da conta.
+
+---
+
 ## 11. Página
 
 ### `GET /`

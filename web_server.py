@@ -6,9 +6,10 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from typing import Type
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 from cassandra import audio_devices, llm_settings
+from cassandra import spotify as spotify_api
 from cassandra.assistant import CassandraAssistant
 
 HTML_PAGE = """<!doctype html>
@@ -373,6 +374,15 @@ HTML_PAGE = """<!doctype html>
     .bt-job.error{display:block;border-color:rgba(248,113,113,.3);color:#fca5a5}
     .bt-section-label{font-size:10.5px;color:var(--text2);font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin:16px 0 8px}
     .bt-empty{font-size:12.5px;color:var(--text3);padding:6px 0}
+    .sp-now{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--border);border-radius:var(--r);background:rgba(255,255,255,.02);margin-top:4px;flex-wrap:wrap}
+    .sp-cover{width:52px;height:52px;border-radius:8px;object-fit:cover;background:rgba(255,255,255,.05);flex-shrink:0}
+    .sp-info{flex:1;min-width:140px}
+    .sp-title{font-size:14px;font-weight:700;overflow-wrap:anywhere}
+    .sp-artist{font-size:12.5px;color:var(--text2);margin-top:2px;overflow-wrap:anywhere}
+    .sp-controls{display:flex;gap:6px}
+    .sp-play-row{display:flex;gap:8px;margin-top:12px}
+    .sp-play-row input{flex:1;min-width:0}
+    .sp-green{color:#1ed760}
     .save-bar{display:flex;align-items:center;gap:10px;padding-top:4px}
     .save-toast{font-size:12px;color:var(--green);font-weight:600;opacity:0;transition:opacity .3s}
     .save-toast.show{opacity:1}
@@ -766,6 +776,39 @@ HTML_PAGE = """<!doctype html>
             <div class="settings-row-desc">Coloque o aparelho em modo de pareamento (normalmente segurando o botão de Bluetooth dele) e toque em <b>Procurar aparelhos</b>.</div>
             <div class="bt-list" id="bt-found"></div>
             <div class="bt-job" id="bt-job"></div>
+          </div>
+
+          <!-- Spotify -->
+          <div class="settings-card full">
+            <div class="settings-card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M7 9.5c3.5-1 7-.6 10 1"/><path d="M7.5 12.5c3-.8 5.8-.4 8.3.9"/><path d="M8 15.4c2.4-.6 4.6-.3 6.5.7"/></svg>Spotify</div>
+            <div class="settings-row">
+              <div class="settings-row-info"><div class="settings-row-label">Conta</div><div class="settings-row-desc" id="sp-account">Verificando…</div></div>
+              <div class="settings-row-control" style="gap:8px">
+                <button class="btn btn-primary btn-sm" id="sp-connect" style="display:none">Conectar Spotify</button>
+                <button class="btn btn-ghost btn-sm" id="sp-disconnect" style="display:none">Desconectar</button>
+              </div>
+            </div>
+            <div class="settings-row" id="sp-device-row" style="display:none">
+              <div class="settings-row-info"><div class="settings-row-label">Caixa "<span id="sp-device-name">Cassandra</span>"</div><div class="settings-row-desc" id="sp-device-desc">—</div></div>
+              <div class="settings-row-control"><span class="info-chip" id="sp-device-chip">—</span></div>
+            </div>
+            <div id="sp-player" style="display:none">
+              <div class="sp-now">
+                <img class="sp-cover" id="sp-cover" alt=""/>
+                <div class="sp-info"><div class="sp-title" id="sp-title">Nada tocando</div><div class="sp-artist" id="sp-artist">Peça "Cassandra, toca …" ou use o campo abaixo</div></div>
+                <div class="sp-controls">
+                  <button class="btn btn-ghost btn-icon" data-sp="previous" title="Anterior"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
+                  <button class="btn btn-primary btn-icon" data-sp="toggle" id="sp-toggle" title="Tocar/pausar"><svg viewBox="0 0 24 24" fill="currentColor" id="sp-toggle-icon"><path d="M8 5v14l11-7z"/></svg></button>
+                  <button class="btn btn-ghost btn-icon" data-sp="next" title="Próxima"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
+                </div>
+              </div>
+              <div class="sp-play-row">
+                <input type="text" id="sp-query" placeholder="Tocar… (ex.: Legião Urbana, playlist de rock, minhas curtidas)"/>
+                <button class="btn btn-primary btn-sm" id="sp-play">Tocar</button>
+              </div>
+              <div class="settings-row-desc" style="margin-top:10px">Por voz: "toca Tempo Perdido", "coloca a playlist X", "toca um sertanejo", "pausa", "próxima", "abaixa a música", "que música é essa?", "curti essa", "põe na fila …", "modo aleatório".</div>
+            </div>
+            <div class="bt-job" id="sp-msg"></div>
           </div>
 
           <!-- Sessão -->
@@ -1644,6 +1687,62 @@ document.getElementById("bt-paired").parentElement.addEventListener("click",e=>{
   btAction(`/api/bluetooth/${act}`,{mac});
 });
 
+// ── Spotify ──
+let spState=null;
+function renderSpotify(d){
+  spState=d;
+  const acc=document.getElementById("sp-account"), con=document.getElementById("sp-connect"), dis=document.getElementById("sp-disconnect");
+  const devRow=document.getElementById("sp-device-row"), player=document.getElementById("sp-player");
+  if(!d.configured){acc.textContent="Falta o SPOTIFY_CLIENT_ID no .env da Cassandra";con.style.display="none";dis.style.display="none";devRow.style.display="none";player.style.display="none";return;}
+  if(!d.connected){acc.textContent="Não conectada — conecte para ela tocar o que você pedir (conta Premium)";con.style.display="";dis.style.display="none";devRow.style.display="none";player.style.display="none";return;}
+  con.style.display="none"; dis.style.display="";
+  acc.innerHTML=d.error?`<span style="color:#fca5a5">${esc(d.error)}</span>`:`Conectada como <b>${esc(d.user||"")}</b>${d.premium===false?' — <span style="color:#fca5a5">precisa de Premium para tocar</span>':""}`;
+  devRow.style.display=""; player.style.display="";
+  document.getElementById("sp-device-name").textContent=d.device_name;
+  const chip=document.getElementById("sp-device-chip");
+  chip.textContent=d.device_online?"online":"não apareceu";
+  chip.style.color=d.device_online?"var(--green)":"var(--amber)";
+  document.getElementById("sp-device-desc").textContent=d.device_online
+    ?"O Raspberry Pi toca no Spotify pela saída de áudio atual"
+    :`Na 1ª vez: abra o app do Spotify no celular (mesmo Wi-Fi), toque no ícone de dispositivos e escolha "${d.device_name}"`;
+  const np=d.now_playing;
+  document.getElementById("sp-title").textContent=np?np.title:"Nada tocando";
+  document.getElementById("sp-artist").textContent=np?(np.artist+(np.device&&np.device!==d.device_name?` · em ${np.device}`:"")):'Peça "Cassandra, toca …" ou use o campo abaixo';
+  const cover=document.getElementById("sp-cover");
+  if(np&&np.image){cover.src=np.image;cover.style.visibility="";}else{cover.removeAttribute("src");cover.style.visibility="hidden";}
+  document.getElementById("sp-toggle-icon").innerHTML=np&&np.is_playing?'<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>':'<path d="M8 5v14l11-7z"/>';
+}
+function spMsg(text,state){const m=document.getElementById("sp-msg");m.className="bt-job "+(state||"");m.textContent=text||"";}
+async function loadSpotify(){try{renderSpotify(await api("/api/spotify/status"));}catch(e){console.error("Spotify:",e);}}
+document.getElementById("sp-connect").addEventListener("click",()=>{
+  window.location.href="/api/spotify/login?origin="+encodeURIComponent(window.location.origin);
+});
+document.getElementById("sp-disconnect").addEventListener("click",async()=>{
+  if(!confirm("Desconectar a conta do Spotify da Cassandra?")) return;
+  try{renderSpotify(await api("/api/spotify/disconnect","POST",{}));spMsg("");}catch(e){alert(e.message);}
+});
+document.getElementById("sp-player").addEventListener("click",async e=>{
+  const b=e.target.closest("[data-sp]"); if(!b) return;
+  let action=b.dataset.sp;
+  if(action==="toggle") action=spState&&spState.now_playing&&spState.now_playing.is_playing?"pause":"resume";
+  try{const d=await api("/api/spotify/control","POST",{action});spMsg(d.message,"ok");setTimeout(loadSpotify,700);}
+  catch(err){spMsg(err.message,"error");}
+});
+async function spPlay(){
+  const q=document.getElementById("sp-query").value.trim(); if(!q) return;
+  spMsg("Procurando…","running");
+  try{const d=await api("/api/spotify/play","POST",{query:q});spMsg(d.message,"ok");document.getElementById("sp-query").value="";setTimeout(loadSpotify,1200);}
+  catch(err){spMsg(err.message,"error");}
+}
+document.getElementById("sp-play").addEventListener("click",spPlay);
+enter(document.getElementById("sp-query"),spPlay);
+(function(){ // volta do login do Spotify
+  const p=new URLSearchParams(window.location.search).get("spotify");
+  if(!p) return;
+  spMsg(p==="ok"?"Spotify conectado!":"Não deu para conectar o Spotify: "+p, p==="ok"?"ok":"error");
+  history.replaceState(null,"",window.location.pathname+window.location.hash);
+})();
+
 // ── Init ──
 async function init(){
   try{const s=await api("/api/settings");applySettingsToForm(s);}
@@ -1654,11 +1753,12 @@ async function init(){
   loadCalendarStatus();
   loadAudio();
   loadBluetooth();
+  loadSpotify();
 }
 init();
 setInterval(refresh,5000);
 setInterval(checkWebAgentStatus,30000);
-setInterval(()=>{loadAudio();if(!btPoll)loadBluetooth();},15000);
+setInterval(()=>{loadAudio();if(!btPoll)loadBluetooth();loadSpotify();},15000);
 </script>
 </body>
 </html>"""
@@ -1690,6 +1790,45 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
             except json.JSONDecodeError:
                 return {}
             return data if isinstance(data, dict) else {}
+
+        def _redirect(self, location: str) -> None:
+            self.send_response(HTTPStatus.FOUND.value)
+            self.send_header("Location", location)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def _spotify_post(self, action: str, data: dict) -> None:
+            sp = spotify_api.client
+            if action == "disconnect":
+                sp.disconnect()
+                self._send_json(sp.status())
+                return
+            skill = assistant.spotify_skill
+            try:
+                if action == "control":
+                    what = str(data.get("action", ""))
+                    if what not in ("pause", "resume", "next", "previous"):
+                        self._send_json({"error": "action inválida"}, status=HTTPStatus.BAD_REQUEST)
+                        return
+                    if not sp.connected:
+                        raise spotify_api.SpotifyError("Conecte a conta do Spotify primeiro.")
+                    message = skill._run({"action": what})
+                elif action == "play":
+                    query = str(data.get("query", "")).strip()
+                    if not query:
+                        self._send_json({"error": "query is required"}, status=HTTPStatus.BAD_REQUEST)
+                        return
+                    if not sp.connected:
+                        raise spotify_api.SpotifyError("Conecte a conta do Spotify primeiro.")
+                    text = query if skill.can_handle(query) else f"toca {query}"
+                    message = skill._run(skill.intent(text))  # erros viram 502 com a mensagem (não "ok")
+                else:
+                    self._send_json({"error": "Not found."}, status=HTTPStatus.NOT_FOUND)
+                    return
+            except spotify_api.SpotifyError as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_GATEWAY)
+                return
+            self._send_json({"ok": True, "message": message})
 
         def do_GET(self) -> None:
             parsed = urlparse(self.path)
@@ -1733,6 +1872,30 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                 return
             if parsed.path == "/api/audio":
                 self._send_json(audio_devices.audio_status())
+                return
+            if parsed.path == "/api/spotify/status":
+                self._send_json(spotify_api.client.status())
+                return
+            if parsed.path == "/api/spotify/login":
+                origin = (parse_qs(parsed.query).get("origin") or [""])[0]
+                try:
+                    url = spotify_api.client.login_url(origin)
+                except spotify_api.SpotifyError as exc:
+                    self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                    return
+                self._redirect(url)
+                return
+            if parsed.path == "/api/spotify/callback":
+                q = parse_qs(parsed.query)
+                result = "ok"
+                if q.get("error"):
+                    result = q["error"][0]
+                else:
+                    try:
+                        spotify_api.client.finish_login((q.get("code") or [""])[0], (q.get("state") or [""])[0])
+                    except spotify_api.SpotifyError as exc:
+                        result = str(exc)
+                self._redirect("/?" + urlencode({"spotify": result}))
                 return
             if parsed.path == "/api/bluetooth":
                 self._send_json(audio_devices.bluetooth.status())
@@ -1840,6 +2003,10 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                     self._send_json({"error": "Not found."}, status=HTTPStatus.NOT_FOUND)
                     return
                 self._send_json(bt.status())
+                return
+
+            if parsed.path.startswith("/api/spotify/"):
+                self._spotify_post(parsed.path[len("/api/spotify/"):], self._read_json_body())
                 return
 
             if parsed.path == "/api/speak":

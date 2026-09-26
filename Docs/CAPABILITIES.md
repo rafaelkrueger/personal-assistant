@@ -20,6 +20,14 @@ técnicos e exemplos de API estão em [`API.md`](./API.md) — este arquivo é s
 - **Volume e saída de áudio**: ajustar o volume, silenciar e escolher por onde
   ela toca (a saída do Pi ou uma caixa Bluetooth), por voz ("volume 70%") ou
   pela interface/API (`/api/audio`).
+- **Tocar música no Spotify** (conta Premium, conectada uma vez em
+  Configurações > Spotify): uma música, um artista, um álbum, uma playlist sua
+  ou pública, as curtidas, as mais ouvidas ou um estilo/clima ("um rock",
+  "música pra relaxar"); pausar, continuar, pular, voltar, volume da música,
+  aleatório, repetir, pôr na fila, dizer o que está tocando e curtir. Toca no
+  próprio Pi (dispositivo Spotify Connect "Cassandra", pela saída de áudio
+  atual — a soundbar, quando conectada). Por voz, pela UI ou pela API
+  (`/api/spotify/*`).
 - **Bluetooth**: listar os aparelhos pareados e conectados, conectar,
   desconectar e esquecer, e procurar e parear um aparelho novo (caixas de som
   e fones, que não pedem PIN) pela interface/API (`/api/bluetooth`).

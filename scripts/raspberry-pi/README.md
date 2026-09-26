@@ -9,6 +9,7 @@ e scripts de apoio.
 | `cassandra-tunnel.service` | `~/.config/systemd/user/` | Túnel público da Cloudflare (quick tunnel → `localhost:8080`), usado pelo site. URL em `/tmp/cloudflared.log` |
 | `cassandra-netlify-sync.service` | `~/.config/systemd/user/` | Republica o site no Netlify quando a URL do túnel (ou a página) muda — ex.: depois de um reboot |
 | `cassandra-netlify-sync.py` | `~/.local/bin/` | O sincronizador (só biblioteca padrão do Python) |
+| `cassandra-spotify.service` | `~/.config/systemd/user/` | Spotify Connect: o Pi vira o dispositivo "Cassandra" no Spotify (librespot → PipeWire). Log: `/tmp/cassandra-spotify.log` |
 | `cassandra-start.sh` | `~/.local/bin/` | Reinicia a Cassandra e mostra o fim do log |
 | `cassandra-tunnel.sh` | `~/.local/bin/` | Reinicia o túnel e imprime a URL nova |
 
@@ -46,3 +47,18 @@ Sem o `netlify.env` o serviço de sincronização simplesmente não inicia (a Ca
   continua no começo dele.
 - Áudio: os players usam `pw-play` (PipeWire). Para o microfone plugado depois ser adotado sozinho, instale
   `sudo apt install pipewire-alsa`.
+
+## Spotify (librespot, sem sudo)
+
+```bash
+# o binário do librespot vem do pacote do raspotify (só extrai, não instala nada no sistema)
+cd /tmp && curl -sSL -o raspotify.deb \
+  https://github.com/dtcooper/raspotify/releases/download/0.48.3/raspotify_0.48.3.librespot.v0.8.0-939dc5e_arm64.deb
+dpkg-deb -x raspotify.deb rsp && cp rsp/usr/bin/librespot ~/.local/bin/
+cp ~/Desktop/personal-assistant/scripts/raspberry-pi/cassandra-spotify.service ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user enable --now cassandra-spotify
+```
+
+Na primeira vez, abra o app do Spotify no celular (mesmo Wi-Fi) e escolha **Cassandra** na lista de
+dispositivos: a credencial fica no cache e ele entra sozinho depois de reboots. Depois conecte a conta na UI
+(Configurações > Spotify) para a Cassandra poder mandar tocar.

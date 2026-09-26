@@ -9,5 +9,7 @@ data/todos.json
 data/alarms.json
 # chaves de API salvas pela UI (Configurações > Modelo de IA)
 data/llm_settings.json
+# login da conta do Spotify (token de acesso)
+data/spotify_token.json
 # modelo de voz local (Vosk), baixado sozinho na primeira vez
 models/
