@@ -18,7 +18,7 @@ HTML_PAGE = """<!doctype html>
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
   <title>Cassandra</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
@@ -43,6 +43,9 @@ HTML_PAGE = """<!doctype html>
       --shadow-glow:0 0 40px rgba(91,154,255,0.08);
     }
     html,body{height:100%;overflow:hidden;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+    /* sem zoom: nada de toque duplo/pinça e o iPhone não amplia ao focar um campo (precisa de fonte >= 16px) */
+    html{touch-action:manipulation;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+    @media(max-width:767px){input,select,textarea{font-size:16px!important}}
     body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5}
     body::before{content:"";position:fixed;inset:0;background:
       radial-gradient(ellipse 80% 60% at 20% -10%,rgba(91,154,255,0.07) 0%,transparent 60%),
@@ -56,7 +59,7 @@ HTML_PAGE = """<!doctype html>
     ::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.14)}
 
     /* ═══ SHELL ═══ */
-    .app{display:flex;height:100vh;height:100dvh;overflow:hidden}
+    .app{display:flex;height:100vh;height:var(--app-h,100dvh);overflow:hidden}
     .sidebar{
       display:none;width:var(--sidebar-w);flex-shrink:0;
       background:var(--sidebar);border-right:1px solid var(--border);
@@ -238,8 +241,9 @@ HTML_PAGE = """<!doctype html>
     .tip-example{font-size:12px;color:var(--text2);font-style:italic;line-height:1.6}
 
     /* ═══ CHAT ═══ */
-    .chat-wrap{display:flex;flex-direction:column;height:calc(100dvh - var(--topbar-h) - 88px)}
-    @media(min-width:768px){.chat-wrap{height:calc(100dvh - var(--topbar-h) - 88px)}}
+    .chat-wrap{display:flex;flex-direction:column;height:calc(var(--app-h,100dvh) - var(--topbar-h) - 112px - env(safe-area-inset-bottom));min-height:260px}
+    @media(min-width:640px){.chat-wrap{height:calc(var(--app-h,100dvh) - var(--topbar-h) - 120px - env(safe-area-inset-bottom))}}
+    #tab-chat{padding-bottom:0}
     .messages{
       flex:1;overflow-y:auto;padding:18px;display:flex;flex-direction:column;gap:14px;
       background:var(--glass);border:1px solid var(--border);border-radius:var(--rl);margin-bottom:12px;
@@ -255,14 +259,16 @@ HTML_PAGE = """<!doctype html>
     .msg.system .bubble{background:transparent;border:1px dashed var(--border2);color:var(--text2);font-size:12px;text-align:center;padding:8px 16px}
     .msg-meta{font-size:10.5px;color:var(--text3);margin-top:5px;padding:0 4px;font-weight:600;letter-spacing:.02em}
     .chat-bar{
-      display:flex;gap:8px;align-items:center;
+      display:flex;gap:8px;align-items:flex-end;
       background:var(--glass);border:1px solid var(--border);border-radius:var(--rl);
       padding:10px 12px;transition:border-color .15s,box-shadow .15s;
       backdrop-filter:blur(12px);
     }
     .chat-bar:focus-within{border-color:rgba(91,154,255,.4);box-shadow:0 0 0 3px rgba(91,154,255,.08)}
-    .chat-bar input{flex:1;background:transparent;border:none;padding:2px 0;font-size:14px;outline:none;color:var(--text)}
-    .chat-bar input::placeholder{color:var(--text3)}
+    .chat-bar textarea{flex:1;background:transparent;border:none;padding:6px 0;font-size:15px;line-height:1.45;outline:none;color:var(--text);resize:none;max-height:140px;min-height:24px;box-shadow:none!important;font-family:inherit}
+    .chat-bar textarea:focus{background:transparent;box-shadow:none}
+    .chat-bar textarea::placeholder{color:var(--text3)}
+    @media(max-width:640px){.msg{max-width:88%}.bubble{font-size:15px;padding:10px 14px}.messages{padding:14px}}
     .chat-send{background:linear-gradient(135deg,var(--brand),#4775e0);border:none;border-radius:10px;color:#fff;cursor:pointer;padding:9px;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0;box-shadow:0 2px 8px rgba(91,154,255,.3)}
     .chat-send:hover{box-shadow:0 4px 16px var(--brand-glow);transform:scale(1.04)}
     .chat-send:active{transform:scale(.9)}
@@ -567,10 +573,10 @@ HTML_PAGE = """<!doctype html>
         </div>
         <div class="chat-wrap">
           <div class="messages" id="messages">
-            <div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>Digite <b>cassandra,</b> para ativar</div>
+            <div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>Pergunte ou peça qualquer coisa à Cassandra</div>
           </div>
           <div class="chat-bar">
-            <input id="msgInput" type="text" placeholder="cassandra, o que você pode fazer?"/>
+            <textarea id="msgInput" rows="1" placeholder="Fale com a Cassandra…" enterkeyhint="send" autocomplete="off"></textarea>
             <button class="chat-send" id="sendBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
           </div>
         </div>
@@ -1324,7 +1330,7 @@ function showTyping(){const el=document.getElementById("messages");const d=docum
 function hideTyping(){document.getElementById("typingIndicator")?.remove();}
 function renderMessages(items){
   const el=document.getElementById("messages");
-  if(!items.length){el.innerHTML='<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>Digite <b>cassandra,</b> para ativar</div>';return;}
+  if(!items.length){el.innerHTML='<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>Pergunte ou peça qualquer coisa à Cassandra</div>';return;}
   el.innerHTML=items.map(m=>{const kind=m.kind||"chat";const cls=kind!=="chat"?"system":(m.role==="assistant"?"assistant":"user");return`<div class="msg ${cls}"><div class="bubble">${esc(m.content)}</div><div class="msg-meta">${fmtTime(m.timestamp)} · ${m.role}</div></div>`;}).join("");
   el.scrollTop=el.scrollHeight;
 }
@@ -1760,7 +1766,20 @@ async function sendMsg(){
   catch(e){hideTyping();alert(e.message);}
 }
 document.getElementById("sendBtn").addEventListener("click",sendMsg);
-enter(document.getElementById("msgInput"),sendMsg);
+(function(){ // caixa de mensagem: cresce com o texto; Enter envia, Shift+Enter quebra a linha
+  const box=document.getElementById("msgInput");
+  const fit=()=>{box.style.height="auto";box.style.height=Math.min(box.scrollHeight,140)+"px";};
+  box.addEventListener("input",fit);
+  box.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing){e.preventDefault();sendMsg().then?.(fit);setTimeout(fit,0);}});
+  box.addEventListener("focus",()=>setTimeout(()=>{const m=document.getElementById("messages");m.scrollTop=m.scrollHeight;},300));
+})();
+(function(){ // altura real da tela (o teclado do iPhone encolhe a área visível) e nada de zoom
+  const vv=window.visualViewport;
+  const setH=()=>{document.documentElement.style.setProperty("--app-h",(vv?vv.height:window.innerHeight)+"px");window.scrollTo(0,0);};
+  if(vv){vv.addEventListener("resize",setH);vv.addEventListener("scroll",()=>window.scrollTo(0,0));}
+  window.addEventListener("resize",setH);setH();
+  ["gesturestart","gesturechange"].forEach(ev=>document.addEventListener(ev,e=>e.preventDefault(),{passive:false}));
+})();
 document.getElementById("clearBtn").addEventListener("click",async()=>{await api("/api/reset","POST",{});await refresh();});
 
 const shopInput=document.getElementById("shopInput");

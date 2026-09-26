@@ -309,26 +309,8 @@ class CassandraAssistant:
 
         with self._state_lock:
             wake_detected, wake_command = self._parse_wake(text)
-            if not self._web_session_active and not wake_detected:
-                self._log_passive_heard(text)
-                wait_msg = (
-                    f"Diga '{self.settings.assistant_name}, ...' para me ativar no chat "
-                    "antes de enviar comandos."
-                )
-                self._append_history(
-                    role="user",
-                    content=text,
-                    source="web_passive",
-                    kind="passive",
-                )
-                self._append_history(
-                    role="assistant",
-                    content=wait_msg,
-                    source="assistant",
-                    kind="system",
-                )
-                return {"response": wait_msg, "dismissed": False, "activated": False}
-
+            # No chat de texto quem escreve já está falando com ela: não precisa dizer o nome antes (isso é só
+            # para a voz, onde o microfone ouve a casa inteira). "cassandra, ..." continua valendo.
             if wake_detected:
                 self.sound_player.play(self.settings.on_sound_path)
                 command = (wake_command or "").strip()
@@ -351,7 +333,7 @@ class CassandraAssistant:
                 command_source = "web_wake_inline"
             else:
                 command = text
-                command_source = "web_active_session"
+                command_source = "web_active_session" if self._web_session_active else "web_direct"
 
         # A UI recebe o texto na hora e a fala sai em segundo plano. Esperar a fala terminar antes de responder
         # estourava o limite do proxy do site (~26 s no Netlify) com a voz grátis: ela falava, mas a UI dava erro.
