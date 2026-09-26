@@ -647,18 +647,24 @@ class CassandraAssistant:
             self.sound_player.play(self.settings.off_sound_path)
         return standby_text
 
-    def _is_dismissal(self, command: str) -> bool:
-        """Uses the LLM to classify whether the utterance is a session dismissal.
+    _DISMISSALS = (
+        "tchau", "dispensada", "pode ir", "obrigado", "obrigada", "valeu", "ate logo", "ate mais", "ate depois",
+        "pode descansar", "foi isso", "ok obrigado", "ok obrigada", "so isso", "era so isso", "e so isso",
+        "nada nao", "deixa pra la", "esquece", "pode dormir", "boa noite", "falou", "brigado", "brigada",
+    )
 
-        Only calls the API for short utterances (up to 12 words); longer
-        commands are clearly not goodbyes and skip classification entirely.
-        """
-        if len(command.split()) > 12:
+    def _is_dismissal(self, command: str) -> bool:
+        """A pessoa está encerrando a conversa ("tchau", "valeu", "era só isso")? Checagem local, instantânea —
+        antes era uma chamada ao LLM em todo pedido (~1 s a mais em cada resposta). Só frases curtas contam, e
+        nunca com continuação ("valeu, agora toca...")."""
+        t = unicodedata.normalize("NFKD", command.lower())
+        t = "".join(c for c in t if not unicodedata.combining(c))
+        t = re.sub(r"[^a-z ]+", " ", t)
+        t = re.sub(r"\b(cassandra|casandra|cassanda)\b", " ", t)
+        t = " ".join(t.split())
+        if not t or len(t.split()) > 5 or re.search(r"\b(mas|agora|e ai|toca|liga|desliga|coloca|me)\b", t):
             return False
-        try:
-            return self.llm.is_dismissal(command)
-        except Exception:
-            return False
+        return any(t == d or t.startswith(d + " ") or t.endswith(" " + d) for d in self._DISMISSALS)
 
     def _parse_wake(self, text: str) -> tuple[bool, str | None]:
         aliases = self.settings.assistant_aliases or [self.settings.assistant_name]
