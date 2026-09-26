@@ -21,6 +21,8 @@ FRAME_SIZE = int(SAMPLE_RATE * FRAME_MS / 1000)  # samples per frame = 480
 NOISE_FACTOR = 2.0
 # Menos que isso de fala (quadros acima do limite) não é pedido: é estalo, bip ou ruído — nem vai para transcrever.
 MIN_SPEECH_SECONDS = 0.18
+# Depois que o nome foi reconhecido ao vivo, esta pausa já encerra a fala (em vez do silêncio normal).
+FAST_END_SILENCE = 0.15
 # Taxas tentadas ao abrir o microfone. Muitos microfones USB só gravam a 48 kHz: abre na taxa que ele aceita e
 # converte para 16 kHz (o que a transcrição e o Vosk esperam).
 _CAPTURE_RATES = (16_000, 48_000, 44_100, 32_000, 22_050, 96_000)
@@ -158,6 +160,8 @@ class VadRecorder:
         self,
         silence_duration: float | None = None,
         interrupt_event: threading.Event | None = None,
+        on_frame=None,
+        max_wait: float | None = None,
     ) -> str | None:
         """Block until speech is detected, then record until silence.
 
@@ -188,6 +192,10 @@ class VadRecorder:
         speech_frames = 0
         interrupted = False
         threshold = self._threshold()
+        fast_end = False  # quem ouve ao vivo avisou (ex.: o nome foi reconhecido): basta uma pausa curta
+        fast_silence_frames = max(1, int(FAST_END_SILENCE * 1000 / FRAME_MS))
+        waited_frames = 0
+        max_wait_frames = int(max_wait * 1000 / FRAME_MS) if max_wait else None
 
         try:
             for _ in range(max_frames):
@@ -200,6 +208,9 @@ class VadRecorder:
                 monitor.level(energy)
 
                 if not speaking:
+                    waited_frames += 1
+                    if max_wait_frames and waited_frames > max_wait_frames:
+                        break  # ninguém falou dentro do prazo
                     self._learn_noise(energy, threshold)
                     threshold = self._threshold()
                     pre_roll.append(frame)
@@ -207,6 +218,10 @@ class VadRecorder:
                         pre_roll.pop(0)
                     if energy > threshold:
                         speaking = True
+                        if on_frame:
+                            for f in pre_roll:
+                                fast_end = bool(on_frame(f)) or fast_end
+                            fast_end = bool(on_frame(frame)) or fast_end
                         recorded.extend(pre_roll)
                         pre_roll.clear()
                         recorded.append(frame)
@@ -214,9 +229,11 @@ class VadRecorder:
                         speech_frames = 1
                 else:
                     recorded.append(frame)
+                    if on_frame:
+                        fast_end = bool(on_frame(frame)) or fast_end
                     if energy < threshold:
                         silent_frames += 1
-                        if silent_frames >= silence_frames_needed:
+                        if silent_frames >= (fast_silence_frames if fast_end else silence_frames_needed):
                             break
                     else:
                         silent_frames = 0

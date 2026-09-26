@@ -25,10 +25,11 @@ _OPENAI_RETRY_AFTER = 600  # depois de uma falha da OpenAI (ex.: sem créditos),
 class InputEvent:
     text: str
     exit_requested: bool = False
+    wake_signaled: bool = False  # o som de ativação já tocou (nome detectado ao vivo)
 
 
 class TextInputSource:
-    def read(self, wake_phase: bool = False) -> InputEvent:
+    def read(self, wake_phase: bool = False, max_wait: float | None = None) -> InputEvent:
         _ = wake_phase
         raw_text = input("\nVoce: ").strip()
         if raw_text.lower() in {"sair", "exit", "quit"}:
@@ -69,6 +70,7 @@ class MicrophoneInputSource:
         transcription_provider: str = "auto",
         vosk_model_path: str = "models/vosk-model-small-pt-0.3",
         wait_for_device: bool = False,
+        on_wake=None,
     ) -> None:
         self.llm = llm
         self.transcription_model = transcription_model
@@ -91,6 +93,8 @@ class MicrophoneInputSource:
             self.local = LocalSpeech(wake_words or [assistant_name], model_path=vosk_model_path, debug=debug)
             self.local.preload()
         self.local_wake = wake_word_engine == "local"
+        self.on_wake = on_wake  # toca o som de ativação quando o nome é reconhecido
+        self._signaled = False
 
         from cassandra.vad_recorder import VadRecorder  # noqa: PLC0415
 
@@ -100,7 +104,7 @@ class MicrophoneInputSource:
             max_duration=vad_max_duration,
         )
 
-    def read(self, wake_phase: bool = False) -> InputEvent:
+    def read(self, wake_phase: bool = False, max_wait: float | None = None) -> InputEvent:
         """Block until a complete utterance is spoken, then transcribe it.
 
         Args:
@@ -111,8 +115,9 @@ class MicrophoneInputSource:
             time.sleep(3)
             return InputEvent(text="")
         silence_override = self.vad_wake_silence_duration if wake_phase else None
+        self._signaled = False
         try:
-            text = self._capture_and_transcribe(silence_override, wake_phase=wake_phase)
+            text = self._capture_and_transcribe(silence_override, wake_phase=wake_phase, max_wait=max_wait)
         except Exception as exc:  # noqa: BLE001
             now = time.monotonic()
             if now - self._last_capture_error_at > 5.0:
@@ -124,26 +129,55 @@ class MicrophoneInputSource:
             return InputEvent(text="")
         if text.lower() in {"sair", "exit", "quit"}:
             return InputEvent(text="", exit_requested=True)
-        return InputEvent(text=text)
+        return InputEvent(text=text, wake_signaled=self._signaled)
 
-    def _capture_and_transcribe(self, silence_duration: float | None = None, wake_phase: bool = False) -> str:
-        wav_path = self._recorder.record_utterance(
-            silence_duration=silence_duration,
-            interrupt_event=self.interrupt_event,
-        )
+    def _signal_wake(self) -> None:
+        """O nome acabou de ser reconhecido (ao vivo): toca o som de ativação já, sem esperar o fim da fala."""
+        if self._signaled:
+            return
+        self._signaled = True
+        monitor.event("wake", "Nome detectado (na hora)")
+        if self.on_wake:
+            try:
+                self.on_wake()
+            except Exception:  # noqa: BLE001 — o som nunca pode derrubar a escuta
+                pass
+
+    def _capture_and_transcribe(self, silence_duration: float | None = None, wake_phase: bool = False,
+                                max_wait: float | None = None) -> str:
+        # Esperando o nome: reconhece ao vivo enquanto grava (o som de ativação sai na hora).
+        stream = self.local.stream() if (wake_phase and self.local_wake and self._local_ready()) else None
+
+        def on_frame(frame: bytes) -> bool:
+            """True = o nome já foi reconhecido (o gravador pode encerrar na primeira pausa curta)."""
+            if stream is not None and stream.feed(frame):
+                self._signal_wake()
+            return self._signaled
+
+        try:
+            wav_path = self._recorder.record_utterance(
+                silence_duration=silence_duration,
+                interrupt_event=self.interrupt_event,
+                on_frame=on_frame if stream is not None else None,
+                max_wait=max_wait,
+            )
+        finally:
+            result = stream.close() if stream is not None else None
         if not wav_path:
             return ""
 
         try:
             if wake_phase and self.local_wake and self._local_ready():
-                # Esperando o nome: checa no próprio aparelho; sem o nome, nada vai para a API.
-                if not self.local.heard_wake_word(wav_path):
-                    heard = getattr(self.local, "last_heard", "")
-                    if heard:  # sem nada reconhecível é só ruído: não registra
-                        monitor.event("no_wake", f"Sem o nome — ouvido: “{heard}”")
+                # Sem o nome, nada vai para a API.
+                heard, only_name, heard_text = result if result else (self.local.heard_wake_word(wav_path),
+                                                                       self.local.last_only_name,
+                                                                       getattr(self.local, "last_heard", ""))
+                if not heard:
+                    if heard_text:  # sem nada reconhecível é só ruído: não registra
+                        monitor.event("no_wake", f"Sem o nome — ouvido: “{heard_text}”")
                     return ""
-                monitor.event("wake", "Nome detectado no aparelho")
-                if self.local.last_only_name:
+                self._signal_wake()  # se o ao vivo não pegou, toca agora
+                if only_name:
                     text = self.assistant_name  # só o nome: abre a sessão sem gastar transcrição
                 else:
                     text = self._with_wake_word(self._transcribe(wav_path))

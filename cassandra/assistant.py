@@ -104,6 +104,7 @@ class CassandraAssistant:
                 transcription_provider=self.settings.transcription_provider,
                 vosk_model_path=self.settings.vosk_model_path,
                 wait_for_device=self.settings.input_mode == "auto",
+                on_wake=lambda: self.sound_player.play(self.settings.on_sound_path),
             )
         else:
             self.input_source = TextInputSource()
@@ -196,19 +197,25 @@ class CassandraAssistant:
                 continue
 
             if wake_detected:
-                self.sound_player.play(self.settings.on_sound_path)
+                if not getattr(event, "wake_signaled", False):
+                    self.sound_player.play(self.settings.on_sound_path)
                 command = wake_command
                 command_source = "wake_inline"
                 if not command:
-                    # Wake word said alone — wait for the follow-up utterance. Espera o bip de ativação terminar
-                    # (inclusive o atraso da caixa Bluetooth) para o microfone não captar o próprio bip.
-                    time.sleep(0.3)
+                    # Só o nome: espera o pedido de verdade (bips e estalos curtos são ignorados), até o prazo.
                     mic_monitor.set(phase="ouvindo o pedido")
-                    follow_event = self.input_source.read()
-                    if follow_event.exit_requested:
+                    deadline = time.monotonic() + self.settings.wake_timeout_seconds
+                    command = ""
+                    follow_exit = False
+                    while not command and time.monotonic() < deadline:
+                        follow_event = self.input_source.read(max_wait=max(1.0, deadline - time.monotonic()))
+                        if follow_event.exit_requested:
+                            follow_exit = True
+                            break
+                        command = follow_event.text.strip()
+                    if follow_exit:
                         self._shutdown_with_goodbye()
                         break
-                    command = follow_event.text.strip()
                     command_source = "wake_followup"
                     if not command:
                         retry = "Não entendi, pode repetir?"

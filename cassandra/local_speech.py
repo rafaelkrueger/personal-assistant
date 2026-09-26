@@ -95,6 +95,12 @@ class LocalSpeech:
                 rec.AcceptWaveform(data)
         return json.loads(rec.FinalResult())
 
+    def stream(self) -> "WakeStream | None":
+        """Reconhecimento do nome ao vivo, quadro a quadro (ver WakeStream). None se o modelo não carregou."""
+        if not self.available():
+            return None
+        return WakeStream(self)
+
     def heard_wake_word(self, wav_path: str) -> bool:
         if not self.available():
             raise RuntimeError(f"reconhecimento local indisponível: {self._error}")
@@ -119,4 +125,62 @@ class LocalSpeech:
             rate = wf.getframerate()
         rec = KaldiRecognizer(self._model, rate)  # vocabulário livre; um por chamada (o modelo é compartilhado)
         return (self._feed(rec, wav_path).get("text") or "").strip()
+
+
+class WakeStream:
+    """Detecta o nome enquanto o áudio chega (30 ms por vez), em vez de esperar a pessoa terminar de falar e a
+    gravação inteira: o som de ativação sai quase na hora. Segura o reconhecedor do nome até close()."""
+
+    PARTIAL_EVERY = 2  # checa o parcial a cada ~60 ms
+
+    def __init__(self, speech: LocalSpeech) -> None:
+        self.speech = speech
+        self.heard = False
+        self._texts: list[str] = []
+        self._frames = 0
+        speech._lock.acquire()
+        self._rec = speech._wake_rec
+        self._rec.Reset()
+        self._open = True
+
+    def _has_name(self, text: str) -> bool:
+        words = [w for w in text.split() if w != "[unk]"]
+        return any(w in self.speech.wake_words for w in words[:2])
+
+    def feed(self, frame: bytes) -> bool:
+        """True só na primeira vez que o nome aparece."""
+        if not self._open or self.heard:
+            if self._open:
+                self._rec.AcceptWaveform(frame)
+            return False
+        self._frames += 1
+        if self._rec.AcceptWaveform(frame):
+            text = json.loads(self._rec.Result()).get("text", "")
+            self._texts.append(text)
+            current = " ".join(self._texts)
+        elif self._frames % self.PARTIAL_EVERY == 0:
+            current = " ".join([*self._texts, json.loads(self._rec.PartialResult()).get("partial", "")])
+        else:
+            return False
+        if self._has_name(current):
+            self.heard = True
+            return True
+        return False
+
+    def close(self) -> tuple[bool, bool, str]:
+        """(ouviu o nome, era só o nome, texto ouvido). Libera o reconhecedor."""
+        if not self._open:
+            return self.heard, False, " ".join(self._texts)
+        try:
+            self._texts.append(json.loads(self._rec.FinalResult()).get("text", ""))
+        finally:
+            self._open = False
+            self.speech._lock.release()
+        text = " ".join(t for t in self._texts if t).strip()
+        heard = self.heard or self._has_name(text)
+        words = text.split()
+        only_name = heard and bool(words) and all(w in self.speech.wake_words or w == "[unk]" for w in words)
+        self.speech.last_only_name = only_name
+        self.speech.last_heard = text
+        return heard, only_name, text
 

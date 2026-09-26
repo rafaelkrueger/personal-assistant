@@ -11,6 +11,7 @@ e scripts de apoio.
 | `cassandra-netlify-sync.py` | `~/.local/bin/` | O sincronizador (só biblioteca padrão do Python) |
 | `cassandra-spotify.service` | `~/.config/systemd/user/` | Spotify Connect: o Pi vira o dispositivo "Cassandra" no Spotify (librespot → PipeWire). Log: `/tmp/cassandra-spotify.log` |
 | `cassandra-spotify.sh` | `~/.local/bin/` | Sobe o librespot; sem credencial ainda, em modo de pareamento (código no log) |
+| `51-cassandra-no-suspend.conf` | `~/.config/wireplumber/wireplumber.conf.d/` | Não deixa a saída Bluetooth entrar em repouso (senão o bip de ativação e sons curtos se perdem) |
 | `cassandra-start.sh` | `~/.local/bin/` | Reinicia a Cassandra e mostra o fim do log |
 | `cassandra-tunnel.sh` | `~/.local/bin/` | Reinicia o túnel e imprime a URL nova |
 

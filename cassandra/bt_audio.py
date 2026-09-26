@@ -204,8 +204,10 @@ context.modules = [
       }}
       audio.channels = 2
       audio.position = [ FL FR ]
-      capture.props = {{ node.name = "{EQ_NODE}" media.class = Audio/Sink }}
-      playback.props = {{ node.name = "{EQ_NODE}.output" node.passive = true target.object = "{target}" }}
+      capture.props = {{ node.name = "{EQ_NODE}" media.class = Audio/Sink
+                         session.suspend-timeout-seconds = 0 node.pause-on-idle = false }}
+      playback.props = {{ node.name = "{EQ_NODE}.output" node.passive = true target.object = "{target}"
+                          session.suspend-timeout-seconds = 0 node.pause-on-idle = false }}
     }}
   }}
 ]
@@ -274,7 +276,12 @@ Restart=on-failure
 
     def _tick(self) -> None:
         if self._eq_mac:
-            if not bt_sink(self._eq_mac):  # a caixa desconectou: o som volta para a saída normal
+            sink = bt_sink(self._eq_mac)
+            if sink and _eq_of(self._eq_mac)["enabled"] and not _node_by_name(EQ_NODE):
+                # o filtro caiu (ex.: o WirePlumber reiniciou): religa, senão o som vai para a saída errada
+                self._start_eq(self._eq_mac, sink)
+                return
+            if not sink:  # a caixa desconectou: o som volta para a saída normal
                 self._stop_eq()
                 builtin = next((n for n in _nodes() if n["props"].get("media.class") == "Audio/Sink"
                                 and n["props"].get("node.name") != EQ_NODE), None)
