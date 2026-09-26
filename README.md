@@ -159,6 +159,7 @@ MAESTRO_URL=http://desktop-cc6nlck.local:8090,http://192.168.100.52:8090
 MAESTRO_TOKEN=...    # o MAESTRO_SHARED_SECRET do maestro
 MAESTRO_AGENT_NAME=personal-assistant
 MAESTRO_TIMEOUT=120
+MAESTRO_WEB_USER=cassandra   # o usuário dela no web-agent (os logins/cookies dela lá)
 ```
 
 O cliente é o plug-in `cassandra/maestro_link.py`, cópia de `maestro/plugin/maestro_link.py`

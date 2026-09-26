@@ -207,6 +207,8 @@ class _MaestroClient:
     def __init__(self) -> None:
         self._link = MaestroLink.from_env(
             agent_name=_env("MAESTRO_AGENT_NAME", "personal-assistant"),
+            # o usuário da Cassandra no web-agent (os logins/cookies dela lá), informado em todo pedido ao maestro
+            web_user=_env("MAESTRO_WEB_USER", "cassandra"),
             request_timeout=_TIMEOUT,
         )
         self._failed_until = 0.0

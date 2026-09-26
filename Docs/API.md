@@ -290,7 +290,8 @@ que o maestro controla. `GET /api/orchestrator-status` e `GET /api/web-agent-sta
 mesma rota. A Cassandra checa sozinha a cada 15 s e só usa o maestro
 enquanto ele responde; depois de uma falha num pedido, fica 5 min sem usá-lo.
 Configuração: `MAESTRO_URL` (uma ou mais URLs separadas por vírgula),
-`MAESTRO_TOKEN`, `MAESTRO_AGENT_NAME`, `MAESTRO_TIMEOUT`,
+`MAESTRO_TOKEN`, `MAESTRO_AGENT_NAME`, `MAESTRO_TIMEOUT`, `MAESTRO_WEB_USER` (o usuário dela no web-agent,
+padrão `cassandra` — os logins/cookies dela lá, separados dos outros agentes),
 `WEB_SEARCH_ENABLED` (`auto` | `false`).
 
 ---

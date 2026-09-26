@@ -14,6 +14,8 @@ Configuração (variáveis de ambiente, ou argumentos do construtor):
   MAESTRO_TOKEN       o MAESTRO_SHARED_SECRET do maestro (obrigatório para pedir tarefas;
                            listar agentes e checar saúde não precisam)
   MAESTRO_AGENT_NAME  o nome deste agente no maestro (vai como from_agent)
+  MAESTRO_WEB_USER    o usuário DESTE agente no web-agent (os logins/cookies/WhatsApp dele lá): vai em todo
+                           pedido como web_user. Padrão: o próprio MAESTRO_AGENT_NAME. Cada agente tem o seu.
 Os nomes antigos (ORCHESTRATOR_URL, ORCHESTRATOR_TOKEN, ORCHESTRATOR_SHARED_SECRET, ORCHESTRATOR_AGENT_NAME — de antes
 do rename orchestrator -> maestro) continuam valendo, e o plug-in fala com um maestro antigo (rotas /orchestrator/*).
 
@@ -32,7 +34,7 @@ Uso:
 Linha de comando:
     python maestro_link.py status
     python maestro_link.py agents
-    python maestro_link.py ask "mensagem" [--target web-agent] [--from ide] [--timeout 600] [--json]
+    python maestro_link.py ask "mensagem" [--target web-agent] [--from ide] [--web-user ide] [--timeout 600] [--json]
 """
 from __future__ import annotations
 
@@ -46,7 +48,7 @@ import urllib.request
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-VERSION = "1.1"
+VERSION = "1.2"
 
 _FINAL_STATUSES = {"done", "error", "rejected"}
 
@@ -76,6 +78,7 @@ class MaestroLink:
         urls: list[str] | str | None,
         token: str = "",
         agent_name: str = "",
+        web_user: str = "",
         probe_interval: float = 15.0,
         request_timeout: float = 300.0,
         poll_interval: float = 1.5,
@@ -85,6 +88,8 @@ class MaestroLink:
         self.urls = [u.strip().rstrip("/") for u in (urls or []) if u and u.strip()]
         self.token = (token or "").strip()
         self.agent_name = (agent_name or "").strip()
+        # usuário deste agente no web-agent (cada agente com os próprios logins lá); padrão: o nome do agente
+        self.web_user = (web_user or self.agent_name).strip().lower()
         self.probe_interval = probe_interval
         self.request_timeout = request_timeout
         self.poll_interval = poll_interval
@@ -102,6 +107,7 @@ class MaestroLink:
             _env("MAESTRO_URL", "http://127.0.0.1:8090"),
             token=_env("MAESTRO_TOKEN") or _env("MAESTRO_SHARED_SECRET"),
             agent_name=agent_name or _env("MAESTRO_AGENT_NAME"),
+            web_user=kwargs.pop("web_user", None) or _env("MAESTRO_WEB_USER"),
             **kwargs,
         )
 
@@ -184,6 +190,7 @@ class MaestroLink:
             "connected": bool(base),
             "url": base or ", ".join(self.urls),
             "agent_name": self.agent_name,
+            "web_user": self.web_user,
             "token_set": bool(self.token),
             "version": VERSION,
         }
@@ -219,9 +226,11 @@ class MaestroLink:
         target: str | None = None,
         parameters: dict[str, Any] | None = None,
         timeout: float | None = None,
+        web_user: str | None = None,
     ) -> LinkResult:
         """Pede ao maestro que um agente execute `message` e espera o resultado.
-        Sem `target`, o maestro escolhe o agente pelo pedido."""
+        Sem `target`, o maestro escolhe o agente pelo pedido. `web_user` (padrão: o deste agente) é o usuário
+        no web-agent cujos logins/cookies são usados, se o pedido for parar lá."""
         if not self.agent_name:
             return LinkResult(ok=False, error="MAESTRO_AGENT_NAME não configurado (quem está pedindo?).")
         if not self.token:
@@ -234,6 +243,8 @@ class MaestroLink:
             body["target_agent"] = target
         if parameters:
             body["parameters"] = parameters
+        if web_user or self.web_user:
+            body["web_user"] = (web_user or self.web_user).strip().lower()
         try:
             status, created = self._http(base, "POST", f"{self._prefix}/request", body, timeout=15)
         except (urllib.error.URLError, OSError) as exc:
@@ -286,11 +297,13 @@ def _main(argv: list[str]) -> int:
     ask.add_argument("message")
     ask.add_argument("--target", help="agente que deve executar (sem isso, o maestro escolhe)")
     ask.add_argument("--from", dest="from_agent", help="nome deste agente (padrão: MAESTRO_AGENT_NAME)")
+    ask.add_argument("--web-user", dest="web_user",
+                     help="usuário deste agente no web-agent (padrão: MAESTRO_WEB_USER, ou o nome do agente)")
     ask.add_argument("--timeout", type=float, default=600.0)
     ask.add_argument("--json", action="store_true", help="imprime o resultado completo em JSON")
     args = parser.parse_args(argv)
 
-    link = MaestroLink.from_env(agent_name=getattr(args, "from_agent", None))
+    link = MaestroLink.from_env(agent_name=getattr(args, "from_agent", None), web_user=getattr(args, "web_user", None))
     if args.url:
         link.urls = [u.strip().rstrip("/") for u in args.url.split(",") if u.strip()]
     if args.token:

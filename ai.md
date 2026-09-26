@@ -158,7 +158,8 @@ Principais variaveis:
   - `MAESTRO_URL` (uma ou mais URLs separadas por virgula, tentadas em ordem; ex.:
     `http://desktop-cc6nlck.local:8090,http://192.168.100.52:8090`)
   - `MAESTRO_TOKEN` (o `MAESTRO_SHARED_SECRET` do maestro), `MAESTRO_AGENT_NAME`
-    (padrao `personal-assistant`), `MAESTRO_TIMEOUT` (segundos, padrao 120)
+    (padrao `personal-assistant`), `MAESTRO_TIMEOUT` (segundos, padrao 120), `MAESTRO_WEB_USER` (usuario dela
+    no web-agent, padrao `cassandra`: os logins/cookies dela la)
   - Cliente: `cassandra/maestro_link.py` (copia do plug-in `maestro/plugin/maestro_link.py`)
 - Wake word:
   - `ASSISTANT_NAME`
