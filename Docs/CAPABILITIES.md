@@ -35,6 +35,8 @@ técnicos e exemplos de API estão em [`API.md`](./API.md) — este arquivo é s
   Multilaser, só apps) — ganham o controle remoto: ligar/desligar, volume, canais, apps (Netflix, YouTube,
   Prime Video, Disney+, Globoplay, Max, Spotify), HDMI, setas/OK/voltar/início, play/pausa. Por voz:
   "desliga a TV", "coloca na Netflix", "HDMI 2", "aumenta o volume da TV".
+- **Controlar caixas e fones Bluetooth conectados** (aba Aparelhos > Bluetooth > Controlar): volume da
+  própria caixa, mudo, usar como saída e equalizador de grave/agudo aplicado pelo Pi (com atalhos).
 - **Bluetooth**: listar os aparelhos pareados e conectados, conectar,
   desconectar e esquecer, e procurar e parear um aparelho novo (caixas de som
   e fones, que não pedem PIN) pela interface/API (`/api/bluetooth`).

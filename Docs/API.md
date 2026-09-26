@@ -336,6 +336,19 @@ Todas devolvem o mesmo que `GET /api/bluetooth`.
 
 ---
 
+## 10b2. Caixas e fones Bluetooth (`/api/btaudio/<MAC>`)
+
+Código em `cassandra/bt_audio.py`. Volume e mudo são da **própria caixa** (volume absoluto do AVRCP); o grave e
+o agudo são aplicados **pelo Pi** (filtro do PipeWire, serviço `cassandra-eq`, que vira a saída padrão enquanto
+ligado) — os ajustes internos de cada caixa usam protocolos fechados dos fabricantes. Se a caixa desconectar, o
+som volta sozinho para a saída normal; quando ela volta com o equalizador ligado, ele religa.
+
+- `GET /api/btaudio/<MAC>` → `{ "connected", "name", "volume", "muted", "is_output", "eq": { "enabled", "bass",
+  "treble" }, "eq_running", "presets" }`
+- `POST /api/btaudio/<MAC>` — qualquer combinação de `volume` (0-100), `muted`, `output: true` (usar como
+  saída), `eq_enabled`, `bass`/`treble` (-12 a +12 dB) e `preset` (`normal`, `grave`, `grave_forte`, `voz`,
+  `agudo`). Devolve o mesmo que o GET.
+
 ## 10c. Spotify
 
 Controle pela Web API do Spotify (`cassandra/spotify.py`, login OAuth com PKCE —
