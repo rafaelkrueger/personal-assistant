@@ -410,7 +410,7 @@ HTML_PAGE = """<!doctype html>
           <div class="dash-date" id="dashDate"></div>
           <div class="dash-status-row">
             <span class="dash-status-badge"><svg width="7" height="7" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" fill="#34d399"/></svg>Cassandra ativa</span>
-            <span id="heroWebAgentBadge" style="display:none;align-items:center;gap:6px;padding:5px 13px;border-radius:99px;font-size:12px;font-weight:600;background:rgba(91,154,255,.08);border:1px solid rgba(91,154,255,.2);color:var(--brand2)"><svg width="7" height="7" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" fill="#5b9aff"/></svg>Orchestrator online</span>
+            <span id="heroWebAgentBadge" style="display:none;align-items:center;gap:6px;padding:5px 13px;border-radius:99px;font-size:12px;font-weight:600;background:rgba(91,154,255,.08);border:1px solid rgba(91,154,255,.2);color:var(--brand2)"><svg width="7" height="7" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" fill="#5b9aff"/></svg>Maestro online</span>
           </div>
         </div>
         <div class="stats-grid" id="statsGrid">
@@ -769,9 +769,9 @@ HTML_PAGE = """<!doctype html>
             </div>
           </div>
 
-          <!-- Orchestrator (ponte para os outros agentes) -->
+          <!-- Maestro (ponte para os outros agentes) -->
           <div class="settings-card">
-            <div class="settings-card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20"/></svg>Orchestrator</div>
+            <div class="settings-card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20"/></svg>Maestro</div>
             <div class="settings-row">
               <div class="settings-row-info">
                 <div class="settings-row-label">Status da conexão</div>
@@ -788,7 +788,7 @@ HTML_PAGE = """<!doctype html>
             <div class="settings-row" style="border-bottom:none">
               <div class="settings-row-info">
                 <div class="settings-row-label">Agentes que ele controla</div>
-                <div class="settings-row-desc">A Cassandra pede tudo a outros agentes através do orchestrator (pesquisas na internet vão para o web-agent).</div>
+                <div class="settings-row-desc">A Cassandra pede tudo a outros agentes através do maestro (pesquisas na internet vão para o web-agent).</div>
                 <div class="settings-row-desc" id="orch-agents" style="margin-top:6px">—</div>
               </div>
             </div>
@@ -1489,7 +1489,7 @@ async function checkWebAgentStatus(){
   dot.style.background="#a78bfa"; lbl.textContent="Verificando…";
   badge.style.borderColor="var(--border)";
   try{
-    const d=await api("/api/orchestrator-status");
+    const d=await api("/api/maestro-status");
     urlEl.textContent=d.url||"";
     const agentsEl=document.getElementById("orch-agents");
     if(agentsEl){
@@ -1597,16 +1597,16 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                 events = assistant.list_calendar_events(days=days)
                 self._send_json({"configured": True, "events": events})
                 return
-            if parsed.path in ("/api/orchestrator-status", "/api/web-agent-status"):  # o 2º é o nome antigo
-                from skills.web_search.skill import _client as orchestrator_client
+            if parsed.path in ("/api/maestro-status", "/api/orchestrator-status", "/api/web-agent-status"):  # nomes antigos
+                from skills.web_search.skill import _client as maestro_client
 
-                status = orchestrator_client.status()
+                status = maestro_client.status()
                 agents = []
                 if status["connected"]:
                     try:
                         agents = [
                             {k: a.get(k) for k in ("name", "status", "enabled", "tagline")}
-                            for a in orchestrator_client._link.agents()
+                            for a in maestro_client._link.agents()
                         ]
                     except Exception:  # noqa: BLE001 — a lista é só informativa
                         agents = []
@@ -1642,7 +1642,7 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                 return
 
             if parsed.path == "/api/speak":
-                # Aviso falado na casa: o texto exato, sem passar pelo LLM (ex.: o orchestrator avisando algo).
+                # Aviso falado na casa: o texto exato, sem passar pelo LLM (ex.: o maestro avisando algo).
                 text = str(self._read_json_body().get("text", "")).strip()
                 if not text:
                     self._send_json({"error": "text is required"}, status=HTTPStatus.BAD_REQUEST)
@@ -1814,7 +1814,7 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                 return
 
             if parsed.path == "/api/llm":
-                # Mesmo formato do orchestrator/editor: campos parciais; chave vazia/omitida nunca apaga a salva.
+                # Mesmo formato do maestro/editor: campos parciais; chave vazia/omitida nunca apaga a salva.
                 try:
                     self._send_json(llm_settings.update(self._read_json_body()))
                 except ValueError as exc:
@@ -1824,7 +1824,7 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
             self._send_json({"error": "Not found."}, status=HTTPStatus.NOT_FOUND)
 
         def do_PUT(self) -> None:
-            # PUT /api/llm, como nos outros sistemas (orchestrator, editor, web-agent).
+            # PUT /api/llm, como nos outros sistemas (maestro, editor, web-agent).
             if urlparse(self.path).path == "/api/llm":
                 self.do_POST()
                 return

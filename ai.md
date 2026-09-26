@@ -152,14 +152,14 @@ Principais variaveis:
   - `TRANSCRIPTION_PROVIDER` (`auto` padrao: OpenAI se houver chave, local se nao houver ou se falhar;
     `openai`; `local`)
   - `VOSK_MODEL_PATH` (padrao `models/vosk-model-small-pt-0.3`, baixado sozinho se faltar)
-- Outros agentes (opcional), sempre via orchestrator — nunca direto:
-  - `WEB_SEARCH_ENABLED` (`auto` padrao: usa so quando o orchestrator responde, checado a cada 15 s em
+- Outros agentes (opcional), sempre via maestro — nunca direto:
+  - `WEB_SEARCH_ENABLED` (`auto` padrao: usa so quando o maestro responde, checado a cada 15 s em
     segundo plano; `false` desliga)
-  - `ORCHESTRATOR_URL` (uma ou mais URLs separadas por virgula, tentadas em ordem; ex.:
+  - `MAESTRO_URL` (uma ou mais URLs separadas por virgula, tentadas em ordem; ex.:
     `http://desktop-cc6nlck.local:8090,http://192.168.100.52:8090`)
-  - `ORCHESTRATOR_TOKEN` (o `ORCHESTRATOR_SHARED_SECRET` do orchestrator), `ORCHESTRATOR_AGENT_NAME`
-    (padrao `personal-assistant`), `ORCHESTRATOR_TIMEOUT` (segundos, padrao 120)
-  - Cliente: `cassandra/orchestrator_link.py` (copia do plug-in `orchestrator/plugin/orchestrator_link.py`)
+  - `MAESTRO_TOKEN` (o `MAESTRO_SHARED_SECRET` do maestro), `MAESTRO_AGENT_NAME`
+    (padrao `personal-assistant`), `MAESTRO_TIMEOUT` (segundos, padrao 120)
+  - Cliente: `cassandra/maestro_link.py` (copia do plug-in `maestro/plugin/maestro_link.py`)
 - Wake word:
   - `ASSISTANT_NAME`
   - `ASSISTANT_ALIASES`

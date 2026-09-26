@@ -26,14 +26,14 @@ técnicos e exemplos de API estão em [`API.md`](./API.md) — este arquivo é s
   listar, criar e apagar eventos.
 - **Rotinas**: sequências de ações disparadas por um horário ou por um
   alarme — falar um texto fixo, ou ler notícias, cotações, clima, esportes e
-  trânsito (essas cinco pesquisam na internet via orchestrator).
+  trânsito (essas cinco pesquisam na internet via maestro).
 - **Pesquisar na internet** (notícias, cotações, clima, esportes, trânsito,
-  busca geral) **pedindo ao orchestrator** (que despacha para o web-agent),
+  busca geral) **pedindo ao maestro** (que despacha para o web-agent),
   mas só quando ele está ligado e respondendo. Se ele estiver desligado ou o
   pedido falhar, ela responde só com o próprio LLM.
-- **Pedir coisas a outros agentes, sempre através do orchestrator** (nunca
-  direto): ela é origem de pedidos em `POST /orchestrator/request`, pelo
-  plug-in `orchestrator_link`.
+- **Pedir coisas a outros agentes, sempre através do maestro** (nunca
+  direto): ela é origem de pedidos em `POST /maestro/request`, pelo
+  plug-in `maestro_link`.
 - **Ouvir pelo microfone** (quando houver um plugado): detecta o nome
   "Cassandra" no próprio aparelho, sem mandar nada para a internet, e só então
   transcreve o comando.
@@ -41,7 +41,7 @@ técnicos e exemplos de API estão em [`API.md`](./API.md) — este arquivo é s
 ## Não pode / não faz
 
 - **Não navega na web por conta própria.** Toda pesquisa na internet é pedida
-  ao **orchestrator** (que usa o web-agent); sem ele, ela não tem informação
+  ao **maestro** (que usa o web-agent); sem ele, ela não tem informação
   atual (notícias, preços, clima de hoje).
 - **Não edita vídeo nem publica em redes sociais** (isso é o **editor**) e
   **não escreve nem roda código** (isso é o **ide**).
@@ -55,7 +55,7 @@ técnicos e exemplos de API estão em [`API.md`](./API.md) — este arquivo é s
 - **Sem autenticação**: é um sistema de uma casa só.
 - **Não dá previsão do tempo sozinha**: clima, notas e calculadora existem como
   skills no código, mas **não estão ativos** no assistente principal; clima só
-  funciona via orchestrator (ou como resposta genérica do LLM).
+  funciona via maestro (ou como resposta genérica do LLM).
 - **Não ajusta o volume da caixa de som** hoje: a skill de volume usa `pactl`
   ou `amixer`, e no Raspberry Pi atual (sem `pactl`) o `amixer` mexe na saída
   de hardware do Pi, não na soundbar Bluetooth. O volume se ajusta no controle
@@ -67,8 +67,8 @@ técnicos e exemplos de API estão em [`API.md`](./API.md) — este arquivo é s
 
 ## Parâmetros de despacho
 
-O orchestrator fala com ela pelo adapter `personal-assistant`
-(`orchestrator/app/adapters/personal_assistant_adapter.py`). Sem nenhum
+O maestro fala com ela pelo adapter `personal-assistant`
+(`maestro/app/adapters/personal_assistant_adapter.py`). Sem nenhum
 parâmetro, o pedido (`task_summary`) vai em linguagem natural para o chat
 dela — **e a resposta é falada em voz alta na casa**. Use assim para
 conversar, avisar alguém em casa ou pedir algo que só ela resolve (timer,

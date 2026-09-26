@@ -4,11 +4,11 @@ Projeto base de uma assistente pessoal chamada **Cassandra**, inspirada em assis
 
 ## Documentação técnica
 
-Como nos outros agentes (web-agent, editor, orchestrator), a especificação fica em [`Docs/`](Docs/):
+Como nos outros agentes (web-agent, editor, maestro), a especificação fica em [`Docs/`](Docs/):
 
 - [`Docs/CAPABILITIES.md`](Docs/CAPABILITIES.md) — o que a Cassandra pode e não pode fazer (em prosa; é o que o
-  orchestrator lê para decidir se um pedido é para ela).
-- [`Docs/API.md`](Docs/API.md) — todos os endpoints HTTP, formatos, erros e como integrar com o orchestrator.
+  maestro lê para decidir se um pedido é para ela).
+- [`Docs/API.md`](Docs/API.md) — todos os endpoints HTTP, formatos, erros e como integrar com o maestro.
 
 ## O que ela faz hoje
 
@@ -142,28 +142,29 @@ Com `local` (ou `auto` sem chave/créditos), o comando também é transcrito pel
 alguns segundos por frase num Raspberry Pi 3 e erra mais que a OpenAI. Se a OpenAI falhar (ex.: sem
 créditos), a Cassandra usa só o local pelos 10 minutos seguintes.
 
-## Outros agentes, sempre via orchestrator
+## Outros agentes, sempre via maestro
 
-A Cassandra **não fala com outros agentes direto**: pede ao **orchestrator** (a ponte entre todos os
+A Cassandra **não fala com outros agentes direto**: pede ao **maestro** (a ponte entre todos os
 agentes), que escolhe quem executa e devolve o resultado. Hoje isso é usado nas perguntas que precisam de
-informação atual (notícias, cotações, clima, esportes, trânsito, busca geral) — o orchestrator despacha para
+informação atual (notícias, cotações, clima, esportes, trânsito, busca geral) — o maestro despacha para
 o web-agent.
 
-O orchestrator roda no PC e nem sempre está ligado. A Cassandra checa a cada 15 s, em segundo plano, se ele
+O maestro roda no PC e nem sempre está ligado. A Cassandra checa a cada 15 s, em segundo plano, se ele
 responde: ligado, ela usa; desligado (ou se o pedido falhar), ela responde só com o próprio LLM, sem esperar.
 O status e a lista de agentes que ele controla aparecem em Configurações.
 
 ```bash
 WEB_SEARCH_ENABLED=auto   # auto (padrão) = usa quando disponível; false = nunca usa
-ORCHESTRATOR_URL=http://desktop-cc6nlck.local:8090,http://192.168.100.52:8090
-ORCHESTRATOR_TOKEN=...    # o ORCHESTRATOR_SHARED_SECRET do orchestrator
-ORCHESTRATOR_AGENT_NAME=personal-assistant
-ORCHESTRATOR_TIMEOUT=120
+MAESTRO_URL=http://desktop-cc6nlck.local:8090,http://192.168.100.52:8090
+MAESTRO_TOKEN=...    # o MAESTRO_SHARED_SECRET do maestro
+MAESTRO_AGENT_NAME=personal-assistant
+MAESTRO_TIMEOUT=120
 ```
 
-O cliente é o plug-in `cassandra/orchestrator_link.py`, cópia de `orchestrator/plugin/orchestrator_link.py`
-(o mesmo em todos os agentes). `ORCHESTRATOR_URL` aceita várias URLs, tentadas em ordem: prefira o nome
-`.local` do PC, que continua valendo quando o roteador troca o IP.
+O cliente é o plug-in `cassandra/maestro_link.py`, cópia de `maestro/plugin/maestro_link.py`
+(o mesmo em todos os agentes). `MAESTRO_URL` aceita várias URLs, tentadas em ordem: prefira o nome
+`.local` do PC, que continua valendo quando o roteador troca o IP. O maestro se chamava *orchestrator*:
+os nomes antigos (`ORCHESTRATOR_URL`, `ORCHESTRATOR_TOKEN`, ...) continuam valendo.
 
 ## Interface web (dashboard)
 

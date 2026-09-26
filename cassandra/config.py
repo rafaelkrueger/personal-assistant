@@ -39,7 +39,7 @@ class Settings:
     tts_model: str = "tts-1"
     voice_lang: str = "pt-br"
     voice_rate: int = 165
-    # Busca na internet via orchestrator (skill + ações de rotina), usada só quando ele está disponível
+    # Busca na internet via maestro (skill + ações de rotina), usada só quando ele está disponível
     web_search_enabled: bool = True
 
 
@@ -94,7 +94,7 @@ def load_settings() -> Settings:
     tts_model = os.getenv("TTS_MODEL", "tts-1").strip() or "tts-1"
     voice_lang = os.getenv("VOICE_LANG", "pt-br").strip().lower() or "pt-br"
     voice_rate = int(os.getenv("VOICE_RATE", "165").strip() or "165")
-    # auto (padrão) = usa o orchestrator só quando ele responde; false/0/no/off desliga de vez.
+    # auto (padrão) = usa o maestro só quando ele responde; false/0/no/off desliga de vez.
     web_search_enabled = os.getenv("WEB_SEARCH_ENABLED", "auto").strip().lower() not in {
         "0",
         "false",

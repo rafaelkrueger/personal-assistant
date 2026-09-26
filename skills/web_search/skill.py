@@ -1,4 +1,4 @@
-"""Busca na internet via orchestrator (que despacha para o web-agent): senso crítico + 5 skills especializadas."""
+"""Busca na internet via maestro (que despacha para o web-agent): senso crítico + 5 skills especializadas."""
 from __future__ import annotations
 
 import json
@@ -12,21 +12,22 @@ from datetime import datetime
 log = logging.getLogger("web_search")
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 
-from cassandra.orchestrator_link import OrchestratorLink
+from cassandra.maestro_link import MaestroLink, _env
 
 from cassandra.openai_client import LLMService
 from skills.base import Skill
 
 # ── Configuração ──────────────────────────────────────────────────────────────
-# A Cassandra não fala com outros agentes direto: pede ao ORCHESTRATOR (a ponte entre os agentes), que
-# escolhe quem executa — pesquisas na internet vão para o web-agent. Plug-in: cassandra/orchestrator_link.py
-# (cópia de orchestrator/plugin/orchestrator_link.py). Configuração no .env:
-#   ORCHESTRATOR_URL=http://desktop-cc6nlck.local:8090,http://192.168.100.52:8090   (tentadas em ordem)
-#   ORCHESTRATOR_TOKEN=<ORCHESTRATOR_SHARED_SECRET do orchestrator>
-# O orchestrator roda no PC e nem sempre está ligado: a Cassandra só o usa quando ele responde (checado em
+# A Cassandra não fala com outros agentes direto: pede ao MAESTRO (a ponte entre os agentes), que
+# escolhe quem executa — pesquisas na internet vão para o web-agent. Plug-in: cassandra/maestro_link.py
+# (cópia de maestro/plugin/maestro_link.py). Configuração no .env:
+#   MAESTRO_URL=http://desktop-cc6nlck.local:8090,http://192.168.100.52:8090   (tentadas em ordem)
+#   MAESTRO_TOKEN=<MAESTRO_SHARED_SECRET do maestro>
+# O maestro roda no PC e nem sempre está ligado: a Cassandra só o usa quando ele responde (checado em
 # segundo plano pelo plug-in).
-_TIMEOUT = int(os.getenv("ORCHESTRATOR_TIMEOUT", "120"))
-# Quando o orchestrator responde mas o pedido falha (ex.: o LLM do web-agent fora do ar), fica de lado por
+# (os nomes antigos ORCHESTRATOR_* continuam valendo: _env cai neles se MAESTRO_* não existir)
+_TIMEOUT = int(_env("MAESTRO_TIMEOUT", "120"))
+# Quando o maestro responde mas o pedido falha (ex.: o LLM do web-agent fora do ar), fica de lado por
 # um tempo — senão cada pergunta perde dezenas de segundos esperando falhar de novo.
 _FAILURE_COOLDOWN = 300
 
@@ -194,18 +195,18 @@ def _classify(llm: LLMService, text: str, today: str) -> dict:
     return {"category": "web_geral", "query": text, "direct_answer": False}
 
 
-# ── Cliente do orchestrator ───────────────────────────────────────────────────
+# ── Cliente do maestro ───────────────────────────────────────────────────
 
-class _OrchestratorClient:
-    """Pedidos a outros agentes, sempre através do orchestrator (plug-in orchestrator_link).
+class _MaestroClient:
+    """Pedidos a outros agentes, sempre através do maestro (plug-in maestro_link).
 
     A disponibilidade é checada em segundo plano pelo plug-in: com o PC desligado, cada tentativa leva alguns
     segundos até desistir, e isso não pode atrasar as respostas. Quem usa só lê o último resultado.
     """
 
     def __init__(self) -> None:
-        self._link = OrchestratorLink.from_env(
-            agent_name=os.getenv("ORCHESTRATOR_AGENT_NAME", "personal-assistant"),
+        self._link = MaestroLink.from_env(
+            agent_name=_env("MAESTRO_AGENT_NAME", "personal-assistant"),
             request_timeout=_TIMEOUT,
         )
         self._failed_until = 0.0
@@ -224,10 +225,10 @@ class _OrchestratorClient:
 
     def _mark_failed(self, reason: str) -> None:
         self._failed_until = time.monotonic() + _FAILURE_COOLDOWN
-        print(f"[ORCHESTRATOR] pedido falhou ({reason[:150]}); sem usar por {_FAILURE_COOLDOWN // 60} min", flush=True)
+        print(f"[MAESTRO] pedido falhou ({reason[:150]}); sem usar por {_FAILURE_COOLDOWN // 60} min", flush=True)
 
     def query(self, query: str) -> str | None:
-        """Pesquisa na internet via orchestrator (que despacha para o web-agent). None se não houver resposta."""
+        """Pesquisa na internet via maestro (que despacha para o web-agent). None se não houver resposta."""
         if not self.available():
             return None
         result = self._link.ask(
@@ -239,11 +240,11 @@ class _OrchestratorClient:
         if not result.ok:
             self._mark_failed(result.error or result.status or "sem resposta")
             return None
-        log.debug("orchestrator despachou para %s", result.target_agent)
+        log.debug("maestro despachou para %s", result.target_agent)
         return (result.result or "").strip() or None
 
 
-_client = _OrchestratorClient()
+_client = _MaestroClient()
 
 # ── Prompts de formatação por categoria ───────────────────────────────────────
 _BASE_FORMAT = (
@@ -269,7 +270,7 @@ _FORMAT_PROMPTS["direto"] = (
 class WebSearchSkill(Skill):
     """
     Skill com senso crítico: usa LLM para detectar quando uma pergunta requer
-    informações da web e pede ao orchestrator (que usa o web-agent) com uma query otimizada.
+    informações da web e pede ao maestro (que usa o web-agent) com uma query otimizada.
     Sub-skills: notícias, cotações, clima, esportes, trânsito, busca geral.
     """
 
@@ -292,7 +293,7 @@ class WebSearchSkill(Skill):
         O LLM faz o filtro fino via direct_answer em handle().
         """
         if not _client.available():
-            log.debug("can_handle: orchestrator indisponível → deixa para as outras skills")
+            log.debug("can_handle: maestro indisponível → deixa para as outras skills")
             return False
         t = text.lower()
         # Fast-path: conversa pura → deixa para GeneralChatSkill
@@ -322,13 +323,13 @@ class WebSearchSkill(Skill):
                 history=[],
             )
 
-        # ── 3. Pede a pesquisa ao orchestrator (que despacha para o web-agent) ──
-        log.debug("Pedindo ao orchestrator: %s", query)
+        # ── 3. Pede a pesquisa ao maestro (que despacha para o web-agent) ──
+        log.debug("Pedindo ao maestro: %s", query)
         raw = _client.query(query)
-        log.debug("Resposta via orchestrator: %s", repr(raw)[:120] if raw else "NENHUMA")
+        log.debug("Resposta via maestro: %s", repr(raw)[:120] if raw else "NENHUMA")
         if not raw:
-            # o orchestrator (ou o agente que ele escolheu) falhou: responde com o próprio LLM
-            log.debug("orchestrator sem resposta → respondendo direto com o LLM")
+            # o maestro (ou o agente que ele escolheu) falhou: responde com o próprio LLM
+            log.debug("maestro sem resposta → respondendo direto com o LLM")
             return self.llm.answer(
                 user_text=text,
                 system_prompt=_FORMAT_PROMPTS["direto"],

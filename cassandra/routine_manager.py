@@ -175,7 +175,7 @@ class RoutineManager:
         if skipped_web:
             print(
                 "[ROUTINE] Ações que dependem da internet ignoradas "
-                "(orchestrator desligado/indisponível ou WEB_SEARCH_ENABLED=false)."
+                "(maestro desligado/indisponível ou WEB_SEARCH_ENABLED=false)."
             )
 
     # ── Monitor de horários ───────────────────────────────────────────────────

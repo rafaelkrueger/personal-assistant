@@ -5,7 +5,7 @@ pergunta aqui qual provider usar. Começa com os valores do .env (LLM_PROVIDER, 
 DEEPSEEK_API_KEY, DEEPSEEK_MODEL) e o que for salvo pela UI vai para data/llm_settings.json, que passa a ter
 prioridade sobre o .env. Esse arquivo guarda chaves: fica fora do git (.gitignore).
 
-Mesmo desenho do settings_store.py do orchestrator e do llm_settings.py do editor.
+Mesmo desenho do settings_store.py do maestro e do llm_settings.py do editor.
 
 A DeepSeek só faz texto (chat). Voz (TTS) e transcrição do microfone (STT) continuam sempre na OpenAI:
 sem chave da OpenAI, a voz cai no TTS local (espeak) e o modo microfone não transcreve.

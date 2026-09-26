@@ -39,7 +39,7 @@ A Cassandra é um processo só (`main.py`) com duas entradas que compartilham o
 - **Web** (esta API + a UI): texto.
 
 Cada pedido passa por um roteador de **skills** (alarme, timer, agenda, compras,
-tarefas, rotinas, busca na internet via orchestrator) e, se nenhuma servir, pelo
+tarefas, rotinas, busca na internet via maestro) e, se nenhuma servir, pelo
 **chat geral** com o LLM (OpenAI ou DeepSeek — seção 9). A resposta é
 **falada em voz alta** na caixa de som da casa.
 
@@ -91,7 +91,7 @@ detectado, toca também o som de ativação.
 `"Internal error: Error code: 429 ... insufficient_quota"`).
 
 Tempo típico: 2–5 s com DeepSeek/OpenAI. Perguntas que caem na busca da
-internet dependem do orchestrator e do web-agent (dezenas de segundos) — pela URL pública, acima
+internet dependem do maestro e do web-agent (dezenas de segundos) — pela URL pública, acima
 de ~26 s o Netlify devolve `504` (a Cassandra ainda responde e fala, mas o
 cliente perde o texto; use a URL da rede local para pedidos longos).
 
@@ -184,7 +184,7 @@ Uma rotina executa uma lista de ações quando um gatilho acontece.
 - `trigger.type`: `"time"` (usa `time_hhmm`, ex. `"07:00"`) ou `"alarm"` (usa
   `alarm_id` — roda quando aquele alarme dispara).
 - `actions[].type`: `falar` (fala `text`), `noticias`, `cotacao`, `clima`,
-  `esporte`, `transito`. As cinco últimas pesquisam via **orchestrator** e são
+  `esporte`, `transito`. As cinco últimas pesquisam via **maestro** e são
   puladas se ele estiver indisponível.
 
 | Endpoint | Body | Resposta |
@@ -244,7 +244,7 @@ Volta tudo ao padrão. Devolve o objeto completo.
 
 ## 9. LLM (`/api/llm`)
 
-Mesmo formato do orchestrator, do editor e do web-agent. Provider ativo
+Mesmo formato do maestro, do editor e do web-agent. Provider ativo
 (`openai` | `deepseek`) + modelo e chave de cada um. A troca vale na hora.
 
 ### `GET /api/llm`
@@ -270,27 +270,27 @@ Campos parciais — só o que muda. Chave vazia/omitida **nunca apaga** a salva.
 
 ---
 
-## 10. Orchestrator (a ponte para os outros agentes)
+## 10. Maestro (a ponte para os outros agentes)
 
-A Cassandra nunca chama outro agente direto: pede ao orchestrator
-(`POST /orchestrator/request` com `from_agent: "personal-assistant"`), pelo
-plug-in `cassandra/orchestrator_link.py` (cópia de
-`orchestrator/plugin/orchestrator_link.py`). Hoje: pesquisas na internet
-(skill de busca e ações de rotina), que o orchestrator despacha para o
+A Cassandra nunca chama outro agente direto: pede ao maestro
+(`POST /maestro/request` com `from_agent: "personal-assistant"`), pelo
+plug-in `cassandra/maestro_link.py` (cópia de
+`maestro/plugin/maestro_link.py`). Hoje: pesquisas na internet
+(skill de busca e ações de rotina), que o maestro despacha para o
 web-agent.
 
-### `GET /api/orchestrator-status`
+### `GET /api/maestro-status`
 ```json
 { "connected": true, "url": "http://desktop-cc6nlck.local:8090", "agent_name": "personal-assistant",
   "token_set": true, "version": "1.0",
   "agents": [ { "name": "web-agent", "status": "online", "enabled": true, "tagline": "..." } ] }
 ```
 Checa agora (pode levar alguns segundos se ele estiver desligado); `agents` é o
-que o orchestrator controla. `GET /api/web-agent-status` é o nome antigo da
-mesma rota. A Cassandra checa sozinha a cada 15 s e só usa o orchestrator
+que o maestro controla. `GET /api/orchestrator-status` e `GET /api/web-agent-status` são nomes antigos da
+mesma rota. A Cassandra checa sozinha a cada 15 s e só usa o maestro
 enquanto ele responde; depois de uma falha num pedido, fica 5 min sem usá-lo.
-Configuração: `ORCHESTRATOR_URL` (uma ou mais URLs separadas por vírgula),
-`ORCHESTRATOR_TOKEN`, `ORCHESTRATOR_AGENT_NAME`, `ORCHESTRATOR_TIMEOUT`,
+Configuração: `MAESTRO_URL` (uma ou mais URLs separadas por vírgula),
+`MAESTRO_TOKEN`, `MAESTRO_AGENT_NAME`, `MAESTRO_TIMEOUT`,
 `WEB_SEARCH_ENABLED` (`auto` | `false`).
 
 ---
@@ -302,18 +302,18 @@ A UI web (HTML único, sem build). É a mesma página publicada no Netlify.
 
 ---
 
-## 12. Integração com o orchestrator
+## 12. Integração com o maestro
 
-O orchestrator tem o adapter `personal-assistant`
-(`orchestrator/app/adapters/personal_assistant_adapter.py`, URL em
+O maestro tem o adapter `personal-assistant`
+(`maestro/app/adapters/personal_assistant_adapter.py`, URL em
 `PERSONAL_ASSISTANT_BASE_URL` no `.env` dele). Ele segue exatamente isto:
 
 1. **Pedido em linguagem natural** → `POST /api/chat` com
    `{"message": "cassandra, <pedido>"}` (sempre com o nome na frente — a sessão
    pode ter sido encerrada por outra pessoa, por voz). Resultado: `reply`.
-   Timeout de cliente de ~120 s cobre inclusive buscas via orchestrator.
+   Timeout de cliente de ~120 s cobre inclusive buscas via maestro.
 2. **Aviso falado** (texto exato, sem o LLM reinterpretar) → `POST /api/speak`.
-3. **Pedido estruturado** (quando o orchestrator já sabe exatamente o que
+3. **Pedido estruturado** (quando o maestro já sabe exatamente o que
    fazer) → endpoints diretos: `POST /api/shopping/add`, `/api/todos/add`,
    `/api/alarms/add`, `GET /api/dashboard`… São instantâneos, determinísticos e
    não falam em voz alta.
@@ -324,8 +324,8 @@ Cuidados para quem despacha:
 - A conversa é **única** e compartilhada com a voz e a UI — um despacho entra no
   mesmo histórico que o usuário vê.
 - Não há conceito de tarefa/`job_id`: a resposta já é o resultado final.
-- Não há callback para a Cassandra: quando ela pede algo ao orchestrator, ela
-  mesma acompanha o pedido (`GET /orchestrator/request/{id}`) até o fim.
+- Não há callback para a Cassandra: quando ela pede algo ao maestro, ela
+  mesma acompanha o pedido (`GET /maestro/request/{id}`) até o fim.
 
 ### Exemplo (curl)
 ```bash

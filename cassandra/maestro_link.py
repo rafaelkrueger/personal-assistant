@@ -1,36 +1,38 @@
-"""Orchestrator Link — o plug-in para um agente falar com o orchestrator.
+"""Maestro Link — o plug-in para um agente falar com o maestro.
 
-O orchestrator é a ponte entre todos os agentes: um agente nunca chama outro direto. Quando precisa de algo
+O maestro é a ponte entre todos os agentes: um agente nunca chama outro direto. Quando precisa de algo
 que outro agente faz (pesquisar na web, transcrever um vídeo, escrever código, avisar alguém em casa…), ele
-pede ao orchestrator, que escolhe quem executa (ou usa o alvo indicado), despacha e devolve o resultado.
+pede ao maestro, que escolhe quem executa (ou usa o alvo indicado), despacha e devolve o resultado.
 
 Este arquivo é autocontido (só biblioteca padrão, Python 3.9+): cada agente em Python leva uma cópia dele.
-A cópia canônica fica em orchestrator/plugin/orchestrator_link.py — ao mudar aqui, copie para os agentes
+A cópia canônica fica em maestro/plugin/maestro_link.py — ao mudar aqui, copie para os agentes
 (o VERSION ajuda a conferir). Agentes que não são Python usam a linha de comando (ver no fim).
 
 Configuração (variáveis de ambiente, ou argumentos do construtor):
-  ORCHESTRATOR_URL         uma ou mais URLs base, separadas por vírgula, tentadas em ordem
+  MAESTRO_URL         uma ou mais URLs base, separadas por vírgula, tentadas em ordem
                            (ex.: http://desktop-cc6nlck.local:8090,http://192.168.100.52:8090)
-  ORCHESTRATOR_TOKEN       o ORCHESTRATOR_SHARED_SECRET do orchestrator (obrigatório para pedir tarefas;
+  MAESTRO_TOKEN       o MAESTRO_SHARED_SECRET do maestro (obrigatório para pedir tarefas;
                            listar agentes e checar saúde não precisam)
-  ORCHESTRATOR_AGENT_NAME  o nome deste agente no orchestrator (vai como from_agent)
+  MAESTRO_AGENT_NAME  o nome deste agente no maestro (vai como from_agent)
+Os nomes antigos (ORCHESTRATOR_URL, ORCHESTRATOR_TOKEN, ORCHESTRATOR_SHARED_SECRET, ORCHESTRATOR_AGENT_NAME — de antes
+do rename orchestrator -> maestro) continuam valendo, e o plug-in fala com um maestro antigo (rotas /orchestrator/*).
 
 Uso:
-    from orchestrator_link import OrchestratorLink
+    from maestro_link import MaestroLink
 
-    link = OrchestratorLink.from_env()
+    link = MaestroLink.from_env()
     if link.available():                       # não bloqueia: checagem em segundo plano
-        r = link.ask("pesquise a cotação do dólar hoje")          # o orchestrator escolhe o agente
+        r = link.ask("pesquise a cotação do dólar hoje")          # o maestro escolhe o agente
         r = link.ask("transcreva https://youtu.be/…", target="editor")  # ou indique quem executa
         if r.ok:
             print(r.result)
-    for a in link.agents():                    # tudo que o orchestrator controla
+    for a in link.agents():                    # tudo que o maestro controla
         print(a["name"], a["enabled"], a["status"], a["tagline"])
 
 Linha de comando:
-    python orchestrator_link.py status
-    python orchestrator_link.py agents
-    python orchestrator_link.py ask "mensagem" [--target web-agent] [--from ide] [--timeout 600] [--json]
+    python maestro_link.py status
+    python maestro_link.py agents
+    python maestro_link.py ask "mensagem" [--target web-agent] [--from ide] [--timeout 600] [--json]
 """
 from __future__ import annotations
 
@@ -44,7 +46,7 @@ import urllib.request
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-VERSION = "1.0"
+VERSION = "1.1"
 
 _FINAL_STATUSES = {"done", "error", "rejected"}
 
@@ -60,7 +62,15 @@ class LinkResult:
     details: dict[str, Any] = field(default_factory=dict)
 
 
-class OrchestratorLink:
+def _env(name: str, default: str = "") -> str:
+    """MAESTRO_<X> e, por compatibilidade, o nome antigo ORCHESTRATOR_<X>."""
+    value = os.getenv(name)
+    if value is None and name.startswith("MAESTRO_"):
+        value = os.getenv("ORCHESTRATOR_" + name[len("MAESTRO_"):])
+    return default if value is None else value
+
+
+class MaestroLink:
     def __init__(
         self,
         urls: list[str] | str | None,
@@ -83,13 +93,15 @@ class OrchestratorLink:
         self._checked = threading.Event()
         self._monitor: threading.Thread | None = None
         self._agents_cache: tuple[float, list[dict]] | None = None
+        # prefixo das rotas: /maestro, ou /orchestrator num servidor de antes do rename (descoberto no probe)
+        self._prefix = "/maestro"
 
     @classmethod
-    def from_env(cls, agent_name: str | None = None, **kwargs: Any) -> "OrchestratorLink":
+    def from_env(cls, agent_name: str | None = None, **kwargs: Any) -> "MaestroLink":
         return cls(
-            os.getenv("ORCHESTRATOR_URL", "http://127.0.0.1:8090"),
-            token=os.getenv("ORCHESTRATOR_TOKEN") or os.getenv("ORCHESTRATOR_SHARED_SECRET", ""),
-            agent_name=agent_name or os.getenv("ORCHESTRATOR_AGENT_NAME", ""),
+            _env("MAESTRO_URL", "http://127.0.0.1:8090"),
+            token=_env("MAESTRO_TOKEN") or _env("MAESTRO_SHARED_SECRET"),
+            agent_name=agent_name or _env("MAESTRO_AGENT_NAME"),
             **kwargs,
         )
 
@@ -97,9 +109,10 @@ class OrchestratorLink:
 
     def _http(self, base: str, method: str, path: str, body: dict | None = None, timeout: float = 15.0):
         data = json.dumps(body).encode("utf-8") if body is not None else None
-        headers = {"Content-Type": "application/json", "User-Agent": f"orchestrator-link/{VERSION}"}
+        headers = {"Content-Type": "application/json", "User-Agent": f"maestro-link/{VERSION}"}
         if self.token:
-            headers["X-Orchestrator-Token"] = self.token
+            headers["X-Maestro-Token"] = self.token
+            headers["X-Orchestrator-Token"] = self.token  # servidores de antes do rename
         req = urllib.request.Request(base + path, data=data, method=method, headers=headers)
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -117,16 +130,20 @@ class OrchestratorLink:
 
     def _probe(self) -> str | None:
         for base in self.urls:
-            try:
-                status, _ = self._http(base, "GET", "/orchestrator/health", timeout=3)
+            for prefix in ("/maestro", "/orchestrator"):
+                try:
+                    status, _ = self._http(base, "GET", f"{prefix}/health", timeout=3)
+                except (urllib.error.URLError, OSError, ValueError):
+                    break  # nem conecta: tenta a próxima URL
                 if status == 200:
+                    self._prefix = prefix
                     return base
-            except (urllib.error.URLError, OSError, ValueError):
-                continue
+                if status != 404:
+                    break
         return None
 
     def refresh(self) -> str | None:
-        """Checa agora qual URL responde (bloqueia alguns segundos se o orchestrator estiver fora)."""
+        """Checa agora qual URL responde (bloqueia alguns segundos se o maestro estiver fora)."""
         base = self._probe()
         with self._lock:
             changed = base != self._base
@@ -134,7 +151,7 @@ class OrchestratorLink:
         self._checked.set()
         if changed:
             # stderr: na linha de comando o stdout é só o resultado (ex.: JSON de `status`)
-            print(f"[ORCHESTRATOR] {'disponível em ' + base if base else 'indisponível'}", file=sys.stderr, flush=True)
+            print(f"[MAESTRO] {'disponível em ' + base if base else 'indisponível'}", file=sys.stderr, flush=True)
         return base
 
     def _run_monitor(self) -> None:
@@ -146,11 +163,11 @@ class OrchestratorLink:
         """Liga a checagem periódica em segundo plano (idempotente)."""
         with self._lock:
             if self._monitor is None and self.urls:
-                self._monitor = threading.Thread(target=self._run_monitor, name="orchestrator-link", daemon=True)
+                self._monitor = threading.Thread(target=self._run_monitor, name="maestro-link", daemon=True)
                 self._monitor.start()
 
     def available(self) -> bool:
-        """True se o orchestrator respondeu na última checagem. Não bloqueia (só na 1ª vez, até ~10 s)."""
+        """True se o maestro respondeu na última checagem. Não bloqueia (só na 1ª vez, até ~10 s)."""
         self.start()
         self._checked.wait(timeout=10)
         with self._lock:
@@ -171,10 +188,10 @@ class OrchestratorLink:
             "version": VERSION,
         }
 
-    # ── O que o orchestrator controla ─────────────────────────────────────────
+    # ── O que o maestro controla ─────────────────────────────────────────
 
     def agents(self, max_age: float = 30.0) -> list[dict[str, Any]]:
-        """Agentes do orchestrator: name, tagline, description (o CAPABILITIES.md inteiro), status
+        """Agentes do maestro: name, tagline, description (o CAPABILITIES.md inteiro), status
         (online/offline/cli), enabled (toggle), managed, base_url. Cacheado por max_age segundos."""
         cached = self._agents_cache
         if cached and time.monotonic() - cached[0] < max_age:
@@ -182,7 +199,7 @@ class OrchestratorLink:
         base = self.base_url or self.refresh()
         if not base:
             return []
-        status, payload = self._http(base, "GET", "/orchestrator/agents", timeout=10)
+        status, payload = self._http(base, "GET", f"{self._prefix}/agents", timeout=10)
         agents = payload.get("agents", []) if status == 200 else []
         self._agents_cache = (time.monotonic(), agents)
         return agents
@@ -203,25 +220,25 @@ class OrchestratorLink:
         parameters: dict[str, Any] | None = None,
         timeout: float | None = None,
     ) -> LinkResult:
-        """Pede ao orchestrator que um agente execute `message` e espera o resultado.
-        Sem `target`, o orchestrator escolhe o agente pelo pedido."""
+        """Pede ao maestro que um agente execute `message` e espera o resultado.
+        Sem `target`, o maestro escolhe o agente pelo pedido."""
         if not self.agent_name:
-            return LinkResult(ok=False, error="ORCHESTRATOR_AGENT_NAME não configurado (quem está pedindo?).")
+            return LinkResult(ok=False, error="MAESTRO_AGENT_NAME não configurado (quem está pedindo?).")
         if not self.token:
-            return LinkResult(ok=False, error="ORCHESTRATOR_TOKEN não configurado.")
+            return LinkResult(ok=False, error="MAESTRO_TOKEN não configurado.")
         base = self.base_url or self.refresh()
         if not base:
-            return LinkResult(ok=False, error=f"Orchestrator indisponível ({', '.join(self.urls)}).")
+            return LinkResult(ok=False, error=f"Maestro indisponível ({', '.join(self.urls)}).")
         body: dict[str, Any] = {"from_agent": self.agent_name, "message": message}
         if target:
             body["target_agent"] = target
         if parameters:
             body["parameters"] = parameters
         try:
-            status, created = self._http(base, "POST", "/orchestrator/request", body, timeout=15)
+            status, created = self._http(base, "POST", f"{self._prefix}/request", body, timeout=15)
         except (urllib.error.URLError, OSError) as exc:
             self.refresh()
-            return LinkResult(ok=False, error=f"Não consegui falar com o orchestrator: {exc}")
+            return LinkResult(ok=False, error=f"Não consegui falar com o maestro: {exc}")
         if status != 200:
             return LinkResult(ok=False, status=str(status), error=str(created.get("detail") or created))
         request_id = created.get("request_id")
@@ -231,11 +248,11 @@ class OrchestratorLink:
             if time.monotonic() >= deadline:
                 return LinkResult(
                     ok=False, status=record.get("status"), request_id=request_id, target_agent=record.get("target_agent"),
-                    error="Tempo esgotado esperando o resultado (o pedido continua rodando no orchestrator).",
+                    error="Tempo esgotado esperando o resultado (o pedido continua rodando no maestro).",
                 )
             time.sleep(self.poll_interval)
             try:
-                _, record = self._http(base, "GET", f"/orchestrator/request/{request_id}", timeout=15)
+                _, record = self._http(base, "GET", f"{self._prefix}/request/{request_id}", timeout=15)
             except (urllib.error.URLError, OSError):
                 continue  # oscilação de rede: tenta de novo até o prazo
         return LinkResult(
@@ -249,27 +266,31 @@ class OrchestratorLink:
         )
 
 
+# Nome antigo da classe (antes do rename orchestrator -> maestro).
+OrchestratorLink = MaestroLink
+
+
 # ── Linha de comando ──────────────────────────────────────────────────────────────────────────────
 
 
 def _main(argv: list[str]) -> int:
     import argparse
 
-    parser = argparse.ArgumentParser(prog="orchestrator_link", description="Fala com o orchestrator (a ponte entre os agentes).")
-    parser.add_argument("--url", help="URL(s) do orchestrator (padrão: ORCHESTRATOR_URL)")
-    parser.add_argument("--token", help="token (padrão: ORCHESTRATOR_TOKEN / ORCHESTRATOR_SHARED_SECRET)")
+    parser = argparse.ArgumentParser(prog="maestro_link", description="Fala com o maestro (a ponte entre os agentes).")
+    parser.add_argument("--url", help="URL(s) do maestro (padrão: MAESTRO_URL)")
+    parser.add_argument("--token", help="token (padrão: MAESTRO_TOKEN / MAESTRO_SHARED_SECRET)")
     sub = parser.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("status", help="o orchestrator está no ar?")
+    sub.add_parser("status", help="o maestro está no ar?")
     sub.add_parser("agents", help="agentes que ele controla")
     ask = sub.add_parser("ask", help="pede uma tarefa e espera o resultado")
     ask.add_argument("message")
-    ask.add_argument("--target", help="agente que deve executar (sem isso, o orchestrator escolhe)")
-    ask.add_argument("--from", dest="from_agent", help="nome deste agente (padrão: ORCHESTRATOR_AGENT_NAME)")
+    ask.add_argument("--target", help="agente que deve executar (sem isso, o maestro escolhe)")
+    ask.add_argument("--from", dest="from_agent", help="nome deste agente (padrão: MAESTRO_AGENT_NAME)")
     ask.add_argument("--timeout", type=float, default=600.0)
     ask.add_argument("--json", action="store_true", help="imprime o resultado completo em JSON")
     args = parser.parse_args(argv)
 
-    link = OrchestratorLink.from_env(agent_name=getattr(args, "from_agent", None))
+    link = MaestroLink.from_env(agent_name=getattr(args, "from_agent", None))
     if args.url:
         link.urls = [u.strip().rstrip("/") for u in args.url.split(",") if u.strip()]
     if args.token:
