@@ -28,6 +28,7 @@ _MODEL_URL = "https://alphacephei.com/vosk/models/{name}.zip"
 
 # Palavras parecidas com "cassandra" que precisam existir na gramática para não virarem o nome.
 _COMPETITORS = ["casa", "da", "casada", "cansada"]
+_BARGE_LOCK = threading.Lock()  # cria o detector de interrupção uma vez só (ver barge_detector)
 
 
 class LocalSpeech:
@@ -106,7 +107,9 @@ class LocalSpeech:
         """Detector do nome enquanto a Cassandra fala (interromper). None se o modelo não carregou."""
         if not self.available():
             return None
-        with self._lock:
+        # Trava própria: a self._lock fica presa pelo WakeStream durante a gravação inteira (usá-la aqui travava o
+        # microfone). O modelo já carregado pode ser compartilhado por outro reconhecedor.
+        with _BARGE_LOCK:
             if getattr(self, "_barge", None) is None:
                 self._barge = BargeDetector(self)
         return self._barge
