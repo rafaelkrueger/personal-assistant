@@ -21,3 +21,4 @@ models/
 data/tts_cache/
 # equalizador das caixas Bluetooth (ajustes locais)
 data/eq.json
+data/agents_access.json

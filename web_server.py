@@ -367,6 +367,12 @@ HTML_PAGE = """<!doctype html>
     .settings-card-title .sc-chevron{margin-left:auto;width:16px;height:16px;opacity:.7;transition:transform .2s}
     .settings-card:not(.sc-collapsed) .sc-chevron{transform:rotate(180deg)}
     .settings-card.sc-collapsed .sc-body{display:none}
+    .ag-row .settings-row-label{display:flex;align-items:center;gap:8px}
+    .ag-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:#6b7280}
+    .ag-dot.online{background:var(--green)}
+    .ag-dot.cli{background:#a78bfa}
+    .ag-state{font-size:11px;font-weight:600;color:var(--text3,var(--text2));opacity:.8}
+    .ag-row.ag-off .settings-row-info{opacity:.55}
     .settings-card{
       background:var(--glass);border:1px solid var(--border);border-radius:var(--rx);
       padding:16px;backdrop-filter:blur(12px);position:relative;overflow:hidden;
@@ -1291,6 +1297,19 @@ HTML_PAGE = """<!doctype html>
                 <div class="settings-row-desc" id="orch-agents" style="margin-top:6px">—</div>
               </div>
             </div>
+          </div>
+
+          <!-- Agentes que a Cassandra pode usar (lista vinda do Maestro) -->
+          <div class="settings-card">
+            <div class="settings-card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><line x1="12" y1="8" x2="6.5" y2="16.5"/><line x1="12" y1="8" x2="17.5" y2="16.5"/></svg>Agentes que a Cassandra usa</div>
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <div class="settings-row-label">Acesso aos agentes do Maestro</div>
+                <div class="settings-row-desc">Com o acesso ligado, a Cassandra pode pedir coisas a esse agente (ex.: "pesquise X", "leia meu WhatsApp", "crie um site"). A lista vem do Maestro: um agente novo aparece aqui sozinho, já liberado.</div>
+              </div>
+              <div class="settings-row-control"><button class="btn btn-ghost btn-sm" id="agAccessRefresh" title="Atualizar a lista"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg></button></div>
+            </div>
+            <div id="agAccessList"><div class="settings-row" style="border-bottom:none"><div class="settings-row-desc">Carregando…</div></div></div>
           </div>
 
           <!-- Sistema (read-only) -->
@@ -2627,6 +2646,36 @@ document.getElementById("tab-music").addEventListener("click",e=>{
   const ask=e.target.closest("[data-mu-ask]"); if(ask) muAsk(ask.dataset.muAsk);
 });
 
+// ── Agentes que a Cassandra usa (Configurações) ──
+const AG_STATE={online:"no ar",offline:"desligado",cli:"sob demanda",degraded:"instável"};
+function renderAgentsAccess(d){
+  const el=document.getElementById("agAccessList"); if(!el) return;
+  const msg=t=>`<div class="settings-row" style="border-bottom:none"><div class="settings-row-desc">${t}</div></div>`;
+  if(!d.connected){el.innerHTML=msg("O Maestro não está respondendo (o computador pode estar desligado). A lista aparece quando ele voltar.");return;}
+  if(!d.agents.length){el.innerHTML=msg("O Maestro não tem outros agentes.");return;}
+  el.innerHTML=d.agents.map((a,i)=>{
+    const st=a.enabled===false?"desligado no Maestro":(AG_STATE[a.status]||a.status);
+    const last=i===d.agents.length-1?' style="border-bottom:none"':"";
+    return `<div class="settings-row ag-row${a.allowed?"":" ag-off"}"${last}>
+      <div class="settings-row-info"><div class="settings-row-label"><span class="ag-dot ${a.enabled===false?"":esc(a.status)}"></span>${esc(a.name)} <span class="ag-state">${esc(st)}</span></div>
+      <div class="settings-row-desc">${esc(a.tagline||"")}</div></div>
+      <div class="settings-row-control"><label class="toggle" title="Acesso da Cassandra a ${esc(a.name)}"><input type="checkbox" data-ag-access="${esc(a.name)}" ${a.allowed?"checked":""}/><span class="toggle-slider"></span></label></div>
+    </div>`;
+  }).join("");
+  el.querySelectorAll("[data-ag-access]").forEach(cb=>cb.addEventListener("change",async()=>{
+    cb.disabled=true;
+    try{renderAgentsAccess(await api("/api/agents/access","POST",{name:cb.dataset.agAccess,allowed:cb.checked}));}
+    catch(e){cb.checked=!cb.checked;alert(e.message);}
+    finally{cb.disabled=false;}
+  }));
+}
+async function loadAgentsAccess(){
+  const el=document.getElementById("agAccessList");
+  try{renderAgentsAccess(await api("/api/agents"));}
+  catch(e){if(el) el.innerHTML=`<div class="settings-row" style="border-bottom:none"><div class="settings-row-desc">Não consegui carregar: ${esc(e.message)}</div></div>`;}
+}
+document.getElementById("agAccessRefresh").addEventListener("click",e=>{e.stopPropagation();loadAgentsAccess();});
+
 // ── Configurações: cada seção recolhível (começam fechadas; o navegador lembra as abertas) ──
 const SC_KEY="cassSettingsOpen";
 function scOpenSet(){try{return new Set(JSON.parse(localStorage.getItem(SC_KEY)||"[]"));}catch(e){return new Set();}}
@@ -2673,6 +2722,7 @@ async function init(){
   await loadLlm();
   await refresh();
   checkWebAgentStatus();
+  loadAgentsAccess();
   loadCalendarStatus();
   loadAudio();
   loadBluetooth();
@@ -2985,6 +3035,11 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
             if parsed.path == "/api/bluetooth":
                 self._send_json(audio_devices.bluetooth.status())
                 return
+            if parsed.path == "/api/agents":
+                from cassandra.agents_bridge import bridge  # noqa: PLC0415
+
+                self._send_json(bridge.catalog())
+                return
             if parsed.path in ("/api/maestro-status", "/api/orchestrator-status", "/api/web-agent-status"):  # nomes antigos
                 from skills.web_search.skill import _client as maestro_client
 
@@ -3240,6 +3295,18 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                 data = self._read_json_body()
                 assistant.remove_alarm(str(data.get("id", "")).strip())
                 self._send_json({"alarms": assistant.list_alarms()})
+                return
+
+            if parsed.path == "/api/agents/access":
+                from cassandra.agents_bridge import bridge  # noqa: PLC0415
+
+                data = self._read_json_body()
+                name = str(data.get("name", "")).strip()
+                if not name:
+                    self._send_json({"error": "name is required"}, status=HTTPStatus.BAD_REQUEST)
+                    return
+                bridge.set_allowed(name, bool(data.get("allowed")))
+                self._send_json(bridge.catalog())
                 return
 
             if parsed.path == "/api/timers/cancel":

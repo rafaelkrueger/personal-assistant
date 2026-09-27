@@ -307,6 +307,10 @@ class WebSearchSkill(Skill):
         if not _client.available():
             log.debug("can_handle: maestro indisponível → deixa para as outras skills")
             return False
+        from cassandra.agents_bridge import bridge  # noqa: PLC0415 — (o bridge importa este módulo)
+
+        if not bridge.allowed("web-agent"):
+            return False  # acesso ao web-agent desligado nas Configurações
         t = text.lower()
         if not _needs_web(t):
             return False

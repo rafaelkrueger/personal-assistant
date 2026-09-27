@@ -4,17 +4,21 @@
   Nunca bloqueia: devolve o último resultado e atualiza em segundo plano (o Maestro roda no PC, que nem sempre
   está ligado — esperar por ele atrasaria todas as respostas).
 - prompt_block(): o texto que entra no prompt do chat, para o LLM da Cassandra saber quem pode fazer o quê.
+- catalog() / set_allowed(): a lista de Configurações, com um toggle por agente (quais a Cassandra pode usar).
+  Vem do Maestro, então um agente novo aparece sozinho. Os bloqueados ficam em data/agents_access.json.
 - run(): manda o pedido com o agente-alvo já escolhido (o Maestro não precisa do LLM dele para decidir) e espera
   um pouco. Se demorar mais, devolve "em andamento" e segue acompanhando em segundo plano; o resultado é falado
   quando chegar (callback on_late_result).
 """
 from __future__ import annotations
 
+import json
 import re
 import threading
 import time
 import urllib.error
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
 
 from skills.web_search.skill import _client as _maestro
@@ -80,11 +84,48 @@ class AgentReply:
 
 
 class AgentsBridge:
-    def __init__(self) -> None:
+    def __init__(self, access_path: str = "data/agents_access.json") -> None:
         self._agents: list[dict] = []
         self._fetched_at = 0.0
         self._refreshing = False
         self._lock = threading.Lock()
+        self._access_path = Path(access_path)
+        self._blocked: set[str] = self._load_blocked()
+
+    # ── A quais agentes a Cassandra tem acesso (Configurações) ───────────────
+    # Guarda só os bloqueados: um agente novo no Maestro aparece na lista e já vem liberado.
+
+    def _load_blocked(self) -> set[str]:
+        try:
+            data = json.loads(self._access_path.read_text(encoding="utf-8"))
+            return {str(n) for n in data.get("blocked", [])}
+        except (OSError, ValueError, AttributeError):
+            return set()
+
+    def allowed(self, name: str) -> bool:
+        with self._lock:
+            return name not in self._blocked
+
+    def set_allowed(self, name: str, allowed: bool) -> None:
+        with self._lock:
+            (self._blocked.discard if allowed else self._blocked.add)(name)
+            blocked = sorted(self._blocked)
+            self._fetched_at = 0.0  # a próxima conversa já usa a lista nova
+        self._access_path.parent.mkdir(parents=True, exist_ok=True)
+        self._access_path.write_text(json.dumps({"blocked": blocked}, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def catalog(self) -> dict:
+        """Todos os agentes do Maestro (menos a própria Cassandra), com o acesso de cada um — para a tela de
+        Configurações. Busca agora (pode levar alguns segundos com o PC desligado)."""
+        link = _maestro._link
+        if not link.available():
+            return {"connected": False, "agents": []}
+        agents = [
+            {"name": a.get("name"), "tagline": a.get("tagline") or "", "status": a.get("status") or "offline",
+             "enabled": a.get("enabled", True), "allowed": self.allowed(a.get("name") or "")}
+            for a in link.agents(max_age=5) if a.get("name") and a.get("name") != link.agent_name
+        ]
+        return {"connected": True, "agents": agents}
 
     # ── Quem está disponível ─────────────────────────────────────────────────
 
@@ -104,7 +145,8 @@ class AgentsBridge:
             if stale and not self._refreshing:
                 self._refreshing = True
                 threading.Thread(target=self._refresh, daemon=True).start()
-            return list(self._agents)
+            blocked = set(self._blocked)
+            return [a for a in self._agents if a.get("name") not in blocked]
 
     def names(self) -> list[str]:
         return [a["name"] for a in self.snapshot() if a.get("name")]
