@@ -53,19 +53,49 @@ def _azure_config() -> tuple[str, str, str]:
             os.getenv("AZURE_TTS_VOICE", AZURE_DEFAULT_VOICE).strip() or AZURE_DEFAULT_VOICE)
 
 
-def _azure_request(text: str, output_format: str):
-    """Abre o streaming da voz do Azure (contexto httpx). O chamador lê os bytes enquanto chegam."""
-    import httpx  # noqa: PLC0415 — já vem com o pacote openai
+class _AzureResponse:
+    """Resposta da voz do Azure lida aos poucos (só biblioteca padrão: o Pi não tem httpx)."""
 
-    key, region, voice = _azure_config()
-    ssml = (f"<speak version='1.0' xml:lang='pt-BR'><voice name='{voice}'>"
-            f"{_xml_escape(text)}</voice></speak>")
-    return httpx.stream(
-        "POST", f"https://{region}.tts.speech.microsoft.com/cognitiveservices/v1",
-        headers={"Ocp-Apim-Subscription-Key": key, "Content-Type": "application/ssml+xml",
-                 "X-Microsoft-OutputFormat": output_format, "User-Agent": "cassandra"},
-        content=ssml.encode("utf-8"), timeout=httpx.Timeout(10.0, read=30.0),
-    )
+    def __init__(self, text: str, output_format: str) -> None:
+        import urllib.error  # noqa: PLC0415
+        import urllib.request  # noqa: PLC0415
+
+        key, region, voice = _azure_config()
+        ssml = (f"<speak version='1.0' xml:lang='pt-BR'><voice name='{voice}'>"
+                f"{_xml_escape(text)}</voice></speak>")
+        req = urllib.request.Request(
+            f"https://{region}.tts.speech.microsoft.com/cognitiveservices/v1", data=ssml.encode("utf-8"),
+            method="POST",
+            headers={"Ocp-Apim-Subscription-Key": key, "Content-Type": "application/ssml+xml",
+                     "X-Microsoft-OutputFormat": output_format, "User-Agent": "cassandra"},
+        )
+        try:
+            self._resp = urllib.request.urlopen(req, timeout=15)
+            self.status_code = self._resp.status
+        except urllib.error.HTTPError as exc:  # 401 chave errada, 429 franquia/limite, ...
+            self._resp = exc
+            self.status_code = exc.code
+
+    def iter_bytes(self, size: int = 4096) -> Iterator[bytes]:
+        while True:
+            chunk = self._resp.read(size)
+            if not chunk:
+                return
+            yield chunk
+
+    def read(self) -> bytes:
+        return self._resp.read()
+
+    def __enter__(self) -> "_AzureResponse":
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self._resp.close()
+
+
+def _azure_request(text: str, output_format: str) -> _AzureResponse:
+    """Abre o streaming da voz do Azure. O chamador lê os bytes enquanto chegam (use com `with`)."""
+    return _AzureResponse(text, output_format)
 
 # Variante feminina do espeak-ng. Medido num Raspberry Pi 3: ~80 ms por frase. As alternativas femininas
 # grátis foram bem mais lentas (Edge TTS ~4,5 s, Kokoro ~25 s) e o Piper não tem voz feminina em português.
