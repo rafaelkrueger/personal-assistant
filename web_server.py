@@ -152,6 +152,14 @@ HTML_PAGE = """<!doctype html>
     .topbar-right{display:flex;align-items:center;gap:10px}
     .clock{font-size:13px;color:var(--text2);font-variant-numeric:tabular-nums;font-weight:500;letter-spacing:.02em}
     .alarm-pill{display:flex;align-items:center;gap:6px;padding:5px 12px;border-radius:99px;font-size:11.5px;font-weight:600;border:1px solid var(--border);background:rgba(255,255,255,.03);color:var(--text2);transition:all .2s}
+    .timer-pills{display:flex;align-items:center;gap:6px}
+    .timer-pill{display:inline-flex;align-items:center;gap:6px;padding:4px 6px 4px 10px;border-radius:99px;font-size:12.5px;font-weight:700;border:1px solid rgba(96,165,250,.35);background:rgba(96,165,250,.12);color:#93c5fd;font-variant-numeric:tabular-nums;white-space:nowrap}
+    .timer-pill svg{width:13px;height:13px;flex-shrink:0}
+    .timer-pill .tp-x{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:99px;border:0;background:transparent;color:inherit;cursor:pointer;opacity:.7;font-size:15px;line-height:1}
+    .timer-pill .tp-x:hover{opacity:1;background:rgba(255,255,255,.1)}
+    .timer-pill.fired{border-color:rgba(251,191,36,.45);background:var(--amber-dim);color:var(--amber);animation:tpBlink 1s ease-in-out infinite}
+    @keyframes tpBlink{50%{opacity:.55}}
+    @media(max-width:640px){.timer-pill .tp-label{display:none}.topbar-right .clock.has-timers{display:none}}
     .alarm-pill.ringing{border-color:rgba(251,191,36,.35);background:var(--amber-dim);color:var(--amber);box-shadow:0 0 16px rgba(251,191,36,.15)}
 
     /* ═══ BODY ═══ */
@@ -558,6 +566,7 @@ HTML_PAGE = """<!doctype html>
         <span class="page-title" id="pageTitle">Dashboard</span>
       </div>
       <div class="topbar-right">
+        <span class="timer-pills" id="timerPills"></span>
         <span class="clock" id="clock"></span>
         <button class="restart-btn" id="restartBtn" title="Reiniciar a Cassandra"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg></button>
         <span class="alarm-pill" id="alarmPill"><span class="sdot" id="alarmPillDot"></span><span id="alarmPillText">Ok</span></span>
@@ -1528,6 +1537,35 @@ function renderAlarms(items){
   el.querySelectorAll("[data-alarm-rm]").forEach(b=>b.addEventListener("click",async()=>{await api("/api/alarms/remove","POST",{id:b.dataset.alarmRm});await refresh();}));
 }
 
+// ── Timers ativos (header) ──
+let tmList=[], tmOffset=0, tmTick=null;
+const TM_ICON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="13" r="8"/><polyline points="12 9 12 13 14.5 15"/><line x1="10" y1="2" x2="14" y2="2"/></svg>';
+function tmFmt(sec){
+  sec=Math.max(0,Math.ceil(sec));
+  const h=Math.floor(sec/3600), m=Math.floor(sec%3600/60), s=sec%60, p=n=>String(n).padStart(2,"0");
+  return h?`${h}:${p(m)}:${p(s)}`:`${m}:${p(s)}`;
+}
+function renderTimers(list,serverNow){
+  tmList=list||[];
+  if(serverNow) tmOffset=serverNow-Date.now()/1000;
+  drawTimers();
+  clearInterval(tmTick); tmTick=tmList.length?setInterval(drawTimers,1000):null;
+}
+function drawTimers(){
+  const el=document.getElementById("timerPills"); if(!el) return;
+  const now=Date.now()/1000+tmOffset;
+  el.innerHTML=tmList.map(t=>{
+    const left=t.ends_at-now, fired=t.fired||left<=0;
+    const txt=fired?"Tempo!":tmFmt(left);
+    return `<span class="timer-pill${fired?" fired":""}" title="Timer de ${esc(t.label)}">${TM_ICON}<span>${txt}</span><span class="tp-label">· ${esc(t.label)}</span>${fired?"":`<button class="tp-x" data-tm-cancel="${esc(t.name)}" title="Cancelar timer">×</button>`}</span>`;
+  }).join("");
+  document.getElementById("clock").classList.toggle("has-timers",tmList.length>0);
+  el.querySelectorAll("[data-tm-cancel]").forEach(b=>b.addEventListener("click",async()=>{
+    try{const d=await api("/api/timers/cancel","POST",{name:b.dataset.tmCancel});renderTimers(d.timers,d.now);}catch(e){console.error(e);}
+  }));
+}
+async function loadTimers(){try{const d=await api("/api/timers");renderTimers(d.timers,d.now);}catch(e){}}
+
 // ── Alarm status ──
 function renderAlarmStatus(ringing){
   [document.getElementById("alarmDot"),document.getElementById("alarmPillDot")].forEach(d=>{d.className="sdot"+(ringing?" warn":"");});
@@ -1911,6 +1949,7 @@ async function refresh(){
     renderTodos(data.todos||[]);
     renderAlarms(data.alarms||[]);
     renderAlarmStatus(Boolean(data.alarm_ringing));
+    renderTimers(data.timers||[],data.now);
     loadRoutines();
     loadAgenda();
   }catch(e){console.error("Refresh:",e);}
@@ -1926,7 +1965,7 @@ async function sendMsg(){
   if(msgs.querySelector(".empty"))msgs.innerHTML="";
   msgs.appendChild(div);msgs.scrollTop=msgs.scrollHeight;
   showTyping();
-  try{const d=await api("/api/chat","POST",{message:t});hideTyping();renderMessages(d.history||[]);}
+  try{const d=await api("/api/chat","POST",{message:t});hideTyping();renderMessages(d.history||[]);loadTimers();}
   catch(e){hideTyping();alert(e.message);}
 }
 document.getElementById("sendBtn").addEventListener("click",sendMsg);
@@ -2597,6 +2636,7 @@ async function init(){
 }
 init();
 setInterval(refresh,5000);
+setInterval(()=>{if(tmList.length) loadTimers();},2000);
 setInterval(checkWebAgentStatus,30000);
 setInterval(()=>{loadAudio();if(!btPoll)loadBluetooth();loadSpotify();},15000);
 </script>
@@ -2796,6 +2836,9 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
             if parsed.path == "/api/history":
                 self._send_json({"history": assistant.get_conversation_history()})
                 return
+            if parsed.path == "/api/timers":
+                self._send_json({"timers": assistant.timer_manager.snapshot(), "now": time.time()})
+                return
             if parsed.path == "/api/dashboard":
                 self._send_json({
                     "history":       assistant.get_conversation_history(),
@@ -2803,6 +2846,8 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                     "todos":         assistant.get_todos(),
                     "alarms":        assistant.list_alarms(),
                     "alarm_ringing": assistant.is_alarm_ringing(),
+                    "timers":        assistant.timer_manager.snapshot(),
+                    "now":           time.time(),
                 })
                 return
             if parsed.path == "/api/settings":
@@ -3146,6 +3191,12 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                 data = self._read_json_body()
                 assistant.remove_alarm(str(data.get("id", "")).strip())
                 self._send_json({"alarms": assistant.list_alarms()})
+                return
+
+            if parsed.path == "/api/timers/cancel":
+                name = str(self._read_json_body().get("name", "")).strip()
+                assistant.timer_manager.cancel(name)
+                self._send_json({"timers": assistant.timer_manager.snapshot(), "now": time.time()})
                 return
 
             if parsed.path == "/api/alarms/stop":

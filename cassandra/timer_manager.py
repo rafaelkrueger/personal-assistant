@@ -2,7 +2,11 @@
 from __future__ import annotations
 
 import threading
+import time
 from dataclasses import dataclass, field
+
+# Um timer que acabou de tocar continua na lista (como "tocando") por este tempo, para a UI mostrar.
+_SHOW_FIRED_SECONDS = 10.0
 
 
 @dataclass
@@ -48,6 +52,8 @@ class TimerManager:
         self._lock = threading.Lock()
         self._active: dict[str, threading.Timer] = {}
         self._fired: list[FiredTimer] = []
+        self._ends: dict[str, tuple[int, float]] = {}  # nome -> (duração, fim em time.time())
+        self._recent: dict[str, tuple[int, float]] = {}  # tocaram há pouco: nome -> (duração, quando)
         self.on_fire = on_fire
 
     def add(self, name: str, duration_seconds: int) -> None:
@@ -59,11 +65,15 @@ class TimerManager:
         t.daemon = True
         with self._lock:
             self._active[name] = t
+            self._ends[name] = (duration_seconds, time.time() + duration_seconds)
+            self._recent.pop(name, None)
         t.start()
 
     def _fire(self, name: str, duration_seconds: int) -> None:
         with self._lock:
             self._active.pop(name, None)
+            self._ends.pop(name, None)
+            self._recent[name] = (duration_seconds, time.time())
             self._fired.append(FiredTimer(name=name, duration_seconds=duration_seconds))
         self.on_fire.set()
 
@@ -79,6 +89,8 @@ class TimerManager:
     def cancel(self, name: str) -> bool:
         with self._lock:
             t = self._active.pop(name, None)
+            self._ends.pop(name, None)
+            self._recent.pop(name, None)
         if t:
             t.cancel()
             return True
@@ -87,3 +99,15 @@ class TimerManager:
     def active_names(self) -> list[str]:
         with self._lock:
             return list(self._active.keys())
+
+    def snapshot(self) -> list[dict]:
+        """Timers ativos (quanto falta) e os que tocaram nos últimos segundos — para a UI."""
+        now = time.time()
+        with self._lock:
+            self._recent = {n: v for n, v in self._recent.items() if now - v[1] < _SHOW_FIRED_SECONDS}
+            items = [{"name": n, "label": format_duration(d), "duration": d, "ends_at": end,
+                      "remaining": max(0.0, round(end - now, 1)), "fired": False}
+                     for n, (d, end) in self._ends.items()]
+            items += [{"name": n, "label": format_duration(d), "duration": d, "ends_at": at,
+                       "remaining": 0.0, "fired": True} for n, (d, at) in self._recent.items()]
+        return sorted(items, key=lambda i: i["ends_at"])
