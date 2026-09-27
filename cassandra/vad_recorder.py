@@ -7,6 +7,7 @@ import struct
 import tempfile
 import threading
 import wave
+from collections import deque
 
 from cassandra.mic_monitor import monitor
 from cassandra import speech_state
@@ -34,6 +35,9 @@ _CAPTURE_RATES = (16_000, 48_000, 44_100, 32_000, 22_050, 96_000)
 # vai para a transcrição — que, com áudio sem fala, inventa texto.
 VOICED_PERIODICITY = 0.45
 VOICED_MAX_TONAL = 0.30
+# Ruído do ambiente: janela dos últimos ~4,5 s sem fala e o percentil usado como "ruído".
+_NOISE_WINDOW = 150
+_NOISE_PERCENTILE = 0.5
 MIN_VOICED_FRAMES = 7  # ~0,2 s de voz
 
 
@@ -99,7 +103,8 @@ class VadRecorder:
         self._pa = None
         monitor.set(threshold=energy_threshold)
         self._rate: int | None = None  # a taxa que o microfone atual aceitou
-        self._noise: float | None = None  # chiado do ambiente (média móvel dos quadros sem fala)
+        self._noise: float | None = None  # ruído do ambiente (percentil baixo da energia recente sem fala)
+        self._quiet: deque[float] = deque(maxlen=_NOISE_WINDOW)  # energia dos últimos quadros sem fala
 
     def _ensure_pyaudio(self):
         if self._pa is None:
@@ -163,14 +168,24 @@ class VadRecorder:
         return value
 
     def _learn_noise(self, energy: float, threshold: float) -> None:
-        """Média móvel do chiado, só com quadros claramente sem fala (perto do ruído atual) — o fim das falas,
-        mais alto que o chiado, não pode puxar o limite para cima."""
-        if self._noise is None:
-            if energy < threshold:
-                self._noise = energy
-            return
-        if energy < self._noise * 1.5 or energy < self.energy_threshold * 0.5:
-            self._noise = self._noise * 0.98 + energy * 0.02
+        """Ruído do ambiente = percentil baixo da energia dos últimos segundos sem fala. Acompanha o ambiente
+        para cima e para baixo (antes era uma média que só aceitava valores perto do ruído antigo: se o ambiente
+        ficava mais alto, o limite nunca subia e qualquer barulho virava uma "fala" de 30 s)."""
+        self._quiet.append(energy)
+        if len(self._quiet) >= 20:
+            ordered = sorted(self._quiet)
+            self._noise = ordered[int(len(ordered) * _NOISE_PERCENTILE)]
+        elif self._noise is None and energy < threshold:
+            self._noise = energy
+
+    def _absorb_as_noise(self, frames: list[bytes]) -> None:
+        """Uma "fala" descartada (ou que nunca terminava) era ruído: entra na medida do ambiente, e o limite sobe
+        na hora — senão o mesmo barulho dispara gravações inúteis de novo e de novo."""
+        for f in frames[-_NOISE_WINDOW:]:
+            self._quiet.append(self._rms(f))
+        if len(self._quiet) >= 20:
+            ordered = sorted(self._quiet)
+            self._noise = ordered[int(len(ordered) * _NOISE_PERCENTILE)]
 
     @staticmethod
     def _rms(frame: bytes) -> float:
@@ -220,6 +235,7 @@ class VadRecorder:
         interrupted = False
         echo_aborted = False  # ela começou a falar no meio da gravação
         barged = False  # alguém disse o nome enquanto ela falava: esta gravação é o pedido novo
+        frames_read = 0
         busy_tail: list[bytes] = []  # ~1,5 s de áudio da fala dela, para a gravação incluir o nome dito por cima
         self.last_barged = False
         threshold = self._threshold()
@@ -230,6 +246,7 @@ class VadRecorder:
 
         try:
             for _ in range(max_frames):
+                frames_read += 1
                 if interrupt_event and interrupt_event.is_set():
                     interrupted = True
                     break
@@ -303,6 +320,11 @@ class VadRecorder:
 
         if not recorded:
             return None
+        if frames_read >= max_frames and not barged and not fast_end:
+            # 30 s sem parar de "falar": era barulho do ambiente, não alguém falando.
+            print(f"[VAD] descartado: som contínuo por {self.max_duration:.0f} s (ruído do ambiente)", flush=True)
+            self._absorb_as_noise(recorded)
+            return None
         speech_seconds = speech_frames * FRAME_MS / 1000
         # Se o nome já foi reconhecido ao vivo (o bip já tocou), a fala é de verdade: nunca descarta.
         self.last_barged = barged
@@ -313,6 +335,8 @@ class VadRecorder:
                 # para dar para calibrar os limites.
                 print(f"[VAD] descartado: fala {speech_seconds:.2f} s, voz {voiced_frames}/{needed} quadros, "
                       f"limite {threshold:.0f}", flush=True)
+                if speech_seconds >= 0.5:
+                    self._absorb_as_noise(recorded)  # barulho longo sem voz: é o ambiente
                 return None
 
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
