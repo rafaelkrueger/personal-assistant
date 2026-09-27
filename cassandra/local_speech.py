@@ -192,7 +192,9 @@ class WakeStream:
         text = " ".join(t for t in self._texts if t).strip()
         heard = self.heard or self._has_name(text)
         words = text.split()
-        only_name = heard and bool(words) and all(w in self.speech.wake_words or w == "[unk]" for w in words)
+        # "Só o nome" = nenhuma outra palavra. [unk] é o resto da frase que a gramática restrita não conhece
+        # ("que horas são"): contar isso como nada jogava o pedido fora sem transcrever.
+        only_name = heard and bool(words) and all(w in self.speech.wake_words for w in words)
         self.speech.last_only_name = only_name
         self.speech.last_heard = text
         return heard, only_name, text
