@@ -28,6 +28,29 @@ FAST_END_SILENCE = 0.15
 _CAPTURE_RATES = (16_000, 48_000, 44_100, 32_000, 22_050, 96_000)
 
 
+# Porta de voz: só é fala se houver som com "tom de voz" — periódico no tom da prega vocal (80–400 Hz) e não um
+# tom único (bip). Chiado, estalos e ruído do microfone não passam (0 quadros no ruído real medido), e nada disso
+# vai para a transcrição — que, com áudio sem fala, inventa texto.
+VOICED_PERIODICITY = 0.45
+VOICED_MAX_TONAL = 0.30
+MIN_VOICED_FRAMES = 7  # ~0,2 s de voz
+
+
+def _is_voiced(frame: bytes) -> bool:
+    import numpy as np  # noqa: PLC0415
+
+    x = np.frombuffer(frame, dtype=np.int16).astype(np.float32)
+    x = x - x.mean()
+    energy = float((x * x).sum())
+    if energy < 1e4:
+        return False
+    ac = np.correlate(x, x, "full")[len(x) - 1:]
+    if float(ac[40:201].max() / ac[0]) < VOICED_PERIODICITY:
+        return False
+    spec = np.abs(np.fft.rfft(x * np.hanning(len(x)))) ** 2
+    return float(spec.max() / spec.sum()) < VOICED_MAX_TONAL
+
+
 def _to_16k(frame: bytes, rate: int) -> bytes:
     """PCM 16-bit mono na taxa do microfone -> 16 kHz."""
     if rate == SAMPLE_RATE:
@@ -190,6 +213,7 @@ class VadRecorder:
         speaking = False
         silent_frames = 0
         speech_frames = 0
+        voiced_frames = 0
         interrupted = False
         threshold = self._threshold()
         fast_end = False  # quem ouve ao vivo avisou (ex.: o nome foi reconhecido): basta uma pausa curta
@@ -223,12 +247,14 @@ class VadRecorder:
                                 fast_end = bool(on_frame(f)) or fast_end
                             fast_end = bool(on_frame(frame)) or fast_end
                         recorded.extend(pre_roll)
+                        voiced_frames = sum(_is_voiced(f) for f in pre_roll) + _is_voiced(frame)
                         pre_roll.clear()
                         recorded.append(frame)
                         silent_frames = 0
                         speech_frames = 1
                 else:
                     recorded.append(frame)
+                    voiced_frames += _is_voiced(frame)
                     if on_frame:
                         fast_end = bool(on_frame(frame)) or fast_end
                     if energy < threshold:
@@ -251,6 +277,8 @@ class VadRecorder:
         speech_seconds = speech_frames * FRAME_MS / 1000
         if speech_seconds < MIN_SPEECH_SECONDS:
             return None  # estalo/ruído: descartado sem registrar (só poluía o log)
+        if voiced_frames < MIN_VOICED_FRAMES:
+            return None  # sem voz humana (chiado, bip, batida): nem vai para a transcrição
 
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
         tmp.close()
