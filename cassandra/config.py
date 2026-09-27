@@ -41,6 +41,10 @@ class Settings:
     web_search_enabled: bool = True
 
 
+CASSANDRA_VARIANTS = ("cassandra", "casandra", "cassanda", "kassandra", "kasandra", "cassandre", "cassandro",
+                      "sandra", "alessandra", "lessandra")
+
+
 def load_settings() -> Settings:
     load_dotenv()
 
@@ -52,6 +56,10 @@ def load_settings() -> Settings:
         "cassandra,casandra,cassanda",
     ).strip()
     assistant_aliases = [value.strip().lower() for value in raw_aliases.split(",") if value.strip()]
+    if name == "cassandra":
+        # A transcrição muitas vezes corta ou troca o começo do nome ("Sandra", "Kassandra", "Alessandra"):
+        # tudo isso também chama a assistente, mesmo que o .env liste só alguns.
+        assistant_aliases += [v for v in CASSANDRA_VARIANTS if v not in assistant_aliases]
     input_mode = os.getenv("INPUT_MODE", "text").strip().lower() or "text"
     transcription_model = (
         os.getenv("TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe").strip()

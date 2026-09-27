@@ -6,10 +6,11 @@ Dois usos:
   - transcribe(): transcrição completa local, usada quando não há chave/créditos da OpenAI. Mais lenta
     (alguns segundos por frase num Raspberry Pi 3) e menos precisa que a OpenAI, mas grátis.
 
-Detecção do nome: o Vosk roda com uma gramática restrita (o nome + palavras "concorrentes" parecidas + [unk]).
-Sem as concorrentes, frases como "a casa da minha avó" ou "casa da Sandra" viravam "cassandra" (a gramática
-força tudo para a única palavra que conhece). Com elas, foram 12/12 acertos nos testes (6 com o nome, 6 sem).
-O nome precisa estar entre as 2 primeiras palavras reconhecidas, como no uso normal ("Cassandra, ...").
+Detecção do nome: o Vosk roda com uma gramática restrita (o nome e as variações — "sandra", "alessandra"…,
+ver CASSANDRA_VARIANTS em config.py — + palavras "concorrentes" parecidas + [unk]). Sem as concorrentes, frases
+como "a casa da minha avó" viravam "cassandra" (a gramática força tudo para a única palavra que conhece).
+O nome precisa estar entre as 2 primeiras palavras reconhecidas, como no uso normal ("Cassandra, ...") — por
+isso "casa da Sandra" não chama, mas "Sandra, ..." chama.
 
 Modelo: vosk-model-small-pt (~50 MB, baixado sozinho na primeira vez para models/, fora do git).
 """
@@ -26,7 +27,7 @@ DEFAULT_MODEL_PATH = "models/vosk-model-small-pt-0.3"
 _MODEL_URL = "https://alphacephei.com/vosk/models/{name}.zip"
 
 # Palavras parecidas com "cassandra" que precisam existir na gramática para não virarem o nome.
-_COMPETITORS = ["casa", "da", "sandra", "alessandra", "casada", "cansada"]
+_COMPETITORS = ["casa", "da", "casada", "cansada"]
 
 
 class LocalSpeech:

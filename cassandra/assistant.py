@@ -667,7 +667,8 @@ class CassandraAssistant:
         t = unicodedata.normalize("NFKD", command.lower())
         t = "".join(c for c in t if not unicodedata.combining(c))
         t = re.sub(r"[^a-z ]+", " ", t)
-        t = re.sub(r"\b(cassandra|casandra|cassanda)\b", " ", t)
+        aliases = self.settings.assistant_aliases or [self.settings.assistant_name]
+        t = re.sub(r"\b(" + "|".join(map(re.escape, aliases)) + r")\b", " ", t)
         t = " ".join(t.split())
         if not t or len(t.split()) > 5 or re.search(r"\b(mas|agora|e ai|toca|liga|desliga|coloca|me)\b", t):
             return False
