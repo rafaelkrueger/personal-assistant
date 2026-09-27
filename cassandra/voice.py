@@ -10,6 +10,7 @@ import threading
 import time
 from collections.abc import Iterator
 from pathlib import Path
+from xml.sax.saxutils import escape as _xml_escape
 
 
 def _split_sentences(text: str) -> tuple[list[str], str]:
@@ -40,6 +41,31 @@ def _split_sentences(text: str) -> tuple[list[str], str]:
 PLAYERS = ["pw-play", "ffplay", "mpg123", "mpv", "cvlc", "play"]
 
 _OPENAI_RETRY_AFTER = 600  # depois de uma falha da voz da OpenAI (ex.: sem créditos), só voz grátis por 10 min
+_AZURE_RETRY_AFTER = 600  # idem para o Azure (ex.: franquia grátis do mês esgotada): usa a próxima voz por 10 min
+
+# Voz do Azure (Microsoft Speech). Chave e região no .env (AZURE_SPEECH_KEY, AZURE_SPEECH_REGION); o plano
+# gratuito F0 dá 500 mil caracteres/mês e, esgotado, só recusa (sem cobrar) — aí a OpenAI assume.
+AZURE_DEFAULT_VOICE = "pt-BR-FranciscaNeural"
+
+
+def _azure_config() -> tuple[str, str, str]:
+    return (os.getenv("AZURE_SPEECH_KEY", "").strip(), os.getenv("AZURE_SPEECH_REGION", "brazilsouth").strip(),
+            os.getenv("AZURE_TTS_VOICE", AZURE_DEFAULT_VOICE).strip() or AZURE_DEFAULT_VOICE)
+
+
+def _azure_request(text: str, output_format: str):
+    """Abre o streaming da voz do Azure (contexto httpx). O chamador lê os bytes enquanto chegam."""
+    import httpx  # noqa: PLC0415 — já vem com o pacote openai
+
+    key, region, voice = _azure_config()
+    ssml = (f"<speak version='1.0' xml:lang='pt-BR'><voice name='{voice}'>"
+            f"{_xml_escape(text)}</voice></speak>")
+    return httpx.stream(
+        "POST", f"https://{region}.tts.speech.microsoft.com/cognitiveservices/v1",
+        headers={"Ocp-Apim-Subscription-Key": key, "Content-Type": "application/ssml+xml",
+                 "X-Microsoft-OutputFormat": output_format, "User-Agent": "cassandra"},
+        content=ssml.encode("utf-8"), timeout=httpx.Timeout(10.0, read=30.0),
+    )
 
 # Variante feminina do espeak-ng. Medido num Raspberry Pi 3: ~80 ms por frase. As alternativas femininas
 # grátis foram bem mais lentas (Edge TTS ~4,5 s, Kokoro ~25 s) e o Piper não tem voz feminina em português.
@@ -79,11 +105,12 @@ class VoiceOutput:
     """Text-to-speech output.
 
     Engines:
+      - azure: Microsoft Azure Speech (natural pt-BR voices; free tier of 500k chars/month).
       - openai: OpenAI TTS (the most natural; paid; voice "nova" is female).
       - espeak: espeak-ng with a female variant (free, instant, robotic).
       - piper: Piper, neural voice running on the device (free, natural, but male and ~3 s per sentence on
         a Pi 3; only loaded when chosen).
-    engine="auto" (default) uses OpenAI while there's a key and it works; if it fails (e.g. no credits) it
+    engine="auto" (default) uses Azure when AZURE_SPEECH_KEY is set, then OpenAI while there's a key and it works; if it fails (e.g. no credits) it
     switches to the female espeak and skips OpenAI for 10 minutes. Every engine falls back to espeak, so a
     missing key or credits never leaves Cassandra silent.
 
@@ -91,7 +118,7 @@ class VoiceOutput:
     while Cassandra is still speaking.
     """
 
-    ENGINES = ("auto", "openai", "piper", "espeak")
+    ENGINES = ("auto", "azure", "openai", "piper", "espeak")
 
     def __init__(
         self,
@@ -119,6 +146,7 @@ class VoiceOutput:
         if self.engine == "piper":
             self._piper.preload()
         self._openai_down_until = 0.0
+        self._azure_down_until = 0.0
         self._last_engine: str | None = None
         self._play_lock = threading.Lock()  # uma fala por vez (chat web em segundo plano + microfone)
 
@@ -130,7 +158,7 @@ class VoiceOutput:
         cleaned = text.strip()
         if not cleaned:
             return
-        if self._speak_openai_stream(cleaned):
+        if self._speak_streamed(cleaned):
             return
         path = self._synthesize(cleaned)
         if path:
@@ -139,18 +167,81 @@ class VoiceOutput:
     # ── Voz da OpenAI em streaming ────────────────────────────────────────────
 
     def _can_stream(self) -> bool:
-        return (self._player == "pw-play" and self.llm is not None
-                and self._engine_order()[0] == "openai")
+        """Voz em streaming (Azure ou OpenAI) tocada pelo pw-play enquanto chega."""
+        return self._player == "pw-play" and self._engine_order()[0] in ("azure", "openai")
 
-    def _cache_path(self, text: str) -> Path | None:
+    def _speak_streamed(self, text: str) -> bool:
+        """Fala com o 1º motor com streaming que funcionar; False = ninguém conseguiu (quem chamou usa arquivo)."""
+        for engine in self._engine_order():
+            if engine == "azure" and self._speak_azure_stream(text):
+                return True
+            if engine == "openai" and self._speak_openai_stream(text):
+                return True
+            if engine not in ("azure", "openai"):
+                return False
+        return False
+
+    def _speak_azure_stream(self, text: str) -> bool:
+        """Fala `text` com a voz do Azure tocando enquanto chega. False se não deu (a próxima voz assume)."""
+        key, _region, voice = _azure_config()
+        if self._player != "pw-play" or not key or time.monotonic() < self._azure_down_until:
+            return False
+        cache = self._cache_path(text, engine=f"azure|{voice}")
+        play = ["pw-play", "--raw", "--format", "s16", "--rate", str(_STREAM_RATE), "--channels", "1", "-"]
+        with self._play_lock:
+            if cache and cache.exists():
+                with open(cache, "rb") as fh:
+                    subprocess.run(play, stdin=fh, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+                return True
+            proc = None
+            got: list[bytes] = []
+            try:
+                with _azure_request(text, "raw-24khz-16bit-mono-pcm") as resp:
+                    if resp.status_code != 200:
+                        raise RuntimeError(f"HTTP {resp.status_code}: {resp.read()[:160]!r}")
+                    for chunk in resp.iter_bytes(4096):
+                        if proc is None:
+                            proc = subprocess.Popen(play, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                                                    stderr=subprocess.DEVNULL)
+                            if self._last_engine != "azure":
+                                print("[VOZ] Falando com: azure (streaming)", flush=True)
+                                self._last_engine = "azure"
+                        proc.stdin.write(chunk)
+                        if cache:
+                            got.append(chunk)
+            except Exception as exc:  # noqa: BLE001 — franquia esgotada, rede...: a próxima voz assume
+                if proc is None:
+                    self._azure_down_until = time.monotonic() + _AZURE_RETRY_AFTER
+                    print(f"[VOZ] Voz do Azure falhou ({str(exc)[:160]}); usando a próxima voz por 10 min.",
+                          flush=True)
+                    return False
+            finally:
+                if proc is not None:
+                    try:
+                        proc.stdin.close()
+                    except OSError:
+                        pass
+                    proc.wait()
+            if proc is None or proc.returncode != 0:
+                return False
+            if cache and got:
+                try:
+                    _TTS_CACHE.mkdir(parents=True, exist_ok=True)
+                    cache.write_bytes(b"".join(got))
+                except OSError:
+                    pass
+            return True
+
+    def _cache_path(self, text: str, engine: str | None = None) -> Path | None:
         if len(text) > _CACHE_MAX_CHARS:
             return None
-        key = hashlib.sha1(f"{self.tts_model}|{self.tts_voice}|{text}".encode()).hexdigest()[:20]
+        prefix = engine or f"{self.tts_model}|{self.tts_voice}"
+        key = hashlib.sha1(f"{prefix}|{text}".encode()).hexdigest()[:20]
         return _TTS_CACHE / f"{key}.pcm"
 
     def _speak_openai_stream(self, text: str) -> bool:
         """Fala `text` com a voz da OpenAI tocando enquanto ela gera. False se não deu (a voz grátis assume)."""
-        if not self._can_stream():
+        if self._player != "pw-play" or self.llm is None or "openai" not in self._engine_order():
             return False
         cache = self._cache_path(text)
         # --raw: sem ele o pw-play (PipeWire 1.4) tenta ler um cabeçalho de arquivo no stdin, recusa o PCM e sai.
@@ -241,7 +332,7 @@ class VoiceOutput:
                 if sentence is None:
                     break
                 parts_stream.append(sentence)
-                if not self._speak_openai_stream(sentence):
+                if not self._speak_streamed(sentence):
                     path = self._synthesize(sentence)
                     if path:
                         self._play_file(path)
@@ -288,11 +379,15 @@ class VoiceOutput:
             return ["piper", "espeak"]
         if self.engine == "openai":
             return ["openai", "espeak"]
-        # auto: OpenAI só se houver chave e ela não tiver falhado há pouco; senão a voz feminina grátis
         from cassandra import llm_settings  # noqa: PLC0415
 
         openai_ok = bool(llm_settings.get()["openai_api_key"]) and time.monotonic() >= self._openai_down_until
-        return (["openai"] if openai_ok else []) + ["espeak"]
+        azure_ok = bool(_azure_config()[0]) and time.monotonic() >= self._azure_down_until
+        if self.engine == "azure":
+            # Azure; se ele falhar (ex.: franquia do mês esgotada), a OpenAI segura até ele voltar
+            return (["azure"] if azure_ok else []) + (["openai"] if openai_ok else []) + ["espeak"]
+        # auto: Azure (se configurado) > OpenAI (se houver chave e não falhou há pouco) > voz feminina grátis
+        return (["azure"] if azure_ok else []) + (["openai"] if openai_ok else []) + ["espeak"]
 
     def _synthesize(self, text: str) -> str | None:
         """Gera o áudio da frase num arquivo temporário (quem toca apaga). None se nenhum motor conseguiu."""
@@ -300,6 +395,10 @@ class VoiceOutput:
             try:
                 path = getattr(self, f"_synth_{engine}")(text)
             except Exception as exc:  # noqa: BLE001
+                if engine == "azure":
+                    self._azure_down_until = time.monotonic() + _AZURE_RETRY_AFTER
+                    print(f"[VOZ] Voz do Azure falhou ({str(exc)[:120]}); usando a próxima voz por 10 min.", flush=True)
+                    continue
                 if engine == "openai":
                     self._openai_down_until = time.monotonic() + _OPENAI_RETRY_AFTER
                     print(f"[VOZ] Voz da OpenAI falhou ({str(exc)[:120]}); usando a voz grátis por 10 min.", flush=True)
@@ -313,6 +412,18 @@ class VoiceOutput:
                     self._last_engine = engine
                 return path
         return None
+
+    def _synth_azure(self, text: str) -> str | None:
+        if not _azure_config()[0]:
+            return None
+        with _azure_request(text, "riff-24khz-16bit-mono-pcm") as resp:
+            if resp.status_code != 200:
+                raise RuntimeError(f"HTTP {resp.status_code}: {resp.read()[:160]!r}")
+            audio = resp.read()
+        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        tmp.write(audio)
+        tmp.close()
+        return tmp.name
 
     def _synth_openai(self, text: str) -> str | None:
         if not self.llm:
