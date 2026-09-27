@@ -37,7 +37,7 @@ VOICED_PERIODICITY = 0.45
 VOICED_MAX_TONAL = 0.30
 # Ruído do ambiente: janela dos últimos ~4,5 s sem fala e o percentil usado como "ruído".
 _NOISE_WINDOW = 150
-_NOISE_PERCENTILE = 0.5
+_NOISE_PERCENTILE = 0.2  # o "fundo" do ambiente; a mediana incluía sons baixos da casa e subia demais o limite
 # Depois do nome, a pausa que encerra a frase: cobre a vírgula de "Cassandra, que horas são?".
 _AFTER_NAME_SILENCE = 0.9
 MIN_VOICED_FRAMES = 3  # ~0,2 s de voz
