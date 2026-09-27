@@ -37,6 +37,8 @@ from skills.web_search.skill import WebSearchSkill
 from cassandra.routine_manager import RoutineManager
 from cassandra.calendar_service import CalendarService
 
+TIMER_RINGS = 3  # quantas vezes o toque soa quando um timer acaba
+
 
 class CassandraAssistant:
     def __init__(self) -> None:
@@ -161,8 +163,10 @@ class CassandraAssistant:
                 for fired in self.timer_manager.pop_fired():
                     label = format_duration(fired.duration_seconds)
                     print(f"Cassandra: [TIMER] {label} finalizado!")
-                    self.sound_player.play(self.settings.ring_sound_path)
-                    self.sound_player.play(self.settings.ring_sound_path)
+                    # Um toque depois do outro (tocados juntos se sobrepunham e soavam como um só).
+                    for _ in range(TIMER_RINGS):
+                        self.sound_player.play(self.settings.ring_sound_path, wait=True)
+                        time.sleep(0.25)
                 if active_until is not None:
                     active_until = time.monotonic() + self.settings.wake_timeout_seconds
                 continue
