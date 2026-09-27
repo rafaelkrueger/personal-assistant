@@ -153,7 +153,8 @@ class VoiceOutput:
         if not self._can_stream():
             return False
         cache = self._cache_path(text)
-        play = ["pw-play", "--format", "s16", "--rate", str(_STREAM_RATE), "--channels", "1", "-"]
+        # --raw: sem ele o pw-play (PipeWire 1.4) tenta ler um cabeçalho de arquivo no stdin, recusa o PCM e sai.
+        play = ["pw-play", "--raw", "--format", "s16", "--rate", str(_STREAM_RATE), "--channels", "1", "-"]
         with self._play_lock:
             if cache and cache.exists():
                 with open(cache, "rb") as fh:
@@ -188,6 +189,9 @@ class VoiceOutput:
                     proc.wait()
             if proc is None:
                 return False
+            if proc.returncode != 0:
+                print(f"[VOZ] O pw-play falhou (código {proc.returncode}); tocando por arquivo.", flush=True)
+                return False  # não guarda no cache; quem chamou fala de novo pelo caminho de arquivo
             if cache and got:
                 try:
                     _TTS_CACHE.mkdir(parents=True, exist_ok=True)
