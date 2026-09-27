@@ -343,8 +343,6 @@ class VadRecorder:
                 # para dar para calibrar os limites.
                 print(f"[VAD] descartado: fala {speech_seconds:.2f} s, voz {voiced_frames}/{needed} quadros, "
                       f"limite {threshold:.0f}", flush=True)
-                if speech_seconds >= 0.5:
-                    self._absorb_as_noise(recorded)  # barulho longo sem voz: é o ambiente
                 return None
 
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
