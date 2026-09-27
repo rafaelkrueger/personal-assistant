@@ -84,7 +84,8 @@ class CassandraAssistant:
 
             maestro_client.start()  # checa em segundo plano se o maestro está ligado
             _skills.append(WebSearchSkill(self.llm))
-        _skills.append(GeneralChatSkill(self.llm, self.memory))
+        # announce: resultado de tarefa longa de outro agente (ex.: o IDE criando um site) é falado quando chega
+        _skills.append(GeneralChatSkill(self.llm, self.memory, announce=lambda text: self.announce(text)))
         self.router = SkillRouter(skills=_skills)
         if self.settings.input_mode in {"mic", "auto"}:
             # auto: escuta o microfone quando houver um; sem microfone, espera em silêncio até ele ser plugado.
@@ -479,12 +480,16 @@ class CassandraAssistant:
         recurring_daily: bool,
         label: str = "Alarme Cassandra",
         days_of_week: list[int] | None = None,
+        date_ymd: str | None = None,
+        day_of_month: int | None = None,
     ) -> dict:
         alarm = self.alarm_manager.add_alarm(
             time_hhmm=time_hhmm,
             recurring_daily=recurring_daily,
             label=label,
             days_of_week=days_of_week,
+            date_ymd=date_ymd,
+            day_of_month=day_of_month,
         )
         return {
             "id": alarm.id,
@@ -494,6 +499,8 @@ class CassandraAssistant:
             "days_of_week": alarm.days_of_week,
             "next_trigger_at": alarm.next_trigger_at,
             "enabled": alarm.enabled,
+            "date_ymd": alarm.date_ymd,
+            "day_of_month": alarm.day_of_month,
         }
 
     def get_ui_settings(self) -> dict:

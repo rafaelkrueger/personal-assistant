@@ -218,6 +218,7 @@ class _MaestroClient:
             request_timeout=_TIMEOUT,
         )
         self._failed_until = 0.0
+        self.last_error = ""
 
     def start(self) -> None:
         self._link.start()
@@ -239,14 +240,18 @@ class _MaestroClient:
         """Pesquisa na internet via maestro (que despacha para o web-agent). None se não houver resposta."""
         if not self.available():
             return None
+        self.last_error = ""
         result = self._link.ask(
             f"Pesquise na internet e responda em português, de forma objetiva: {query}",
+            # alvo já decidido: o maestro não precisa do LLM dele para escolher (e não falha se ele estiver fora)
+            target="web-agent",
             # orçamento de tempo do web-agent: ele para de navegar e responde com o que coletou antes do nosso prazo
             parameters={"max_seconds": max(30, _TIMEOUT - 20)},
             timeout=_TIMEOUT,
         )
         if not result.ok:
-            self._mark_failed(result.error or result.status or "sem resposta")
+            self.last_error = result.error or result.status or "sem resposta"
+            self._mark_failed(self.last_error)
             return None
         log.debug("maestro despachou para %s", result.target_agent)
         return (result.result or "").strip() or None
@@ -333,13 +338,12 @@ class WebSearchSkill(Skill):
         raw = _client.query(query)
         log.debug("Resposta via maestro: %s", repr(raw)[:120] if raw else "NENHUMA")
         if not raw:
-            # o maestro (ou o agente que ele escolheu) falhou: responde com o próprio LLM
-            log.debug("maestro sem resposta → respondendo direto com o LLM")
-            return self.llm.answer(
-                user_text=text,
-                system_prompt=_FORMAT_PROMPTS["direto"],
-                history=[],
-            )
+            # Falhou: diz o motivo de verdade. (Responder com o próprio LLM fazia ela dizer "não posso pesquisar",
+            # como se não existisse o web-agent.)
+            from skills.general_chat.skill import _human_error  # noqa: PLC0415
+
+            log.debug("maestro sem resposta: %s", _client.last_error)
+            return f"O web-agent não conseguiu pesquisar agora: {_human_error(_client.last_error)}."
 
         # ── 4. Formata a resposta com prompt específico da categoria ───────────
         format_prompt = _FORMAT_PROMPTS.get(category, _FORMAT_PROMPTS["web_geral"])
