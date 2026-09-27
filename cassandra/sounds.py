@@ -11,28 +11,29 @@ class SoundPlayer:
         self._backend = detect_player()  # pw-play primeiro: vai direto para a saída padrão do PipeWire
         self.enabled = True
 
-    def play(self, sound_path: str, wait: bool = False) -> None:
-        """Toca o som. wait=True espera terminar (para tocar vários em sequência sem sobrepor)."""
+    def play(self, sound_path: str, wait: bool = False) -> subprocess.Popen | None:
+        """Toca o som. wait=True espera terminar (para tocar vários em sequência sem sobrepor). Sem wait,
+        devolve o processo (quem chamou pode interromper o som)."""
         if not self.enabled or not self._backend:
-            return
+            return None
 
         path = Path(sound_path)
         if not path.exists():
-            return
+            return None
 
         command = player_command(self._backend, str(path))
         if not command:
-            return
+            return None
 
         if wait:
             try:
                 subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30, check=False)
             except subprocess.TimeoutExpired:
                 pass
-            return
+            return None
 
         # Play asynchronously so it does not block assistant response.
-        subprocess.Popen(
+        return subprocess.Popen(
             command,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,

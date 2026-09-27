@@ -95,6 +95,12 @@ class AlarmManager:
         with self._lock:
             return bool(self._ringing_alarm_ids)
 
+    def ringing(self) -> list[dict]:
+        """Alarmes tocando agora (id, label, time_hhmm) — a UI mostra o aviso para parar."""
+        with self._lock:
+            return [{"id": a.id, "label": a.label, "time_hhmm": a.time_hhmm}
+                    for a in self._alarms if a.id in self._ringing_alarm_ids]
+
     def _run_monitor(self) -> None:
         while self._running:
             now = datetime.now()
@@ -126,8 +132,16 @@ class AlarmManager:
     def _run_ringer(self) -> None:
         while self._running:
             if self.is_ringing():
-                self.sound_player.play(self.ring_sound_path)
-                time.sleep(2.5)
+                # Um toque de cada vez (sem sobrepor) e, ao parar o alarme, o som corta na hora.
+                proc = self.sound_player.play(self.ring_sound_path)
+                while proc is not None and proc.poll() is None and self.is_ringing():
+                    time.sleep(0.2)
+                if proc is not None and proc.poll() is None:
+                    proc.terminate()
+                if proc is None:
+                    time.sleep(2.5)
+                elif self.is_ringing():
+                    time.sleep(0.4)
             else:
                 time.sleep(0.4)
 

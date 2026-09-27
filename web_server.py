@@ -160,6 +160,17 @@ HTML_PAGE = """<!doctype html>
     .timer-pill.fired{border-color:rgba(251,191,36,.45);background:var(--amber-dim);color:var(--amber);animation:tpBlink 1s ease-in-out infinite}
     @keyframes tpBlink{50%{opacity:.55}}
     @media(max-width:640px){.timer-pill .tp-label{display:none}.topbar-right .clock.has-timers{display:none}}
+    .alarm-toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,140%);z-index:300;display:flex;align-items:center;gap:14px;padding:14px 14px 14px 18px;border-radius:16px;border:1px solid rgba(251,191,36,.45);background:#1c1508;color:var(--text);box-shadow:0 12px 40px rgba(0,0,0,.55),0 0 28px rgba(251,191,36,.18);transition:transform .25s ease;width:max-content;max-width:calc(100vw - 32px)}
+    .alarm-toast.show{transform:translate(-50%,0)}
+    .alarm-toast .at-icon{width:38px;height:38px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:var(--amber-dim);color:var(--amber);flex-shrink:0;animation:atRing 1s ease-in-out infinite}
+    .alarm-toast .at-icon svg{width:20px;height:20px}
+    .alarm-toast .at-text{min-width:0}
+    .alarm-toast .at-title{font-weight:700;font-size:14px;color:var(--amber)}
+    .alarm-toast .at-sub{font-size:12.5px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .alarm-toast .at-stop{border:0;border-radius:12px;padding:11px 16px;font-weight:700;font-size:14px;background:var(--amber);color:#1a1204;cursor:pointer;flex-shrink:0;white-space:nowrap}
+    .alarm-toast .at-stop:disabled{opacity:.6}
+    @keyframes atRing{0%,100%{transform:rotate(0)}20%{transform:rotate(-14deg)}40%{transform:rotate(12deg)}60%{transform:rotate(-8deg)}80%{transform:rotate(5deg)}}
+    @media(max-width:640px){.alarm-toast{bottom:16px;width:calc(100vw - 32px)}.alarm-toast .at-text{flex:1}}
     .alarm-pill.ringing{border-color:rgba(251,191,36,.35);background:var(--amber-dim);color:var(--amber);box-shadow:0 0 16px rgba(251,191,36,.15)}
 
     /* ═══ BODY ═══ */
@@ -1325,6 +1336,7 @@ HTML_PAGE = """<!doctype html>
 </div>
 
 
+<div class="alarm-toast" id="alarmToast" role="alertdialog" aria-live="assertive"><div class="at-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg></div><div class="at-text"><div class="at-title">Alarme tocando</div><div class="at-sub" id="alarmToastSub"></div></div><button class="at-stop" id="alarmToastStop">Parar alarme</button></div>
 <div class="restart-overlay" id="restartOverlay"><div class="restart-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg><div id="restartTitle">Reiniciando a Cassandra…</div><p id="restartText">Leva uns 20 segundos. A página volta sozinha.</p></div></div>
 
 <script>
@@ -1565,6 +1577,24 @@ function drawTimers(){
   }));
 }
 async function loadTimers(){try{const d=await api("/api/timers");renderTimers(d.timers,d.now);}catch(e){}}
+
+// ── Alarme tocando: aviso fixo até parar (timers não entram aqui) ──
+function renderAlarmToast(list){
+  const t=document.getElementById("alarmToast"); if(!t) return;
+  list=list||[];
+  if(!list.length){t.classList.remove("show");return;}
+  document.getElementById("alarmToastSub").textContent=list.map(a=>`${a.time_hhmm}${a.label&&a.label!=="Alarme"?" · "+a.label:""}`).join("  ·  ");
+  t.classList.add("show");
+}
+async function loadAlarmRinging(){
+  try{const d=await api("/api/alarms/ringing");renderAlarmToast(d.ringing);renderAlarmStatus(d.ringing.length>0);}catch(e){}
+}
+document.getElementById("alarmToastStop").addEventListener("click",async e=>{
+  const b=e.currentTarget; b.disabled=true;
+  try{await api("/api/alarms/stop","POST",{});renderAlarmToast([]);renderAlarmStatus(false);}
+  catch(err){console.error(err);}
+  finally{b.disabled=false;}
+});
 
 // ── Alarm status ──
 function renderAlarmStatus(ringing){
@@ -1949,6 +1979,7 @@ async function refresh(){
     renderTodos(data.todos||[]);
     renderAlarms(data.alarms||[]);
     renderAlarmStatus(Boolean(data.alarm_ringing));
+    renderAlarmToast(data.alarms_ringing||[]);
     renderTimers(data.timers||[],data.now);
     loadRoutines();
     loadAgenda();
@@ -2003,7 +2034,7 @@ document.getElementById("alarmAdd").addEventListener("click",async()=>{
   document.getElementById("alarmLabel").value="";setPreset([]);
   await refresh();
 });
-document.getElementById("alarmStop").addEventListener("click",async()=>{await api("/api/alarms/stop","POST",{});await refresh();});
+document.getElementById("alarmStop").addEventListener("click",async()=>{await api("/api/alarms/stop","POST",{});renderAlarmToast([]);await refresh();});
 
 // ── Export history ──
 document.getElementById("exportHistBtn").addEventListener("click",async()=>{
@@ -2636,6 +2667,7 @@ async function init(){
 }
 init();
 setInterval(refresh,5000);
+setInterval(loadAlarmRinging,2000);  // o aviso de alarme aparece em até 2 s
 setInterval(()=>{if(tmList.length) loadTimers();},2000);
 setInterval(checkWebAgentStatus,30000);
 setInterval(()=>{loadAudio();if(!btPoll)loadBluetooth();loadSpotify();},15000);
@@ -2836,6 +2868,9 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
             if parsed.path == "/api/history":
                 self._send_json({"history": assistant.get_conversation_history()})
                 return
+            if parsed.path == "/api/alarms/ringing":
+                self._send_json({"ringing": assistant.alarm_manager.ringing()})
+                return
             if parsed.path == "/api/timers":
                 self._send_json({"timers": assistant.timer_manager.snapshot(), "now": time.time()})
                 return
@@ -2846,6 +2881,7 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                     "todos":         assistant.get_todos(),
                     "alarms":        assistant.list_alarms(),
                     "alarm_ringing": assistant.is_alarm_ringing(),
+                    "alarms_ringing": assistant.alarm_manager.ringing(),
                     "timers":        assistant.timer_manager.snapshot(),
                     "now":           time.time(),
                 })
