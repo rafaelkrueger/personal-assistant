@@ -30,6 +30,10 @@ _TIMEOUT = int(_env("MAESTRO_TIMEOUT", "120"))
 # Quando o maestro responde mas o pedido falha (ex.: o LLM do web-agent fora do ar), fica de lado por
 # um tempo — senão cada pergunta perde dezenas de segundos esperando falhar de novo.
 _FAILURE_COOLDOWN = 300
+# Quanto a conversa espera pela pesquisa antes de dizer que avisa depois, e o orçamento de tempo do web-agent
+# (ele para de navegar e responde com o que coletou).
+_SEARCH_WAIT = 90
+_SEARCH_BUDGET = 150
 
 # ── Categorias ────────────────────────────────────────────────────────────────
 # Cada categoria define: gatilhos para can_handle e prompt de formatação da resposta.
@@ -289,8 +293,9 @@ class WebSearchSkill(Skill):
 
     name = "web_search"
 
-    def __init__(self, llm: LLMService) -> None:
+    def __init__(self, llm: LLMService, announce=None) -> None:
         self.llm = llm
+        self.announce = announce  # fala na casa o resultado de uma pesquisa que terminou depois da conversa
 
     # Padrões que indicam conversa pura — não precisam de web, bypass rápido
     _CHAT_ONLY = [
@@ -344,18 +349,39 @@ class WebSearchSkill(Skill):
                 history=[],
             )
 
-        # ── 3. Pede a pesquisa ao maestro (que despacha para o web-agent) ──
-        log.debug("Pedindo ao maestro: %s", query)
-        raw = _client.query(query)
-        log.debug("Resposta via maestro: %s", repr(raw)[:120] if raw else "NENHUMA")
-        if not raw:
-            # Falhou: diz o motivo de verdade. (Responder com o próprio LLM fazia ela dizer "não posso pesquisar",
+        # ── 3. Pede a pesquisa ao web-agent (via maestro) ──
+        # Espera até _SEARCH_WAIT; pesquisas mais demoradas (ex.: notícias) seguem em segundo plano e o resultado
+        # é falado quando chegar, em vez de se perder no tempo esgotado.
+        from cassandra.agents_bridge import bridge  # noqa: PLC0415 — (o bridge importa este módulo)
+        from skills.general_chat.skill import _human_error  # noqa: PLC0415
+
+        log.debug("Pedindo ao web-agent: %s", query)
+        reply = bridge.run(
+            "web-agent", f"Pesquise na internet e responda em português, de forma objetiva: {query}",
+            _SEARCH_WAIT, on_late_result=lambda _t, r: self._late_result(text, category, r),
+            parameters={"max_seconds": _SEARCH_BUDGET},
+        )
+        if reply.pending:
+            return "Essa pesquisa está levando mais tempo que o normal. Assim que chegar eu te conto."
+        if not reply.ok or not reply.text:
+            # Diz o motivo de verdade. (Responder com o próprio LLM fazia ela dizer "não posso pesquisar",
             # como se não existisse o web-agent.)
+            log.debug("web-agent sem resposta: %s", reply.error)
+            return f"O web-agent não conseguiu pesquisar agora: {_human_error(reply.error or 'sem resposta')}."
+        return self._format(text, category, reply.text)
+
+    def _late_result(self, text: str, category: str, reply) -> None:
+        """A pesquisa terminou depois da conversa: fala o resultado na casa."""
+        if not self.announce:
+            return
+        if reply.ok and reply.text:
+            self.announce("Chegou o resultado da sua pesquisa. " + self._format(text, category, reply.text))
+        else:
             from skills.general_chat.skill import _human_error  # noqa: PLC0415
 
-            log.debug("maestro sem resposta: %s", _client.last_error)
-            return f"O web-agent não conseguiu pesquisar agora: {_human_error(_client.last_error)}."
+            self.announce(f"A pesquisa não deu certo: {_human_error(reply.error or 'sem resposta')}.")
 
+    def _format(self, text: str, category: str, raw: str) -> str:
         # ── 4. Formata a resposta com prompt específico da categoria ───────────
         format_prompt = _FORMAT_PROMPTS.get(category, _FORMAT_PROMPTS["web_geral"])
         return self.llm.answer(

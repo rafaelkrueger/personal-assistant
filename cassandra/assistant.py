@@ -86,7 +86,7 @@ class CassandraAssistant:
             from cassandra.agents_bridge import bridge  # noqa: PLC0415
 
             bridge.snapshot()  # já busca os agentes (em segundo plano): o 1º pedido não chega sem eles
-            _skills.append(WebSearchSkill(self.llm))
+            _skills.append(WebSearchSkill(self.llm, announce=lambda text: self.announce(text)))
         # announce: resultado de tarefa longa de outro agente (ex.: o IDE criando um site) é falado quando chega
         _skills.append(GeneralChatSkill(self.llm, self.memory, announce=lambda text: self.announce(text)))
         self.router = SkillRouter(skills=_skills)

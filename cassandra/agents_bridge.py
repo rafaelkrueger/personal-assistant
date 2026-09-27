@@ -160,12 +160,15 @@ class AgentsBridge:
     # ── Mandar um pedido ─────────────────────────────────────────────────────
 
     def run(self, target: str, task: str, wait_seconds: float,
-            on_late_result: Callable[[str, AgentReply], None] | None = None) -> AgentReply:
+            on_late_result: Callable[[str, AgentReply], None] | None = None,
+            parameters: dict | None = None) -> AgentReply:
         link = _maestro._link
         base = link.base_url or link.refresh()
         if not base:
             return AgentReply(False, error="o Maestro está desligado (o computador pode estar desligado)")
         body = {"from_agent": link.agent_name, "message": task, "target_agent": target}
+        if parameters:
+            body["parameters"] = parameters
         if link.web_user:
             body["web_user"] = link.web_user
         try:
