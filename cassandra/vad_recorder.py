@@ -38,7 +38,9 @@ VOICED_MAX_TONAL = 0.30
 # Ruído do ambiente: janela dos últimos ~4,5 s sem fala e o percentil usado como "ruído".
 _NOISE_WINDOW = 150
 _NOISE_PERCENTILE = 0.5
-MIN_VOICED_FRAMES = 7  # ~0,2 s de voz
+# Depois do nome, a pausa que encerra a frase: cobre a vírgula de "Cassandra, que horas são?".
+_AFTER_NAME_SILENCE = 0.9
+MIN_VOICED_FRAMES = 3  # ~0,2 s de voz
 
 
 def _is_voiced(frame: bytes) -> bool:
@@ -246,7 +248,7 @@ class VadRecorder:
         fast_end = False  # quem ouve ao vivo avisou (ex.: o nome foi reconhecido): basta uma pausa curta
         # Nome reconhecido ao vivo: o bip já tocou, mas a gravação segue até o fim da frase ("Cassandra, que horas
         # são?" numa gravação só). Encerrar na 1ª pausa depois do nome picava o pedido em dois e perdia o começo.
-        fast_silence_frames = max(silence_frames_needed, int(self.silence_duration * 1000 / FRAME_MS))
+        fast_silence_frames = max(silence_frames_needed, int(_AFTER_NAME_SILENCE * 1000 / FRAME_MS))
         waited_frames = 0
         max_wait_frames = int(max_wait * 1000 / FRAME_MS) if max_wait else None
 

@@ -21,7 +21,7 @@ _HALLUCINATIONS = ("legendas pela comunidade", "amaraorg", "obrigado por assisti
                    "subtitles by", "thanks for watching", "thank you for watching")
 _OPENAI_RETRY_AFTER = 600  # depois de uma falha da OpenAI (ex.: sem créditos), usa só o local por 10 min
 _BARGE_WHILE_SPEAKING = os.getenv("BARGE_IN_WHILE_SPEAKING", "").strip().lower() in {"1", "true", "sim"}
-_SESSION_MIN_VOICED = 4  # quadros com voz exigidos numa sessão ativa (esperando o nome são 7)
+_SESSION_MIN_VOICED = 2  # quadros com voz exigidos numa sessão ativa (esperando o nome são 7)
 
 
 @dataclass
