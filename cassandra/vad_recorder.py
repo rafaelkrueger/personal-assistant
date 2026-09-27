@@ -224,7 +224,11 @@ class VadRecorder:
         max_frames = int(self.max_duration * 1000 / FRAME_MS)
         silence_frames_needed = int(effective_silence * 1000 / FRAME_MS)
 
-        stream, rate, device_frames = self._open_stream(pa, pyaudio)
+        # O microfone fica aberto entre uma gravação e outra: o que a pessoa fala logo depois do bip (enquanto o
+        # loop troca de gravação) fica guardado e não se perde. Antes ele fechava e reabria a cada fala.
+        if getattr(self, "_stream", None) is None:
+            self._stream = self._open_stream(pa, pyaudio)
+        stream, rate, device_frames = self._stream
 
         pre_roll: list[bytes] = []
         recorded: list[bytes] = []
@@ -240,7 +244,9 @@ class VadRecorder:
         self.last_barged = False
         threshold = self._threshold()
         fast_end = False  # quem ouve ao vivo avisou (ex.: o nome foi reconhecido): basta uma pausa curta
-        fast_silence_frames = max(1, int(FAST_END_SILENCE * 1000 / FRAME_MS))
+        # Nome reconhecido ao vivo: o bip já tocou, mas a gravação segue até o fim da frase ("Cassandra, que horas
+        # são?" numa gravação só). Encerrar na 1ª pausa depois do nome picava o pedido em dois e perdia o começo.
+        fast_silence_frames = max(silence_frames_needed, int(self.silence_duration * 1000 / FRAME_MS))
         waited_frames = 0
         max_wait_frames = int(max_wait * 1000 / FRAME_MS) if max_wait else None
 
@@ -311,9 +317,9 @@ class VadRecorder:
                         silent_frames = 0
                     if energy >= threshold * 0.8:  # sílabas mais fracas contam; o chiado (bem abaixo) não
                         speech_frames += 1
-        finally:
-            stream.stop_stream()
-            stream.close()
+        except Exception:
+            self._close_stream()  # microfone desplugado etc.: reabre na próxima
+            raise
 
         if interrupted or echo_aborted:
             return None
@@ -349,7 +355,17 @@ class VadRecorder:
 
         return tmp.name
 
+    def _close_stream(self) -> None:
+        opened, self._stream = getattr(self, "_stream", None), None
+        if opened is not None:
+            try:
+                opened[0].stop_stream()
+                opened[0].close()
+            except Exception:  # noqa: BLE001
+                pass
+
     def close(self) -> None:
+        self._close_stream()
         self._rate = None  # outro microfone pode ser plugado: descobre a taxa de novo
         if self._pa is not None:
             self._pa.terminate()
