@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
+import subprocess
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
@@ -123,6 +125,17 @@ HTML_PAGE = """<!doctype html>
     @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
 
     /* ═══ TOPBAR ═══ */
+    .restart-btn{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.04);color:var(--text2);cursor:pointer;transition:all .15s;flex-shrink:0}
+    .restart-btn:hover{color:var(--text);border-color:var(--border2);background:rgba(255,255,255,.08)}
+    .restart-btn svg{width:16px;height:16px}
+    .restart-btn.spinning svg{animation:spin 1s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .restart-overlay{position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center;background:rgba(5,8,15,.82);backdrop-filter:blur(6px)}
+    .restart-overlay.show{display:flex}
+    .restart-box{text-align:center;padding:24px;max-width:320px}
+    .restart-box svg{width:34px;height:34px;color:var(--brand2);animation:spin 1s linear infinite;margin-bottom:12px}
+    .restart-box div{font-weight:700;font-size:15px}
+    .restart-box p{color:var(--text2);font-size:13px;margin-top:6px}
     .topbar{
       display:flex;align-items:center;justify-content:space-between;
       padding:0 20px;height:var(--topbar-h);
@@ -546,6 +559,7 @@ HTML_PAGE = """<!doctype html>
       </div>
       <div class="topbar-right">
         <span class="clock" id="clock"></span>
+        <button class="restart-btn" id="restartBtn" title="Reiniciar a Cassandra"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg></button>
         <span class="alarm-pill" id="alarmPill"><span class="sdot" id="alarmPillDot"></span><span id="alarmPillText">Ok</span></span>
       </div>
     </header>
@@ -1301,6 +1315,8 @@ HTML_PAGE = """<!doctype html>
   </div>
 </div>
 
+
+<div class="restart-overlay" id="restartOverlay"><div class="restart-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg><div id="restartTitle">Reiniciando a Cassandra…</div><p id="restartText">Leva uns 20 segundos. A página volta sozinha.</p></div></div>
 
 <script>
 const IC = {
@@ -2134,6 +2150,22 @@ async function spPlay(){
 }
 document.getElementById("sp-play").addEventListener("click",spPlay);
 enter(document.getElementById("sp-query"),spPlay);
+// ── Reiniciar a Cassandra (botão do cabeçalho) ──
+document.getElementById("restartBtn").addEventListener("click",async()=>{
+  if(!confirm("Reiniciar a Cassandra agora? Ela fica fora do ar por uns 20 segundos.")) return;
+  const overlay=document.getElementById("restartOverlay");
+  overlay.classList.add("show");
+  try{await api("/api/system/restart","POST",{});}catch(e){/* a conexão pode cair no meio: normal */}
+  const started=Date.now();
+  await new Promise(r=>setTimeout(r,6000));  // dá tempo de ela desligar antes de perguntar se voltou
+  while(Date.now()-started<120000){
+    try{const r=await fetch("/api/settings",{cache:"no-store"});if(r.ok){location.reload();return;}}catch(e){}
+    await new Promise(r=>setTimeout(r,2000));
+  }
+  document.getElementById("restartTitle").textContent="A Cassandra está demorando para voltar";
+  document.getElementById("restartText").textContent="Recarregue a página em alguns instantes.";
+});
+
 // ── Aba Microfone ──
 const MIC_KINDS={status:"estado",heard:"som",no_wake:"sem nome",wake:"nome",transcribed:"texto",ignored:"ignorado",command:"pedido",response:"resposta",error:"erro"};
 const MIC_USEFUL=new Set(["wake","transcribed","ignored","command","response","error","status"]);
@@ -2990,6 +3022,21 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
 
             if parsed.path.startswith("/api/spotify/"):
                 self._spotify_post(parsed.path[len("/api/spotify/"):], self._read_json_body())
+                return
+
+            if parsed.path == "/api/system/restart":
+                # Responde antes e reinicia o serviço logo depois (o systemd sobe a Cassandra de novo).
+                self._send_json({"ok": True, "message": "Reiniciando…"})
+
+                def _restart() -> None:
+                    time.sleep(0.8)
+                    try:
+                        subprocess.run(["systemctl", "--user", "--no-block", "restart", "cassandra-assistant"],
+                                       timeout=10, check=True, capture_output=True)
+                    except Exception:  # noqa: BLE001 — fora do serviço (ex.: rodando à mão): só encerra
+                        os._exit(0)
+
+                Thread(target=_restart, daemon=True).start()
                 return
 
             if parsed.path == "/api/speak":
