@@ -77,6 +77,7 @@ class MicrophoneInputSource:
         self.llm = llm
         self.transcription_model = transcription_model
         self.transcription_language = transcription_language
+        self._azure_down_until = 0.0  # depois de uma falha do Azure, usa a OpenAI/local por um tempo
         self.transcription_prompt = transcription_prompt
         self.vad_wake_silence_duration = vad_wake_silence_duration
         self.interrupt_event = interrupt_event
@@ -229,17 +230,33 @@ class MicrophoneInputSource:
         return self.local is not None and self.local.available()
 
     def _transcribe(self, wav_path: str) -> str:
-        provider = self.transcription_provider
+        # Provedor e modelo vêm das Configurações > Modelo de IA > Transcrição (valem na hora); o .env é o padrão.
+        settings = llm_settings.get()
+        provider = settings.get("stt_provider") or self.transcription_provider
+        model = settings.get("stt_model") or self.transcription_model
+        if provider == "azure":
+            if time.monotonic() >= self._azure_down_until:
+                try:
+                    from cassandra import azure_stt  # noqa: PLC0415
+
+                    return azure_stt.transcribe(wav_path, self.transcription_language)
+                except Exception as exc:  # noqa: BLE001 — franquia do mês esgotada, rede...: OpenAI ou local
+                    self._azure_down_until = time.monotonic() + _OPENAI_RETRY_AFTER
+                    print(f"[MIC] Transcrição do Azure falhou ({str(exc)[:160]}); usando a OpenAI/local por 10 min.",
+                          flush=True)
+            provider = "auto"
+        if provider == "local" and self._local_ready():
+            return self.local.transcribe(wav_path)
         use_openai = provider == "openai" or (
-            provider == "auto"
-            and bool(llm_settings.get()["openai_api_key"])
+            provider in ("auto", "local")
+            and bool(settings["openai_api_key"])
             and time.monotonic() >= self._openai_down_until
         )
         if use_openai:
             try:
                 return self.llm.transcribe_audio_file(
                     wav_path,
-                    model=self.transcription_model,
+                    model=model,
                     language=self.transcription_language,
                     prompt=self.transcription_prompt,
                 )

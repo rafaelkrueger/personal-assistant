@@ -31,6 +31,8 @@ _STORE_FILE = Path("data/llm_settings.json")
 _lock = threading.Lock()
 
 PROVIDERS = ("openai", "deepseek", "local")
+# Transcrição do microfone (o que a pessoa fala vira texto). auto = OpenAI e, se falhar, a local (Vosk).
+STT_PROVIDERS = ("auto", "openai", "azure", "local")
 
 # Nomes aposentados pela DeepSeek (deepseek-chat/reasoner saíram em 2026-07-24; hoje "deepseek-chat" é só um
 # apelido do deepseek-flash). Mesmo mapeamento do editor.
@@ -60,6 +62,9 @@ _DEFAULTS: dict[str, Any] = {
     "local_llm_base_url": _env("LOCAL_LLM_BASE_URL", "http://desktop-cc6nlck.local:8002")
     or "http://desktop-cc6nlck.local:8002",
     "local_llm_model": _env("LOCAL_LLM_MODEL"),
+    # Transcrição do microfone (Configurações > Modelo de IA > Transcrição). O .env é o padrão.
+    "stt_provider": _env("TRANSCRIPTION_PROVIDER", "auto").lower() or "auto",
+    "stt_model": _env("TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe") or "gpt-4o-mini-transcribe",
     # Voz da Cassandra pelo Azure (Microsoft Speech). Sem chave, a voz é a da OpenAI (ver voice.py).
     "azure_speech_key": _env("AZURE_SPEECH_KEY"),
     "azure_speech_region": _env("AZURE_SPEECH_REGION", "brazilsouth") or "brazilsouth",
@@ -134,6 +139,9 @@ def get_public() -> dict[str, Any]:
         "audio_available": bool(s["openai_api_key"]),
         "local_llm_base_url": s["local_llm_base_url"],
         "local_llm_model": s["local_llm_model"],
+        "stt_provider": s["stt_provider"],
+        "stt_providers": list(STT_PROVIDERS),
+        "stt_model": s["stt_model"],
         "azure_speech_key_set": bool(s["azure_speech_key"]),
         "azure_speech_key_preview": _preview(s["azure_speech_key"]),
         "azure_speech_region": s["azure_speech_region"],
@@ -145,6 +153,9 @@ def update(fields: dict[str, Any]) -> dict[str, Any]:
     provider = fields.get("llm_provider")
     if provider is not None and provider not in PROVIDERS:
         raise ValueError(f"llm_provider inválido: {provider!r} (use openai, deepseek ou local)")
+    stt = fields.get("stt_provider")
+    if stt is not None and stt not in STT_PROVIDERS:
+        raise ValueError(f"stt_provider inválido: {stt!r} (use {', '.join(STT_PROVIDERS)})")
     with _lock:
         for key, value in fields.items():
             if key not in _DEFAULTS:

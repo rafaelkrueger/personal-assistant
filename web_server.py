@@ -642,6 +642,8 @@ HTML_PAGE = """<!doctype html>
     /* Modelo de IA */
     .llm-input{width:230px;max-width:100%}
     .llm-note{font-size:12px;line-height:1.45;color:var(--text2);padding:10px 12px;border-radius:var(--r);background:rgba(255,255,255,.03);border:1px solid var(--border);margin-top:12px}
+    .llm-section{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--brand2);margin:18px 0 2px;padding-top:12px;border-top:1px solid var(--border)}
+    .sc-body > .llm-section:first-child{border-top:0;padding-top:0;margin-top:0}
     .llm-note.warn{color:var(--amber);background:var(--amber-dim);border-color:rgba(251,191,36,.25)}
     .llm-active{color:var(--green);font-weight:700}
   </style>
@@ -1186,12 +1188,13 @@ HTML_PAGE = """<!doctype html>
           <!-- Modelo de IA (LLM) -->
           <div class="settings-card full">
             <div class="settings-card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>Modelo de IA</div>
+            <div class="llm-section">Texto · conversa e habilidades</div>
             <div class="settings-row">
               <div class="settings-row-info"><div class="settings-row-label">Provedor</div><div class="settings-row-desc">Quem responde as conversas e as habilidades. Vale na hora, sem reiniciar.</div></div>
               <div class="settings-row-control"><select id="llm-provider" class="settings-select"><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="local">Local (Llama Desk)</option></select></div>
             </div>
             <div class="settings-row">
-              <div class="settings-row-info"><div class="settings-row-label">OpenAI <span class="llm-active" id="llm-openai-active"></span></div><div class="settings-row-desc" id="llm-openai-desc">Modelo e chave da OpenAI</div></div>
+              <div class="settings-row-info"><div class="settings-row-label">OpenAI <span class="llm-active" id="llm-openai-active"></span></div><div class="settings-row-desc" id="llm-openai-desc">Modelo e chave da OpenAI (a mesma chave serve para a voz e a transcrição da OpenAI)</div></div>
               <div class="settings-row-control" style="gap:8px;flex-wrap:wrap">
                 <input type="text" id="llm-openai-model" class="llm-input" list="llm-openai-models" placeholder="gpt-4o-mini"/>
                 <input type="password" id="llm-openai-key" class="llm-input" placeholder="Chave (sk-...)" autocomplete="off"/>
@@ -1212,8 +1215,21 @@ HTML_PAGE = """<!doctype html>
                 <button type="button" class="btn btn-ghost btn-sm" id="llmLocalRefresh" title="Buscar os modelos do Llama Desk">Atualizar</button>
               </div>
             </div>
+            <div class="llm-section">Voz da Cassandra · a fala dela</div>
             <div class="settings-row">
-              <div class="settings-row-info"><div class="settings-row-label">Voz · Azure Speech <span class="llm-active" id="llm-azure-active"></span></div><div class="settings-row-desc" id="llm-azure-desc">A voz da Cassandra (Microsoft). Grátis até 500 mil caracteres por mês; sem chave, ou se falhar, ela fala com a voz da OpenAI.</div></div>
+              <div class="settings-row-info"><div class="settings-row-label">Motor de voz</div><div class="settings-row-desc">Automático: Azure (se configurado), depois OpenAI; sem os dois, a voz grátis do espeak.</div></div>
+              <div class="settings-row-control">
+                <select id="voice-engine" class="settings-select">
+                  <option value="auto">Automático</option>
+                  <option value="azure">Azure (Microsoft, grátis até 500 mil caracteres/mês)</option>
+                  <option value="openai">OpenAI (pago)</option>
+                  <option value="espeak">espeak (grátis, feminina, robótica, instantânea)</option>
+                  <option value="piper">Piper (grátis, masculina, ~3 s por frase)</option>
+                </select>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-info"><div class="settings-row-label">Voz do Azure <span class="llm-active" id="llm-azure-active"></span></div><div class="settings-row-desc" id="llm-azure-desc">A voz da Cassandra (Microsoft). Grátis até 500 mil caracteres por mês; sem chave, ou se falhar, ela fala com a voz da OpenAI.</div></div>
               <div class="settings-row-control" style="gap:8px;flex-wrap:wrap">
                 <input type="password" id="llm-azure-key" class="llm-input" placeholder="Chave do Azure" autocomplete="off"/>
                 <input type="text" id="llm-azure-region" class="llm-input" placeholder="brazilsouth" style="max-width:130px"/>
@@ -1221,11 +1237,55 @@ HTML_PAGE = """<!doctype html>
                 <button type="button" class="btn btn-ghost btn-sm" id="llmAzureTest">Testar voz</button>
               </div>
             </div>
+            <div class="settings-row">
+              <div class="settings-row-info"><div class="settings-row-label">Voz da OpenAI</div><div class="settings-row-desc">Modelo e voz quando a fala sai pela OpenAI (pago; usa a chave da OpenAI acima).</div></div>
+              <div class="settings-row-control" style="gap:8px;flex-wrap:wrap">
+                <select id="voice-tts-model" class="settings-select">
+                  <option value="gpt-4o-mini-tts">gpt-4o-mini-tts (mais rápido)</option>
+                  <option value="tts-1">tts-1</option>
+                  <option value="tts-1-hd">tts-1-hd (HD)</option>
+                </select>
+                <select id="voice-tts-voice" class="settings-select">
+                  <option value="alloy">Alloy</option>
+                  <option value="echo">Echo</option>
+                  <option value="fable">Fable</option>
+                  <option value="onyx">Onyx</option>
+                  <option value="nova">Nova</option>
+                  <option value="shimmer">Shimmer</option>
+                </select>
+              </div>
+            </div>
+            <div class="llm-section">Transcrição · o que você fala vira texto</div>
+            <div class="settings-row">
+              <div class="settings-row-info"><div class="settings-row-label">Quem transcreve</div><div class="settings-row-desc">Depois que você chama "Cassandra", o que você fala é transcrito por aqui. Automático: OpenAI e, se falhar, a local.</div></div>
+              <div class="settings-row-control">
+                <select id="stt-provider" class="settings-select">
+                  <option value="auto">Automático</option>
+                  <option value="openai">OpenAI (pago)</option>
+                  <option value="azure">Azure (Microsoft, grátis até 5 h/mês)</option>
+                  <option value="local">Local · Vosk (grátis, sem internet, menos preciso)</option>
+                </select>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-info"><div class="settings-row-label">Modelo da OpenAI</div><div class="settings-row-desc">Usado quando a transcrição é da OpenAI.</div></div>
+              <div class="settings-row-control">
+                <select id="stt-model" class="settings-select">
+                  <option value="gpt-4o-mini-transcribe">gpt-4o-mini-transcribe (rápido e barato)</option>
+                  <option value="gpt-4o-transcribe">gpt-4o-transcribe (mais preciso)</option>
+                  <option value="whisper-1">whisper-1</option>
+                </select>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-info"><div class="settings-row-label">Detecção do nome</div><div class="settings-row-desc">Ouvir "Cassandra" é sempre local (Vosk, no próprio Pi): grátis e sem mandar nada para a internet.</div></div>
+              <div class="settings-row-control"><span class="llm-active">local · grátis</span></div>
+            </div>
             <datalist id="llm-openai-models"><option value="gpt-4o-mini"/><option value="gpt-4o"/></datalist>
             <datalist id="llm-deepseek-models"><option value="deepseek-flash"/><option value="deepseek-v4-pro"/></datalist>
             <div class="llm-note" id="llm-audio-note">A DeepSeek só faz texto. Voz (fala da Cassandra) e microfone usam sempre a OpenAI.</div>
             <div class="save-bar" style="margin-top:12px">
-              <button class="btn btn-primary btn-sm" id="saveLlmBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>Salvar modelo</button>
+              <button class="btn btn-primary btn-sm" id="saveLlmBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>Salvar modelos</button>
               <span class="save-toast" id="llmToast">Salvo!</span>
             </div>
           </div>
@@ -1273,41 +1333,6 @@ HTML_PAGE = """<!doctype html>
             <div class="settings-row">
               <div class="settings-row-info"><div class="settings-row-label">Resposta por voz</div><div class="settings-row-desc">Cassandra fala as respostas em voz alta</div></div>
               <div class="settings-row-control"><label class="toggle"><input type="checkbox" id="voice-enabled" checked/><span class="toggle-slider"></span></label></div>
-            </div>
-            <div class="settings-row">
-              <div class="settings-row-info"><div class="settings-row-label">Motor de voz</div><div class="settings-row-desc">Automático: Azure (se configurado), depois OpenAI enquanto houver créditos; sem os dois, voz feminina grátis e instantânea</div></div>
-              <div class="settings-row-control">
-                <select id="voice-engine" class="settings-select">
-                  <option value="auto">Automático</option>
-                  <option value="azure">Azure (Microsoft, grátis até 500 mil caracteres/mês)</option>
-                  <option value="openai">OpenAI (pago)</option>
-                  <option value="espeak">espeak (grátis, feminina, instantânea)</option>
-                  <option value="piper">Piper (grátis, masculina, ~3 s por frase)</option>
-                </select>
-              </div>
-            </div>
-            <div class="settings-row">
-              <div class="settings-row-info"><div class="settings-row-label">Modelo TTS</div><div class="settings-row-desc">Voz da OpenAI: gpt-4o-mini-tts começa a falar mais rápido (~0,5 s)</div></div>
-              <div class="settings-row-control">
-                <select id="voice-tts-model" class="settings-select">
-                  <option value="gpt-4o-mini-tts">gpt-4o-mini-tts (mais rápido)</option>
-                  <option value="tts-1">tts-1</option>
-                  <option value="tts-1-hd">tts-1-hd (HD)</option>
-                </select>
-              </div>
-            </div>
-            <div class="settings-row">
-              <div class="settings-row-info"><div class="settings-row-label">Voz</div><div class="settings-row-desc">Personalidade da voz da OpenAI</div></div>
-              <div class="settings-row-control">
-                <select id="voice-tts-voice" class="settings-select">
-                  <option value="alloy">Alloy</option>
-                  <option value="echo">Echo</option>
-                  <option value="fable">Fable</option>
-                  <option value="onyx">Onyx</option>
-                  <option value="nova">Nova</option>
-                  <option value="shimmer">Shimmer</option>
-                </select>
-              </div>
             </div>
             <div class="settings-row">
               <div class="settings-row-info"><div class="settings-row-label">Idioma fallback</div><div class="settings-row-desc">Idioma da voz grátis (espeak)</div></div>
@@ -2222,10 +2247,12 @@ function applyLlm(l){
   document.getElementById("llm-azure-region").value=l.azure_speech_region||"brazilsouth";
   document.getElementById("llm-azure-active").textContent=l.azure_speech_key_set?"· voz em uso":"";
   loadAzureVoices(l.azure_tts_voice);
+  document.getElementById("stt-provider").value=l.stt_provider||"auto";
+  document.getElementById("stt-model").value=l.stt_model||"gpt-4o-mini-transcribe";
   const note=document.getElementById("llm-audio-note");
   if(l.audio_available){
     note.className="llm-note";
-    note.textContent=l.azure_speech_key_set?"A DeepSeek só faz texto. A voz da Cassandra usa o Azure (a OpenAI fica de reserva) e o microfone usa a OpenAI.":"A DeepSeek só faz texto. Voz (fala da Cassandra) e microfone usam a OpenAI — ou configure o Azure acima para a voz sair de graça.";
+    note.textContent=l.azure_speech_key_set?"DeepSeek e o modelo local só fazem texto. A voz e a transcrição usam o que estiver escolhido nas seções abaixo.":"DeepSeek e o modelo local só fazem texto. Sem chave do Azure, a voz e a transcrição usam a OpenAI (configure o Azure para saírem de graça).";
   }else{
     note.className="llm-note warn";
     note.textContent="Sem chave da OpenAI: a Cassandra fala com a voz local (espeak) e o modo microfone não transcreve. A DeepSeek só faz texto.";
@@ -2263,6 +2290,11 @@ async function loadAzureVoices(current){
   sel.innerHTML=voices.map(v=>`<option value="${esc(v.name)}">${esc(v.label)}${v.gender?" ("+esc(v.gender)+")":""}</option>`).join("");
   sel.value=keep;
 }
+function voiceFields(){
+  return {voice:{engine:document.getElementById("voice-engine").value,
+                 tts_model:document.getElementById("voice-tts-model").value,
+                 tts_voice:document.getElementById("voice-tts-voice").value}};
+}
 function azureFields(){
   const b={azure_speech_region:document.getElementById("llm-azure-region").value.trim(),
            azure_tts_voice:document.getElementById("llm-azure-voice").value};
@@ -2274,6 +2306,7 @@ document.getElementById("llmAzureTest").addEventListener("click",async e=>{
   const b=e.currentTarget; b.disabled=true; b.textContent="Falando…";
   try{
     applyLlm(await api("/api/llm","POST",azureFields()));
+    applySettingsToForm(await api("/api/settings","POST",voiceFields()));
     await api("/api/speak","POST",{text:"Oi! Esta é a minha voz. O que você achou?"});
   }catch(err){alert(err.message);}
   finally{setTimeout(()=>{b.disabled=false;b.textContent="Testar voz";},2500);}
@@ -2292,6 +2325,8 @@ document.getElementById("saveLlmBtn").addEventListener("click",async()=>{
   Object.assign(body,azureFields());
   body.local_llm_base_url=document.getElementById("llm-local-url").value.trim();
   body.local_llm_model=document.getElementById("llm-local-model").value;
+  body.stt_provider=document.getElementById("stt-provider").value;
+  body.stt_model=document.getElementById("stt-model").value;
   const ok=document.getElementById("llm-openai-key").value.trim();
   const dk=document.getElementById("llm-deepseek-key").value.trim();
   if(ok) body.openai_api_key=ok;
@@ -2300,6 +2335,7 @@ document.getElementById("saveLlmBtn").addEventListener("click",async()=>{
   try{
     const l=await api("/api/llm","POST",body);
     applyLlm(l);
+    applySettingsToForm(await api("/api/settings","POST",voiceFields()));
     if(l.llm_provider==="local"){toast.textContent=l.local_llm_model?"Salvo!":"Salvo — escolha o modelo local";}
     else if(!l[`${l.llm_provider}_api_key_set`]){toast.textContent="Salvo — falta a chave desse provedor";}
     else toast.textContent="Salvo!";
