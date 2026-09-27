@@ -26,6 +26,22 @@ _WAIT_DEFAULT = 15
 
 _TOOL_NAME = "pedir_a_agente"
 
+# Exemplos de quando chamar cada agente (só entram no prompt os dos agentes ligados). O gpt-4o-mini ignorava a
+# ferramenta só com a lista de capacidades e respondia "não tenho acesso ao seu WhatsApp".
+_EXAMPLES = {
+    "web-agent": (
+        "- \"leia minha ultima mensagem do WhatsApp\", \"voce consegue ver meu WhatsApp?\", \"manda um zap pra X\", "
+        "\"pesquise X\", noticias, precos, cotacoes, resultados de jogos, \"abre o site X\", e-mails -> web-agent "
+        "(ele usa um navegador de verdade, ja logado no WhatsApp Web e nos sites do usuario)"
+    ),
+    "health": (
+        "- \"como esta meu colesterol?\", \"o que meus exames dizem?\", \"meu exame de sangue melhorou?\", duvidas de "
+        "saude, dieta e metas -> health (ele ja tem os exames, o perfil e o historico de saude do usuario salvos)"
+    ),
+    "ide": "- \"crie um site\", \"faz um app\", \"programa X\", \"arruma o codigo do projeto Y\", \"publica o site\" -> ide",
+    "editor": "- \"corta esse video\", \"faz cortes do video do YouTube X\", \"posta no TikTok\", \"gera um video\" -> editor",
+}
+
 _VOICE_RULES = (
     "REGRA ABSOLUTA DE IDIOMA: escreva EXCLUSIVAMENTE em portugues do Brasil (pt-BR). "
     "Nao use emojis, markdown, asteriscos ou listas — texto corrido simples, adequado para leitura em voz alta. "
@@ -81,15 +97,16 @@ class GeneralChatSkill(Skill):
                 "Se nao tiver certeza de um dado (preco, noticia, resultado, previsao do tempo, etc.), "
                 "diga claramente que nao tem acesso a informacoes em tempo real, em vez de inventar."
             )
+        examples = "\n".join(line for name, line in _EXAMPLES.items() if f"- {name} (" in agents_block)
         return prompt + (
-            f"Voce faz parte de um sistema de agentes coordenado pelo Maestro e pode pedir tarefas a eles com a "
-            f"ferramenta {_TOOL_NAME}. Agentes ligados agora e o que cada um faz:\n{agents_block}\n"
-            "Use a ferramenta sempre que o pedido precisar de algo que um desses agentes faz — por exemplo "
-            "pesquisar na internet, noticias, cotacoes, resultados de jogos, abrir ou ler sites, ler ou mandar "
-            "mensagens no WhatsApp, criar ou mexer em sites e codigo, editar videos, perguntas sobre a saude e os "
-            "exames do usuario. Nunca diga que nao consegue fazer algo que um desses agentes faz, e nunca invente "
-            "dados em tempo real: peca ao agente. Para conversa normal e o que voce ja sabe, responda direto, sem a "
-            "ferramenta."
+            "\n\nAGENTES — MUITO IMPORTANTE: voce sozinha nao acessa internet, WhatsApp, e-mail, os exames do usuario "
+            "nem o computador dele, MAS voce faz parte de um sistema de agentes (coordenado pelo Maestro) que "
+            f"acessam. Voce os aciona com a ferramenta {_TOOL_NAME}. Agentes ligados agora:\n{agents_block}\n\n"
+            "Quando o pedido (ou a pergunta \"voce consegue...?\") envolver algo que um agente faz, CHAME A "
+            "FERRAMENTA em vez de responder. Nunca diga que nao tem acesso, que nao consegue, ou que o usuario "
+            "precisa enviar algo que o agente ja tem. Exemplos:\n"
+            f"{examples}\n"
+            "Conversa normal, contas, curiosidades e o que voce ja sabe: responda direto, sem a ferramenta."
         )
 
     def _tools(self, names: list[str]) -> list[dict]:
@@ -105,7 +122,8 @@ class GeneralChatSkill(Skill):
                         "tarefa": {
                             "type": "string",
                             "description": "O pedido completo e autossuficiente, em portugues, com todos os detalhes "
-                                           "que o usuario deu (o agente nao ve esta conversa).",
+                                           "que o usuario deu (o agente nao ve esta conversa). Nao acrescente "
+                                           "requisitos que o usuario nao pediu.",
                         },
                         "aviso": {
                             "type": "string",
