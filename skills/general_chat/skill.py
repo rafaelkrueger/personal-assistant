@@ -4,6 +4,7 @@ import json
 from collections.abc import Callable, Iterator
 from datetime import datetime
 
+from cassandra import notices
 from cassandra.agents_bridge import AgentReply, bridge, spoken
 from cassandra.memory import ConversationMemory
 from cassandra.openai_client import LLMService
@@ -127,8 +128,9 @@ class GeneralChatSkill(Skill):
                         },
                         "aviso": {
                             "type": "string",
-                            "description": "Uma frase curta falada ao usuario enquanto o agente trabalha, ex.: "
-                                           "'Certo, vou pedir pro web-agent pesquisar isso.'",
+                            "description": "Frase curta e natural falada NA HORA, antes do resultado (que pode "
+                                           "demorar), avisando que ja esta vendo isso e responde em seguida. Varie "
+                                           "a frase a cada vez e nao cite o nome do agente.",
                         },
                     },
                     "required": ["agente", "tarefa"],
@@ -178,7 +180,8 @@ class GeneralChatSkill(Skill):
         if target not in names:
             yield "Não consegui decidir qual agente faz isso. Pode pedir de outro jeito?"
             return
-        notice = str(args.get("aviso") or "").strip() or f"Certo, vou pedir pro {spoken(target)[2:]}. Um instante."
+        notice = str(args.get("aviso") or "").strip() or (
+            notices.searching() if target == "web-agent" else notices.working())
         if notice[-1] not in ".!?":
             notice += "."
         yield notice + " "

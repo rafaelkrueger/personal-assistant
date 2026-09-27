@@ -317,6 +317,13 @@ class WebSearchSkill(Skill):
         log.debug("can_handle: True | text=%s", text[:60])
         return True
 
+    def handle_stream(self, text: str):
+        """Avisa na hora que vai pesquisar (a busca pode levar mais de um minuto) e depois responde."""
+        from cassandra import notices  # noqa: PLC0415
+
+        yield notices.searching() + " "
+        yield self.handle(text)
+
     def handle(self, text: str) -> str:
         today = datetime.now().strftime("%d/%m/%Y")
         log.debug("handle() chamado | text=%s", text[:100])
