@@ -646,9 +646,9 @@ HTML_PAGE = """<!doctype html>
     .sc-body > .llm-section:first-child{border-top:0;padding-top:0;margin-top:0}
     @media(max-width:640px){
       .llm-card .settings-row-control{flex:1 1 100%;flex-wrap:wrap;gap:8px}
-      .llm-card .settings-row-control > *{flex:1 1 100%;max-width:none;width:100%}
-      .llm-card .settings-row-control > .btn{flex:0 0 auto;width:auto}
-      .llm-card .settings-row-control > .llm-active{flex:0 0 auto;width:auto}
+      .llm-card .settings-row-control > *{flex:1 1 100%;max-width:none!important;width:100%!important}
+      .llm-card .settings-row-control > .btn{flex:0 0 auto;width:auto!important}
+      .llm-card .settings-row-control > .llm-active{flex:0 0 auto;width:auto!important}
       .llm-card .settings-row-desc{font-size:11.5px}
     }
     .llm-card .settings-select{max-width:260px}
@@ -2246,12 +2246,12 @@ function applyLlm(l){
   for(const p of ["openai","deepseek"]){
     const key=document.getElementById(`llm-${p}-key`);
     key.value="";
-    key.placeholder=l[`${p}_api_key_set`]?`Configurada (${l[`${p}_api_key_preview`]}) — vazio mantém`:"Cole a chave (sk-...)";
+    key.placeholder=l[`${p}_api_key_set`]?`Salva · ${l[`${p}_api_key_preview`]}`:"Cole a chave (sk-...)";
     document.getElementById(`llm-${p}-active`).textContent=l.llm_provider===p?"· em uso":"";
   }
   const ak=document.getElementById("llm-azure-key");
   ak.value="";
-  ak.placeholder=l.azure_speech_key_set?`Configurada (${l.azure_speech_key_preview}) — vazio mantém`:"Cole a chave do Azure";
+  ak.placeholder=l.azure_speech_key_set?`Salva · ${l.azure_speech_key_preview}`:"Cole a chave do Azure";
   document.getElementById("llm-azure-region").value=l.azure_speech_region||"brazilsouth";
   document.getElementById("llm-azure-active").textContent=l.azure_speech_key_set?"· voz em uso":"";
   loadAzureVoices(l.azure_tts_voice);
