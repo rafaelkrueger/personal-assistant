@@ -150,20 +150,26 @@ Alarme:
 {
   "id": "...", "label": "Acordar", "time_hhmm": "07:30",
   "recurring_daily": true, "days_of_week": [0, 1, 2, 3, 4],
+  "date_ymd": null, "day_of_month": null,
   "next_trigger_at": "2026-09-26T07:30:00", "enabled": true
 }
 ```
-`days_of_week`: `0` = segunda … `6` = domingo; `null` = todos os dias.
+- `days_of_week`: `0` = segunda … `6` = domingo; `null` = todos os dias (quando o alarme é diário/semanal).
+- `date_ymd`: `YYYY-MM-DD` — toca **uma vez** nessa data (qualquer mês/ano).
+- `day_of_month`: `1`–`31` — toca **todo mês** nesse dia (em fevereiro, 31 vira o último dia).
 
 | Endpoint | Body | Resposta |
 |---|---|---|
-| `POST /api/alarms/add` | `{ "time_hhmm": "07:30", "recurring_daily": true, "label": "Acordar", "days_of_week": [0,1,2,3,4] }` | `{ "alarms": [alarmes] }` — `400` sem `time_hhmm` ou horário inválido |
+| `POST /api/alarms/add` | `{ "time_hhmm": "07:30", "label": "Acordar", "date_ymd": "2026-12-25" }` | `{ "alarms": [alarmes] }` — `400` sem `time_hhmm` ou data/horário inválido |
 | `POST /api/alarms/remove` | `{ "id": "..." }` | `{ "alarms": [alarmes] }` |
 | `POST /api/alarms/stop` | — | `{ "alarm_ringing": false }` — silencia o alarme que está tocando |
 
 Só `time_hhmm` é obrigatório (`label` padrão "Alarme"; `recurring_daily` padrão
-`false`). Quando dispara, o alarme toca na caixa de som e pode disparar rotinas
-ligadas a ele (seção 6). A lista também vem em `GET /api/dashboard`.
+`false`). Para um dia específico mande `date_ymd`; para repetir na semana,
+`days_of_week`; para todo mês, `day_of_month`. Quando dispara, o alarme toca
+na caixa de som e pode disparar rotinas ligadas a ele (seção 6). A lista
+também vem em `GET /api/dashboard`. A UI de alarmes mostra um calendário
+com os dias marcados.
 
 **Timers** não têm endpoint próprio: peça pelo chat (`"cassandra, timer de 10 minutos"`).
 
@@ -509,6 +515,8 @@ curl -s -X POST $BASE/api/chat -H "Content-Type: application/json" \
 curl -s -X POST $BASE/api/shopping/add -H "Content-Type: application/json" -d '{"name":"café"}'
 curl -s -X POST $BASE/api/alarms/add -H "Content-Type: application/json" \
   -d '{"time_hhmm":"07:30","recurring_daily":true,"label":"Acordar"}'
+curl -s -X POST $BASE/api/alarms/add -H "Content-Type: application/json" \
+  -d '{"time_hhmm":"09:00","label":"Consulta","date_ymd":"2026-12-25"}'
 
 # O que está na lista, nas tarefas e nos alarmes
 curl -s $BASE/api/dashboard

@@ -1,6 +1,7 @@
-"""Persistent alarm manager with repeating ring playback and weekday selection."""
+"""Persistent alarm manager with repeating ring playback and calendar dates."""
 from __future__ import annotations
 
+import calendar
 import json
 import threading
 import time
@@ -18,9 +19,11 @@ class Alarm:
     label: str
     time_hhmm: str
     recurring_daily: bool
-    days_of_week: list[int] | None  # 0=Mon..6=Sun; None = every day
+    days_of_week: list[int] | None  # 0=Mon..6=Sun; None = every day (if recurring)
     next_trigger_at: str
     enabled: bool = True
+    date_ymd: str | None = None  # YYYY-MM-DD — one-shot on this exact date
+    day_of_month: int | None = None  # 1-31 — monthly
 
 
 class AlarmManager:
@@ -51,11 +54,23 @@ class AlarmManager:
         recurring_daily: bool,
         label: str = "Alarme",
         days_of_week: list[int] | None = None,
+        date_ymd: str | None = None,
+        day_of_month: int | None = None,
     ) -> Alarm:
         normalized = self._normalize_time(time_hhmm)
-        # Normalize days_of_week: empty list → None (means every day)
+        date_ymd = self._normalize_date(date_ymd)
+        day_of_month = self._normalize_day_of_month(day_of_month)
         dow = sorted(set(days_of_week)) if days_of_week else None
-        next_trigger = self._compute_next_trigger(normalized, dow)
+        if date_ymd:
+            recurring_daily = False
+            dow = None
+            day_of_month = None
+        elif day_of_month:
+            recurring_daily = False
+            dow = None
+        next_trigger = self._compute_next_trigger(
+            normalized, dow, date_ymd=date_ymd, day_of_month=day_of_month
+        )
         alarm = Alarm(
             id=uuid4().hex[:10],
             label=label.strip() or "Alarme",
@@ -64,6 +79,8 @@ class AlarmManager:
             days_of_week=dow,
             next_trigger_at=next_trigger.isoformat(),
             enabled=True,
+            date_ymd=date_ymd,
+            day_of_month=day_of_month,
         )
         with self._lock:
             self._alarms.append(alarm)
@@ -118,9 +135,14 @@ class AlarmManager:
                             threading.Thread(
                                 target=self._on_alarm_fire, args=(fired_id,), daemon=True
                             ).start()
-                        is_recurring = alarm.recurring_daily or (alarm.days_of_week is not None)
-                        if is_recurring:
-                            next_dt = self._compute_next_trigger(alarm.time_hhmm, alarm.days_of_week)
+                        if self._is_recurring(alarm):
+                            next_dt = self._compute_next_trigger(
+                                alarm.time_hhmm,
+                                alarm.days_of_week,
+                                date_ymd=None,
+                                day_of_month=alarm.day_of_month,
+                                after=now,
+                            )
                             alarm.next_trigger_at = next_dt.isoformat()
                         else:
                             alarm.enabled = False
@@ -161,6 +183,9 @@ class AlarmManager:
             try:
                 raw_days = row.get("days_of_week")
                 dow = [int(d) for d in raw_days] if isinstance(raw_days, list) else None
+                raw_dom = row.get("day_of_month")
+                date_ymd = self._normalize_date(row.get("date_ymd"))
+                day_of_month = self._normalize_day_of_month(raw_dom) if raw_dom not in (None, "") else None
                 alarm = Alarm(
                     id=str(row["id"]),
                     label=str(row.get("label", "Alarme")),
@@ -169,6 +194,8 @@ class AlarmManager:
                     days_of_week=dow,
                     next_trigger_at=str(row["next_trigger_at"]),
                     enabled=bool(row.get("enabled", True)),
+                    date_ymd=date_ymd,
+                    day_of_month=day_of_month,
                 )
             except Exception:
                 continue
@@ -178,6 +205,10 @@ class AlarmManager:
     def _save_locked(self) -> None:
         payload = [asdict(a) for a in self._alarms]
         self.db_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    @staticmethod
+    def _is_recurring(alarm: Alarm) -> bool:
+        return bool(alarm.recurring_daily or alarm.days_of_week is not None or alarm.day_of_month)
 
     @staticmethod
     def _normalize_time(value: str) -> str:
@@ -193,18 +224,58 @@ class AlarmManager:
         return f"{hour:02d}:{minute:02d}"
 
     @staticmethod
-    def _compute_next_trigger(time_hhmm: str, days_of_week: list[int] | None = None) -> datetime:
+    def _normalize_date(value: str | None) -> str | None:
+        raw = str(value or "").strip()
+        if not raw:
+            return None
+        try:
+            parsed = datetime.strptime(raw, "%Y-%m-%d")
+        except ValueError as exc:
+            raise ValueError("Data inválida. Use formato AAAA-MM-DD.") from exc
+        return parsed.strftime("%Y-%m-%d")
+
+    @staticmethod
+    def _normalize_day_of_month(value: int | str | None) -> int | None:
+        if value in (None, ""):
+            return None
+        day = int(value)
+        if day < 1 or day > 31:
+            raise ValueError("Dia do mês inválido. Use um número de 1 a 31.")
+        return day
+
+    @staticmethod
+    def _compute_next_trigger(
+        time_hhmm: str,
+        days_of_week: list[int] | None = None,
+        date_ymd: str | None = None,
+        day_of_month: int | None = None,
+        after: datetime | None = None,
+    ) -> datetime:
         hour, minute = [int(p) for p in time_hhmm.split(":")]
-        now = datetime.now()
+        now = after if after is not None else datetime.now()
+        if date_ymd:
+            year, month, day = [int(p) for p in date_ymd.split("-")]
+            return datetime(year, month, day, hour, minute, 0, 0)
+        if day_of_month:
+            year, month = now.year, now.month
+            for _ in range(14):
+                last = calendar.monthrange(year, month)[1]
+                day = min(int(day_of_month), last)
+                candidate = datetime(year, month, day, hour, minute, 0, 0)
+                if candidate > now:
+                    return candidate
+                month += 1
+                if month > 12:
+                    month = 1
+                    year += 1
+            raise ValueError("Não achei o próximo dia do mês.")
         base = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        # Check today through the next 7 days
         for offset in range(8):
             candidate = base + timedelta(days=offset)
             if candidate <= now:
                 continue
             if not days_of_week or candidate.weekday() in days_of_week:
                 return candidate
-        # Fallback: walk forward until a matching weekday
         candidate = base + timedelta(days=1)
         while days_of_week and candidate.weekday() not in days_of_week:
             candidate += timedelta(days=1)

@@ -357,6 +357,99 @@ HTML_PAGE = """<!doctype html>
     .alarm-dot-led.off{background:var(--text3)}
     .day-tag{display:inline-flex;align-items:center;padding:2px 9px;border-radius:99px;font-size:11px;font-weight:600;background:var(--brand-dim);border:1px solid rgba(91,154,255,.2);color:var(--brand2);margin:2px 2px 0 0}
 
+    /* ═══ ALARM CALENDAR ═══ */
+    .alm-page{display:flex;flex-direction:column;gap:16px}
+    @media(min-width:980px){.alm-page{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(320px,.85fr);align-items:start}}
+    .alm-cal{
+      background:var(--glass);border:1px solid var(--border);border-radius:var(--rx);
+      padding:16px 16px 14px;backdrop-filter:blur(12px);position:relative;overflow:hidden;
+    }
+    .alm-cal.pulse{box-shadow:0 0 0 2px var(--brand),0 0 28px var(--brand-glow)}
+    .alm-cal-head{display:flex;align-items:center;gap:6px;margin-bottom:12px}
+    .alm-cal-nav{
+      width:34px;height:34px;border-radius:10px;border:1px solid var(--border);
+      background:rgba(255,255,255,.03);color:var(--text);cursor:pointer;
+      display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;font-family:inherit;
+    }
+    .alm-cal-nav:hover{border-color:var(--brand);color:var(--brand2)}
+    .alm-cal-title{
+      flex:1;text-align:center;background:none;border:0;color:var(--text);
+      font:700 15px inherit;cursor:pointer;letter-spacing:-.02em;padding:6px 8px;border-radius:10px;
+    }
+    .alm-cal-title:hover{color:var(--brand2);background:var(--brand-dim)}
+    .alm-cal-picker{
+      margin-bottom:12px;padding:12px;border:1px solid var(--border);border-radius:14px;
+      background:rgba(5,8,15,.55);
+    }
+    .alm-cal-picker-years{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:12px}
+    .alm-cal-picker-year{font-size:20px;font-weight:800;letter-spacing:-.03em;min-width:76px;text-align:center}
+    .alm-cal-picker-months{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+    .alm-cal-month-btn{
+      border:1px solid var(--border);background:rgba(255,255,255,.03);color:var(--text2);
+      border-radius:10px;padding:10px 6px;font:700 12px inherit;cursor:pointer;
+    }
+    .alm-cal-month-btn:hover{border-color:var(--brand);color:var(--brand2)}
+    .alm-cal-month-btn.on{background:var(--brand-dim);border-color:rgba(91,154,255,.45);color:var(--brand2)}
+    .alm-cal-dow,.alm-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+    .alm-cal-dow{margin-bottom:4px}
+    .alm-cal-dow span{text-align:center;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;padding:2px 0}
+    .alm-cal-cell{
+      position:relative;min-height:46px;border:0;background:transparent;border-radius:11px;
+      color:var(--text);font:700 13px inherit;cursor:pointer;
+      display:flex;flex-direction:column;align-items:center;padding:5px 0 4px;
+    }
+    .alm-cal-cell:hover{background:var(--brand-dim)}
+    .alm-cal-cell.out{color:var(--text3);opacity:.45}
+    .alm-cal-cell.today{background:var(--brand-dim);color:var(--brand2)}
+    .alm-cal-cell.selected{box-shadow:inset 0 0 0 1.5px var(--brand);background:rgba(91,154,255,.16)}
+    .alm-cal-cell.past:not(.today){opacity:.55}
+    .alm-cal-cell.has-alarms:not(.selected):not(.today){background:rgba(91,154,255,.08)}
+    .alm-cal-cell.has-draft:not(.selected){background:rgba(251,191,36,.14)}
+    .alm-cal-dots{display:flex;gap:2px;justify-content:center;min-height:6px;margin-top:3px}
+    .alm-cal-more{font-size:9px;font-weight:700;color:var(--text2)}
+    .alm-dot{width:5px;height:5px;border-radius:50%;display:inline-block}
+    .alm-dot.saved{background:var(--brand)}
+    .alm-dot.draft{background:var(--amber)}
+    .alm-dot.off{background:var(--text3)}
+    .alm-cal-legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;font-size:11px;font-weight:700;color:var(--text2)}
+    .alm-cal-legend span{display:inline-flex;align-items:center;gap:5px}
+    .alm-cal-agenda{margin-top:12px;display:flex;flex-direction:column;gap:6px}
+    .alm-agenda-day{font-size:11px;font-weight:700;color:var(--text2)}
+    .alm-agenda-item{
+      display:flex;align-items:center;gap:8px;width:100%;text-align:left;
+      background:rgba(255,255,255,.03);border:1px solid var(--border);
+      border-radius:10px;padding:8px 10px;color:inherit;font:inherit;cursor:pointer;
+    }
+    .alm-agenda-item:hover{border-color:var(--brand)}
+    .alm-agenda-item.draft{border-color:rgba(251,191,36,.45)}
+    .alm-agenda-time{font-size:13px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--brand2);min-width:44px}
+    .alm-agenda-item.draft .alm-agenda-time{color:var(--amber)}
+    .alm-agenda-task{flex:1;min-width:0;font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .alm-type-pills,.alm-time-pills{display:grid;gap:6px}
+    .alm-type-pills{grid-template-columns:1fr 1fr}
+    .alm-time-pills{grid-template-columns:repeat(3,1fr)}
+    .alm-type-pill,.alm-time-pill{
+      background:rgba(255,255,255,.03);color:var(--text2);border:1px solid var(--border);
+      border-radius:10px;padding:8px 6px;font:700 12px inherit;cursor:pointer;
+    }
+    .alm-type-pill.active,.alm-time-pill.active{background:var(--brand-dim);color:var(--brand2);border-color:rgba(91,154,255,.45)}
+    .alm-picked{
+      background:rgba(255,255,255,.03);border:1px dashed rgba(91,154,255,.4);
+      border-radius:10px;padding:8px 11px;color:var(--text);font:700 13px inherit;
+      width:100%;text-align:left;cursor:pointer;
+    }
+    .alm-picked:hover{border-style:solid;border-color:var(--brand);color:var(--brand2)}
+    .alm-preview{
+      background:var(--brand-dim);border:1px solid rgba(91,154,255,.3);
+      border-radius:10px;padding:9px 12px;color:var(--text);font-weight:700;line-height:1.45;font-size:12.5px;
+    }
+    .alm-preview.hint{background:rgba(255,255,255,.03);border-style:dashed;color:var(--text2);font-weight:600}
+    .alm-preview.warn{background:var(--amber-dim);border-color:rgba(251,191,36,.45);color:var(--amber)}
+    .alm-form.pulse{box-shadow:0 0 0 2px var(--brand),0 0 24px var(--brand-glow)}
+    .alm-time-custom{display:flex;align-items:center;gap:10px;margin-top:6px}
+    .alm-time-custom span{font-size:11px;font-weight:700;color:var(--text2);white-space:nowrap}
+    #alarmTime{flex:1;min-width:0}
+
     /* ═══ SETTINGS ═══ */
     .settings-layout{display:flex;flex-direction:column;gap:14px}
     @media(min-width:900px){.settings-layout{display:grid;grid-template-columns:1fr;gap:12px;align-items:start}}
@@ -915,32 +1008,102 @@ HTML_PAGE = """<!doctype html>
 
       <!-- ══ ALARMS ══ -->
       <div class="tab-panel hidden" id="tab-alarms">
-        <div class="sec-hdr"><span class="sec-title">Alarmes</span><span class="count-badge" id="alarmCount">0 alarmes</span></div>
-        <div class="alarm-form">
-          <div class="alarm-form-title">Novo alarme</div>
-          <div class="row">
-            <input id="alarmTime" type="time" style="max-width:140px;flex:none"/>
-            <input id="alarmLabel" type="text" placeholder="Rótulo (opcional)"/>
-          </div>
-          <div class="form-label">Dias da semana</div>
-          <div class="day-picker" id="dayPicker">
-            <button class="day-btn" data-day="0">Seg</button><button class="day-btn" data-day="1">Ter</button>
-            <button class="day-btn" data-day="2">Qua</button><button class="day-btn" data-day="3">Qui</button>
-            <button class="day-btn" data-day="4">Sex</button><button class="day-btn" data-day="5">Sáb</button>
-            <button class="day-btn" data-day="6">Dom</button>
-          </div>
-          <div class="day-presets">
-            <button class="btn btn-ghost btn-sm" onclick="setPreset([0,1,2,3,4])">Dias úteis</button>
-            <button class="btn btn-ghost btn-sm" onclick="setPreset([5,6])">Fim de semana</button>
-            <button class="btn btn-ghost btn-sm" onclick="setPreset([])">Todos os dias</button>
-            <button class="btn btn-ghost btn-sm" onclick="setPreset(null)">Uma vez</button>
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn btn-primary" id="alarmAdd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Criar alarme</button>
-            <button class="btn btn-danger" id="alarmStop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Parar alarme</button>
+        <div class="sec-hdr">
+          <span class="sec-title">Alarmes</span>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span class="count-badge" id="alarmCount">0 alarmes</span>
+            <button class="btn btn-ghost btn-sm" type="button" onclick="startNewAlarm()">Novo</button>
+            <button class="btn btn-danger btn-sm" id="alarmStop" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Parar</button>
           </div>
         </div>
-        <div class="list" id="alarmList"></div>
+        <div class="alm-page">
+          <div class="alm-cal" id="alm-cal">
+            <div class="alm-cal-head">
+              <button type="button" class="alm-cal-nav" onclick="shiftAlmCalYear(-1)" title="Ano anterior">«</button>
+              <button type="button" class="alm-cal-nav" onclick="shiftAlmCal(-1)" title="Mês anterior">‹</button>
+              <button type="button" class="alm-cal-title" id="alm-cal-title" onclick="toggleAlmCalPicker()" title="Escolher mês e ano">Setembro 2026</button>
+              <button type="button" class="alm-cal-nav" onclick="shiftAlmCal(1)" title="Próximo mês">›</button>
+              <button type="button" class="alm-cal-nav" onclick="shiftAlmCalYear(1)" title="Próximo ano">»</button>
+            </div>
+            <div class="alm-cal-picker" id="alm-cal-picker" hidden>
+              <div class="alm-cal-picker-years">
+                <button type="button" class="alm-cal-nav" onclick="shiftAlmCalYear(-1)" title="Ano anterior">‹</button>
+                <span class="alm-cal-picker-year" id="alm-cal-picker-year">2026</span>
+                <button type="button" class="alm-cal-nav" onclick="shiftAlmCalYear(1)" title="Próximo ano">›</button>
+              </div>
+              <div class="alm-cal-picker-months" id="alm-cal-picker-months"></div>
+              <div style="display:flex;justify-content:center;margin-top:10px">
+                <button type="button" class="btn btn-ghost btn-sm" onclick="goAlmCalToday()">Hoje</button>
+              </div>
+            </div>
+            <div class="alm-cal-dow"><span>Seg</span><span>Ter</span><span>Qua</span><span>Qui</span><span>Sex</span><span>Sáb</span><span>Dom</span></div>
+            <div class="alm-cal-grid" id="alm-cal-grid"></div>
+            <div class="alm-cal-legend">
+              <span><i class="alm-dot saved"></i> Alarme</span>
+              <span><i class="alm-dot draft"></i> Este rascunho</span>
+              <span><i class="alm-dot off"></i> Desligado</span>
+            </div>
+            <div class="alm-cal-agenda" id="alm-cal-agenda"></div>
+          </div>
+          <div class="alarm-form alm-form" id="alarmForm">
+            <div class="alarm-form-title" id="alarm-form-title">Novo alarme</div>
+            <p class="item-sub" style="margin:-8px 0 14px">Clique no calendário para marcar o dia — dá para mudar o mês e o ano. O rascunho aparece em amarelo.</p>
+            <div class="form-label">Rótulo</div>
+            <input id="alarmLabel" type="text" placeholder="Ex.: acordar, consulta, lixo" oninput="onAlarmFormChange()"/>
+            <div class="form-label" style="margin-top:14px">Quando repetir</div>
+            <input type="hidden" id="alarm-type-input" value="once"/>
+            <div class="alm-type-pills">
+              <button type="button" class="alm-type-pill active" data-type="once" onclick="setAlarmType('once')">Uma vez</button>
+              <button type="button" class="alm-type-pill" data-type="daily" onclick="setAlarmType('daily')">Todo dia</button>
+              <button type="button" class="alm-type-pill" data-type="weekly" onclick="setAlarmType('weekly')">Na semana</button>
+              <button type="button" class="alm-type-pill" data-type="monthly" onclick="setAlarmType('monthly')">Todo mês</button>
+            </div>
+            <div class="item-sub" id="alm-when-hint" style="margin:8px 0 0">Clique num dia no calendário para escolher a data.</div>
+            <div class="form-label" style="margin-top:14px">Horário</div>
+            <div class="alm-time-pills">
+              <button type="button" class="alm-time-pill" data-time="07:00" onclick="setAlarmTime('07:00')">07:00</button>
+              <button type="button" class="alm-time-pill active" data-time="09:00" onclick="setAlarmTime('09:00')">09:00</button>
+              <button type="button" class="alm-time-pill" data-time="12:00" onclick="setAlarmTime('12:00')">12:00</button>
+              <button type="button" class="alm-time-pill" data-time="15:00" onclick="setAlarmTime('15:00')">15:00</button>
+              <button type="button" class="alm-time-pill" data-time="18:00" onclick="setAlarmTime('18:00')">18:00</button>
+              <button type="button" class="alm-time-pill" data-time="21:00" onclick="setAlarmTime('21:00')">21:00</button>
+            </div>
+            <div class="alm-time-custom">
+              <span>Outro</span>
+              <input type="time" id="alarmTime" value="09:00" onchange="onAlarmTimeInput()"/>
+            </div>
+            <div id="alarm-date-field" style="margin-top:14px">
+              <div class="form-label">Data</div>
+              <button type="button" class="alm-picked" id="alarm-date-label" onclick="focusAlmCalendar()">Clique no calendário</button>
+            </div>
+            <div id="alarm-weekdays-field" hidden style="margin-top:14px">
+              <div class="form-label">Dias da semana</div>
+              <div class="day-picker" id="dayPicker">
+                <button type="button" class="day-btn" data-day="0">Seg</button>
+                <button type="button" class="day-btn" data-day="1">Ter</button>
+                <button type="button" class="day-btn" data-day="2">Qua</button>
+                <button type="button" class="day-btn" data-day="3">Qui</button>
+                <button type="button" class="day-btn" data-day="4">Sex</button>
+                <button type="button" class="day-btn" data-day="5">Sáb</button>
+                <button type="button" class="day-btn" data-day="6">Dom</button>
+              </div>
+              <div class="day-presets">
+                <button type="button" class="btn btn-ghost btn-sm" onclick="setPreset([0,1,2,3,4])">Dias úteis</button>
+                <button type="button" class="btn btn-ghost btn-sm" onclick="setPreset([5,6])">Fim de semana</button>
+              </div>
+            </div>
+            <div id="alarm-dom-field" hidden style="margin-top:14px">
+              <div class="form-label">Dia do mês</div>
+              <button type="button" class="alm-picked" id="alarm-dom-label" onclick="focusAlmCalendar()">Clique no calendário</button>
+            </div>
+            <div class="alm-preview hint" id="alm-preview" style="margin-top:14px">Clique no calendário e escolha o horário.</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
+              <button type="button" class="btn btn-ghost" onclick="startNewAlarm()">Limpar</button>
+              <button type="button" class="btn btn-primary" id="alarmAdd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Criar alarme</button>
+            </div>
+          </div>
+        </div>
+        <div class="list" id="alarmList" style="margin-top:16px"></div>
       </div>
 
       <!-- ══ AGENDA ══ -->
@@ -1402,7 +1565,22 @@ const PAGE_TITLES = {
   todos:"Tarefas",alarms:"Alarmes",routines:"Rotinas",agenda:"Agenda",settings:"Configurações",
 };
 const DAY_NAMES = ["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"];
+const MONTHS_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+const MONTHS_SHORT = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+function _isoDate(d){
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
 let selDays = [];
+let _alarmsCache = [];
+let _almType = "once";
+const _nowCal = new Date();
+let _almDate = _isoDate(_nowCal);
+let _almDom = _nowCal.getDate();
+let _almTime = "09:00";
+let _almCalYear = _nowCal.getFullYear();
+let _almCalMonth = _nowCal.getMonth();
+let _almCalSelected = _isoDate(_nowCal);
+let _almPickerOpen = false;
 let currentSettings = {};
 
 // ── Utils ──
@@ -1463,6 +1641,7 @@ function gotoTab(tab){
   if(tab==="music") muOpen();
   if(tab==="devices") dvOpen();
   if(tab==="mic") micOpen(); else micClose();
+  if(tab==="alarms") renderAlmCalendar();
 }
 
 // ── Sidebar ──
@@ -1527,8 +1706,7 @@ function renderDashboard(data){
   const uaEl=document.getElementById("upcomingAlarms");
   if(!active.length) uaEl.innerHTML='<div class="empty" style="padding:14px 0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="28" height="28"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>Nenhum alarme ativo</div>';
   else uaEl.innerHTML=active.map(a=>{
-    const days=a.days_of_week;
-    const dayHtml=days&&days.length?days.map(d=>`<span class="day-tag">${DAY_NAMES[d]}</span>`).join(""):a.recurring_daily?'<span class="day-tag">Diário</span>':'<span class="day-tag" style="opacity:.5">Uma vez</span>';
+    const dayHtml=`<span class="day-tag">${esc(_alarmRepeatLabel(a))}</span>`;
     return `<div class="alarm-row-mini"><span class="alarm-time-lg">${esc(a.time_hhmm)}</span><div style="flex:1;min-width:0"><div style="font-size:12px;color:var(--text2);font-weight:500">${esc(a.label||"Alarme")}</div><div style="margin-top:4px">${dayHtml}</div></div></div>`;
   }).join("");
 }
@@ -1564,12 +1742,288 @@ function renderTodos(items){
 }
 
 // ── Alarms ──
+function _apiWeekday(d){return (d.getDay()+6)%7;}
+function _fmtLongDate(iso){
+  const d=new Date(iso+"T00:00:00");
+  if(Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("pt-BR",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+}
+function _alarmTypeOf(a){
+  if(a.date_ymd) return "once";
+  if(a.day_of_month) return "monthly";
+  if(a.days_of_week&&a.days_of_week.length) return "weekly";
+  if(a.recurring_daily) return "daily";
+  return "once";
+}
+function _alarmRepeatLabel(a){
+  const type=_alarmTypeOf(a);
+  if(type==="daily") return "Todo dia";
+  if(type==="weekly") return (a.days_of_week||[]).map(d=>DAY_NAMES[d]).join(", ")||"Na semana";
+  if(type==="monthly") return `Todo dia ${a.day_of_month}`;
+  if(a.date_ymd){
+    const d=new Date(a.date_ymd+"T00:00:00");
+    return d.toLocaleDateString("pt-BR",{day:"2-digit",month:"short",year:"numeric"});
+  }
+  if(a.next_trigger_at) return _fmtLongDate(String(a.next_trigger_at).slice(0,10));
+  return "Uma vez";
+}
+function _alarmOccursOn(a,date){
+  const iso=_isoDate(date);
+  if(a.date_ymd) return a.date_ymd===iso;
+  if(a.day_of_month){
+    const last=new Date(date.getFullYear(),date.getMonth()+1,0).getDate();
+    return date.getDate()===Math.min(a.day_of_month,last);
+  }
+  if(a.days_of_week&&a.days_of_week.length) return a.days_of_week.includes(_apiWeekday(date));
+  if(a.recurring_daily) return true;
+  if(a.next_trigger_at) return String(a.next_trigger_at).slice(0,10)===iso;
+  return false;
+}
+function _draftAlarm(){
+  const spec=_peekAlarmSpec();
+  if(!spec) return null;
+  return {id:"__draft__",label:(document.getElementById("alarmLabel")?.value||"").trim()||"Novo alarme",time_hhmm:_almTime,recurring_daily:spec.type==="daily",days_of_week:spec.weekdays,date_ymd:spec.date,day_of_month:spec.day_of_month,enabled:true,_draft:true};
+}
+function _peekAlarmSpec(){
+  if(_almType==="once") return _almDate?{type:"once",date:_almDate,time:_almTime}:null;
+  if(_almType==="daily") return {type:"daily",time:_almTime};
+  if(_almType==="weekly") return selDays&&selDays.length?{type:"weekly",weekdays:selDays.slice(),time:_almTime}:null;
+  if(_almType==="monthly") return {type:"monthly",day_of_month:_almDom,time:_almTime};
+  return null;
+}
+function _nextFromAlarmSpec(spec){
+  if(!spec) return null;
+  const [hh,mm]=(spec.time||"09:00").split(":").map(Number);
+  const atTime=d=>{const x=new Date(d);x.setHours(hh,mm,0,0);return x;};
+  const after=new Date();
+  if(spec.type==="once") return spec.date?atTime(new Date(spec.date+"T00:00:00")):null;
+  if(spec.type==="daily"){let d=atTime(after);if(d<=after) d.setDate(d.getDate()+1);return d;}
+  if(spec.type==="weekly"){
+    const days=spec.weekdays||[];
+    for(let i=0;i<8;i++){
+      const d=atTime(new Date(after.getFullYear(),after.getMonth(),after.getDate()+i));
+      if(days.includes(_apiWeekday(d))&&d>after) return d;
+    }
+    return null;
+  }
+  if(spec.type==="monthly"){
+    const dom=spec.day_of_month||1;
+    for(let add=0;add<13;add++){
+      const total=after.getMonth()+add;
+      const year=after.getFullYear()+Math.floor(total/12);
+      const month=((total%12)+12)%12;
+      const last=new Date(year,month+1,0).getDate();
+      const d=atTime(new Date(year,month,Math.min(dom,last)));
+      if(d>after) return d;
+    }
+  }
+  return null;
+}
+function updateAlarmPreview(){
+  const el=document.getElementById("alm-preview");
+  const dateLabel=document.getElementById("alarm-date-label");
+  const domLabel=document.getElementById("alarm-dom-label");
+  if(dateLabel) dateLabel.textContent=_almDate?_fmtLongDate(_almDate):"Clique no calendário";
+  if(domLabel) domLabel.textContent=_almDom?`Dia ${_almDom} de cada mês`:"Clique no calendário";
+  if(!el) return;
+  const spec=_peekAlarmSpec();
+  if(!spec){
+    el.className="alm-preview hint";
+    el.textContent=_almType==="weekly"?"Selecione ao menos um dia da semana.":_almType==="once"?"Clique num dia no calendário para marcar a data.":"Escolha quando o alarme deve tocar.";
+    return;
+  }
+  const next=_nextFromAlarmSpec(spec);
+  const pastOnce=spec.type==="once"&&next&&next<=new Date();
+  const desc=_alarmRepeatLabel({date_ymd:spec.date,day_of_month:spec.day_of_month,days_of_week:spec.weekdays,recurring_daily:spec.type==="daily",time_hhmm:spec.time});
+  if(pastOnce){
+    el.className="alm-preview warn";
+    el.innerHTML=`${esc(spec.time)} · ${esc(desc)}<br>Esse horário já passou. Escolha um dia ou hora no futuro.`;
+    return;
+  }
+  el.className="alm-preview";
+  const when=next?next.toLocaleString("pt-BR",{weekday:"short",day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}):"não calculado";
+  el.innerHTML=`${esc(spec.time)} · ${esc(desc)}<br>Próximo toque: ${esc(when)}`;
+}
+function onAlarmFormChange(){updateAlarmPreview();renderAlmCalendar();}
+function setAlarmType(type){
+  _almType=type;
+  document.getElementById("alarm-type-input").value=type;
+  document.querySelectorAll(".alm-type-pill").forEach(b=>b.classList.toggle("active",b.dataset.type===type));
+  document.getElementById("alarm-date-field").hidden=type!=="once";
+  document.getElementById("alarm-weekdays-field").hidden=type!=="weekly";
+  document.getElementById("alarm-dom-field").hidden=type!=="monthly";
+  const hint=document.getElementById("alm-when-hint");
+  if(hint) hint.textContent=type==="once"?"Clique num dia no calendário para escolher a data — inclusive de outro mês ou ano."
+    :type==="weekly"?"Clique no calendário ou nos dias da semana. Presets: dias úteis / fim de semana."
+    :type==="monthly"?"Clique num dia do calendário para escolher o dia do mês."
+    :"Toca todos os dias neste horário.";
+  if(type==="once"&&_almCalSelected) _almDate=_almCalSelected;
+  if(type==="monthly"&&_almCalSelected) _almDom=Number(_almCalSelected.slice(8,10));
+  if(type==="weekly"&&(!selDays||!selDays.length)&&_almCalSelected){
+    const d=new Date(_almCalSelected+"T00:00:00");
+    setPreset([_apiWeekday(d)]);
+    return;
+  }
+  onAlarmFormChange();
+}
+function setAlarmTime(time,opts={}){
+  _almTime=time;
+  const input=document.getElementById("alarmTime");
+  if(input) input.value=time;
+  document.querySelectorAll(".alm-time-pill").forEach(b=>b.classList.toggle("active",b.dataset.time===time));
+  if(!opts.silent) onAlarmFormChange();
+}
+function onAlarmTimeInput(){
+  const time=document.getElementById("alarmTime")?.value||"09:00";
+  setAlarmTime(time);
+}
+function startNewAlarm(){
+  document.getElementById("alarmLabel").value="";
+  selDays=[];
+  _almDate=_almCalSelected||_isoDate(new Date());
+  _almDom=Number((_almDate||"01").slice(8,10))||1;
+  setAlarmTime("09:00",{silent:true});
+  setAlarmType("once");
+  document.getElementById("alarmForm")?.scrollIntoView({behavior:"smooth",block:"nearest"});
+}
+function shiftAlmCal(delta){
+  _almCalMonth+=delta;
+  while(_almCalMonth<0){_almCalMonth+=12;_almCalYear-=1;}
+  while(_almCalMonth>11){_almCalMonth-=12;_almCalYear+=1;}
+  renderAlmCalendar();
+}
+function shiftAlmCalYear(delta){
+  _almCalYear+=delta;
+  renderAlmCalendar();
+}
+function goAlmCalToday(){
+  const n=new Date();
+  _almCalYear=n.getFullYear();
+  _almCalMonth=n.getMonth();
+  _almCalSelected=_isoDate(n);
+  _almPickerOpen=false;
+  if(_almType==="once") _almDate=_almCalSelected;
+  if(_almType==="monthly") _almDom=n.getDate();
+  renderAlmCalendar();
+}
+function toggleAlmCalPicker(){
+  _almPickerOpen=!_almPickerOpen;
+  renderAlmCalendar();
+}
+function pickAlmCalMonth(month){
+  _almCalMonth=month;
+  _almPickerOpen=false;
+  renderAlmCalendar();
+}
+function focusAlmCalendar(){
+  const el=document.getElementById("alm-cal");
+  if(!el) return;
+  el.scrollIntoView({behavior:"smooth",block:"nearest"});
+  el.classList.add("pulse");
+  setTimeout(()=>el.classList.remove("pulse"),700);
+}
+function onAlmCalDayClick(iso){
+  _almCalSelected=iso;
+  const d=new Date(iso+"T00:00:00");
+  _almCalYear=d.getFullYear();
+  _almCalMonth=d.getMonth();
+  _almPickerOpen=false;
+  if(_almType==="once") _almDate=iso;
+  else if(_almType==="monthly") _almDom=d.getDate();
+  else if(_almType==="weekly"){
+    const wd=_apiWeekday(d);
+    if(!Array.isArray(selDays)) selDays=[];
+    if(!selDays.includes(wd)) selDays=[...selDays,wd].sort((a,b)=>a-b);
+    document.querySelectorAll(".day-btn").forEach(b=>b.classList.toggle("on",selDays.includes(+b.dataset.day)));
+  }
+  onAlarmFormChange();
+  const form=document.getElementById("alarmForm");
+  if(form){
+    form.scrollIntoView({behavior:"smooth",block:"nearest"});
+    form.classList.add("pulse");
+    setTimeout(()=>form.classList.remove("pulse"),700);
+  }
+}
+function renderAlmCalendar(){
+  const grid=document.getElementById("alm-cal-grid");
+  const title=document.getElementById("alm-cal-title");
+  const picker=document.getElementById("alm-cal-picker");
+  const pickerYear=document.getElementById("alm-cal-picker-year");
+  const pickerMonths=document.getElementById("alm-cal-picker-months");
+  if(!grid) return;
+  if(title) title.textContent=`${MONTHS_PT[_almCalMonth]} ${_almCalYear}`;
+  if(picker) picker.hidden=!_almPickerOpen;
+  if(pickerYear) pickerYear.textContent=String(_almCalYear);
+  if(pickerMonths){
+    pickerMonths.innerHTML=MONTHS_SHORT.map((name,idx)=>`<button type="button" class="alm-cal-month-btn${idx===_almCalMonth?" on":""}" onclick="pickAlmCalMonth(${idx})">${name}</button>`).join("");
+  }
+  const startOffset=_apiWeekday(new Date(_almCalYear,_almCalMonth,1));
+  const todayIso=_isoDate(new Date());
+  const draft=_draftAlarm();
+  const items=_alarmsCache.slice();
+  if(draft) items.push(draft);
+  const hitsByIso={};
+  const cursor=new Date(_almCalYear,_almCalMonth,1-startOffset);
+  const cells=[];
+  for(let i=0;i<42;i++){
+    const date=new Date(cursor);
+    date.setDate(cursor.getDate()+i);
+    const iso=_isoDate(date);
+    const inMonth=date.getMonth()===_almCalMonth;
+    const hits=items.filter(a=>_alarmOccursOn(a,date));
+    if(hits.length) hitsByIso[iso]=hits;
+    const sorted=hits.slice().sort((a,b)=>(b._draft?1:0)-(a._draft?1:0));
+    const dots=sorted.slice(0,3).map(a=>{
+      const kind=a._draft?"draft":(a.enabled?"saved":"off");
+      return `<i class="alm-dot ${kind}"></i>`;
+    }).join("");
+    const extra=hits.length>3?`<span class="alm-cal-more">+${hits.length-3}</span>`:"";
+    const tip=hits.map(a=>`${a.time_hhmm||""} ${a.label||"Alarme"}`).join(" · ");
+    const cls=["alm-cal-cell",inMonth?"":"out",iso===todayIso?"today":"",iso===_almCalSelected?"selected":"",iso<todayIso&&inMonth?"past":"",hits.length?"has-alarms":"",hits.some(a=>a._draft)?"has-draft":""].filter(Boolean).join(" ");
+    cells.push(`<button type="button" class="${cls}" title="${esc(tip)}" onclick="onAlmCalDayClick('${iso}')"><span>${date.getDate()}</span><span class="alm-cal-dots">${dots}${extra}</span></button>`);
+  }
+  grid.innerHTML=cells.join("");
+  _renderAlmAgenda(_almCalSelected||todayIso,hitsByIso[_almCalSelected||todayIso]||[]);
+  updateAlarmPreview();
+}
+function _renderAlmAgenda(iso,hits){
+  const el=document.getElementById("alm-cal-agenda");
+  if(!el) return;
+  if(!hits.length){
+    el.innerHTML=`<div class="alm-agenda-day">${esc(_fmtLongDate(iso))}</div><div class="item-sub">Nenhum alarme neste dia. Clique para marcar um.</div>`;
+    return;
+  }
+  const rows=hits.slice().sort((a,b)=>String(a.time_hhmm).localeCompare(String(b.time_hhmm))).map(a=>{
+    const cls=a._draft?"alm-agenda-item draft":"alm-agenda-item";
+    return `<button type="button" class="${cls}" ${a._draft?"":`onclick="jumpToAlarm('${a.id}')"`}>
+      <span class="alm-agenda-time">${esc(a.time_hhmm||"--:--")}</span>
+      <span class="alm-agenda-task">${esc(a.label||"Alarme")}${a._draft?" · rascunho":""} · ${esc(_alarmRepeatLabel(a))}</span>
+    </button>`;
+  }).join("");
+  el.innerHTML=`<div class="alm-agenda-day">${esc(_fmtLongDate(iso))} · ${hits.length} alarme${hits.length===1?"":"s"}</div>${rows}`;
+}
+function jumpToAlarm(id){
+  const a=_alarmsCache.find(x=>x.id===id);
+  if(!a) return;
+  const iso=a.date_ymd||String(a.next_trigger_at||"").slice(0,10)||_isoDate(new Date());
+  const d=new Date(iso+"T00:00:00");
+  if(!Number.isNaN(d.getTime())){
+    _almCalYear=d.getFullYear();
+    _almCalMonth=d.getMonth();
+    _almCalSelected=iso;
+  }
+  renderAlmCalendar();
+  document.getElementById("alm-cal")?.scrollIntoView({behavior:"smooth",block:"nearest"});
+}
 function renderAlarms(items){
+  _alarmsCache=items||[];
   const el=document.getElementById("alarmList");
-  document.getElementById("alarmCount").textContent=items.length+(items.length===1?" alarme":" alarmes");
-  if(!items.length){el.innerHTML='<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>Nenhum alarme</div>';return;}
-  el.innerHTML=items.map(a=>{const days=a.days_of_week;const dayHtml=days&&days.length?days.map(d=>`<span class="day-tag">${DAY_NAMES[d]}</span>`).join(" "):a.recurring_daily?'<span class="day-tag">Todos os dias</span>':'<span class="day-tag" style="opacity:.5">Uma vez</span>';return`<div class="item"><span class="alarm-dot-led ${a.enabled?"on":"off"}"></span><div class="item-body"><div class="item-name"><span class="alarm-list-time">${esc(a.time_hhmm)}</span><span style="font-size:13px;font-weight:400;color:var(--text2);margin-left:8px">${esc(a.label||"")}</span></div><div style="margin-top:6px">${dayHtml}</div></div><div class="item-actions"><button class="btn btn-danger btn-sm btn-icon" data-alarm-rm="${a.id}">${IC.trash}</button></div></div>`;}).join("");
-  el.querySelectorAll("[data-alarm-rm]").forEach(b=>b.addEventListener("click",async()=>{await api("/api/alarms/remove","POST",{id:b.dataset.alarmRm});await refresh();}));
+  document.getElementById("alarmCount").textContent=_alarmsCache.length+(_alarmsCache.length===1?" alarme":" alarmes");
+  renderAlmCalendar();
+  if(!_alarmsCache.length){el.innerHTML='<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>Nenhum alarme ainda. Clique num dia do calendário para criar.</div>';return;}
+  const sorted=_alarmsCache.slice().sort((a,b)=>String(a.next_trigger_at||"").localeCompare(String(b.next_trigger_at||"")));
+  el.innerHTML=sorted.map(a=>`<div class="item" onclick="jumpToAlarm('${a.id}')" style="cursor:pointer"><span class="alarm-dot-led ${a.enabled?"on":"off"}"></span><div class="item-body"><div class="item-name"><span class="alarm-list-time">${esc(a.time_hhmm)}</span><span style="font-size:13px;font-weight:400;color:var(--text2);margin-left:8px">${esc(a.label||"")}</span></div><div style="margin-top:6px"><span class="day-tag">${esc(_alarmRepeatLabel(a))}</span></div></div><div class="item-actions"><button class="btn btn-danger btn-sm btn-icon" data-alarm-rm="${a.id}">${IC.trash}</button></div></div>`).join("");
+  el.querySelectorAll("[data-alarm-rm]").forEach(b=>b.addEventListener("click",async ev=>{ev.stopPropagation();await api("/api/alarms/remove","POST",{id:b.dataset.alarmRm});await refresh();}));
 }
 
 // ── Timers ativos (header) ──
@@ -1638,14 +2092,18 @@ function renderAlarmStatus(ringing){
 
 // ── Day picker ──
 function setPreset(days){
-  selDays=days;
-  document.querySelectorAll(".day-btn").forEach(b=>b.classList.toggle("on",Array.isArray(days)&&days.includes(+b.dataset.day)));
+  selDays=Array.isArray(days)?days.slice():[];
+  document.querySelectorAll(".day-btn").forEach(b=>b.classList.toggle("on",selDays.includes(+b.dataset.day)));
+  if(_almType!=="weekly") setAlarmType("weekly");
+  else onAlarmFormChange();
 }
 document.querySelectorAll(".day-btn").forEach(b=>b.addEventListener("click",()=>{
   if(!Array.isArray(selDays)) selDays=[];
   const d=+b.dataset.day;
   selDays=selDays.includes(d)?selDays.filter(x=>x!==d):[...selDays,d].sort((a,b)=>a-b);
   b.classList.toggle("on",selDays.includes(d));
+  if(_almType!=="weekly") setAlarmType("weekly");
+  else onAlarmFormChange();
 }));
 
 // ── Settings ──
@@ -2057,14 +2515,30 @@ document.getElementById("todoAdd").addEventListener("click",async()=>{const v=to
 enter(todoInput,()=>document.getElementById("todoAdd").click());
 
 document.getElementById("alarmAdd").addEventListener("click",async()=>{
-  const time=document.getElementById("alarmTime").value;
+  const time=document.getElementById("alarmTime").value||_almTime;
   if(!time){alert("Escolha um horário.");return;}
-  const label=document.getElementById("alarmLabel").value||"Alarme";
-  const recurring_daily=selDays!==null;
-  const days_of_week=(Array.isArray(selDays)&&selDays.length)?selDays:null;
-  await api("/api/alarms/add","POST",{time_hhmm:time,recurring_daily,label,days_of_week});
-  document.getElementById("alarmLabel").value="";setPreset([]);
-  await refresh();
+  const spec=_peekAlarmSpec();
+  if(!spec){
+    alert(_almType==="weekly"?"Selecione ao menos um dia da semana.":"Clique num dia no calendário para marcar a data.");
+    focusAlmCalendar();
+    return;
+  }
+  const next=_nextFromAlarmSpec(spec);
+  if(spec.type==="once"&&next&&next<=new Date()){
+    alert("Esse horário já passou. Escolha um dia ou hora no futuro.");
+    return;
+  }
+  const label=(document.getElementById("alarmLabel").value||"").trim()||"Alarme";
+  const body={time_hhmm:time,label,recurring_daily:_almType==="daily"};
+  if(_almType==="once"&&_almDate) body.date_ymd=_almDate;
+  if(_almType==="weekly") body.days_of_week=selDays.slice();
+  if(_almType==="monthly") body.day_of_month=_almDom;
+  try{
+    await api("/api/alarms/add","POST",body);
+    document.getElementById("alarmLabel").value="";
+    startNewAlarm();
+    await refresh();
+  }catch(e){alert(e.message||"Falha ao criar o alarme.");}
 });
 document.getElementById("alarmStop").addEventListener("click",async()=>{await api("/api/alarms/stop","POST",{});renderAlarmToast([]);await refresh();});
 
@@ -3283,8 +3757,18 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                 label = str(data.get("label", "Alarme")).strip() or "Alarme"
                 raw_days = data.get("days_of_week")
                 days_of_week = [int(d) for d in raw_days] if isinstance(raw_days, list) else None
+                date_ymd = str(data.get("date_ymd") or "").strip() or None
+                raw_dom = data.get("day_of_month")
                 try:
-                    assistant.add_alarm(time_hhmm=time_hhmm, recurring_daily=recurring_daily, label=label, days_of_week=days_of_week)
+                    day_of_month = int(raw_dom) if raw_dom not in (None, "") else None
+                    assistant.add_alarm(
+                        time_hhmm=time_hhmm,
+                        recurring_daily=recurring_daily,
+                        label=label,
+                        days_of_week=days_of_week,
+                        date_ymd=date_ymd,
+                        day_of_month=day_of_month,
+                    )
                 except ValueError as exc:
                     self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
                     return

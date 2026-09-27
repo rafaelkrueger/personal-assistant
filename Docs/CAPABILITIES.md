@@ -105,10 +105,11 @@ alta**:
 - `{"action": "todo_add", "title": "pagar a conta de luz"}` — cria uma tarefa.
 - `{"action": "alarm_add", "time_hhmm": "07:30", "label": "Acordar"}` — cria
   um alarme. Por padrão toca **uma vez** (no próximo 07:30 — "amanhã às 7h30"
-  é isso). Só mande `"recurring_daily": true` quando o pedido disser que
-  repete todo dia; para dias específicos ("de segunda a sexta") mande só
-  `"days_of_week": [0, 1, 2, 3, 4]` (0 = segunda … 6 = domingo) — isso já
-  faz repetir nesses dias.
+  é isso). Para um dia específico de qualquer mês/ano mande `"date_ymd":
+  "2026-12-25"`. Só mande `"recurring_daily": true` quando o pedido disser que
+  repete todo dia; para dias da semana ("de segunda a sexta") mande
+  `"days_of_week": [0, 1, 2, 3, 4]` (0 = segunda … 6 = domingo); para todo
+  mês, `"day_of_month": 15`.
 - `{"action": "status"}` — devolve a lista de compras, as tarefas pendentes e
   os alarmes ativos (para responder "o que tem na lista de compras?" sem
   acordar a casa).

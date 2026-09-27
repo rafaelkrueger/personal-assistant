@@ -41,7 +41,11 @@ class AlarmSkill(Skill):
             lines = ["Seus alarmes:"]
             for idx, alarm in enumerate(alarms, start=1):
                 days = alarm.get("days_of_week")
-                if days:
+                if alarm.get("date_ymd"):
+                    day_str = alarm["date_ymd"]
+                elif alarm.get("day_of_month"):
+                    day_str = f"todo dia {alarm['day_of_month']}"
+                elif days:
                     day_names = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sab", "Dom"]
                     day_str = ", ".join(day_names[d] for d in days)
                 elif alarm["recurring_daily"]:
