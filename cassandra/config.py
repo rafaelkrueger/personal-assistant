@@ -27,7 +27,7 @@ class Settings:
     vad_wake_silence_duration: float = 0.4
     vad_max_duration: float = 30.0
     mic_debug: bool = True
-    wake_timeout_seconds: int = 30
+    wake_timeout_seconds: int = 10
     on_sound_path: str = "assets/on.mp3"
     off_sound_path: str = "assets/off.mp3"
     ring_sound_path: str = "assets/ring.mp3"
@@ -86,7 +86,7 @@ def load_settings() -> Settings:
     vad_max_duration = float(os.getenv("VAD_MAX_DURATION", "30.0").strip() or "30.0")
 
     mic_debug = os.getenv("MIC_DEBUG", "true").strip().lower() in {"1", "true", "yes", "on"}
-    wake_timeout_seconds = int(os.getenv("WAKE_TIMEOUT_SECONDS", "30").strip() or "30")
+    wake_timeout_seconds = int(os.getenv("WAKE_TIMEOUT_SECONDS", "10").strip() or "10")
     on_sound_path = os.getenv("ON_SOUND_PATH", "assets/on.mp3").strip() or "assets/on.mp3"
     off_sound_path = os.getenv("OFF_SOUND_PATH", "assets/off.mp3").strip() or "assets/off.mp3"
     ring_sound_path = os.getenv("RING_SOUND_PATH", "assets/ring.mp3").strip() or "assets/ring.mp3"

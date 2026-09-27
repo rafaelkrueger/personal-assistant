@@ -185,6 +185,7 @@ class VadRecorder:
         interrupt_event: threading.Event | None = None,
         on_frame=None,
         max_wait: float | None = None,
+        min_voiced: int | None = None,
     ) -> str | None:
         """Block until speech is detected, then record until silence.
 
@@ -275,10 +276,15 @@ class VadRecorder:
         if not recorded:
             return None
         speech_seconds = speech_frames * FRAME_MS / 1000
-        if speech_seconds < MIN_SPEECH_SECONDS:
-            return None  # estalo/ruído: descartado sem registrar (só poluía o log)
-        if voiced_frames < MIN_VOICED_FRAMES:
-            return None  # sem voz humana (chiado, bip, batida): nem vai para a transcrição
+        # Se o nome já foi reconhecido ao vivo (o bip já tocou), a fala é de verdade: nunca descarta.
+        if not fast_end:
+            needed = MIN_VOICED_FRAMES if min_voiced is None else min_voiced
+            if speech_seconds < MIN_SPEECH_SECONDS or voiced_frames < needed:
+                # estalo/chiado/bip: nem vai para a transcrição. Só no log do serviço (não na aba Microfone),
+                # para dar para calibrar os limites.
+                print(f"[VAD] descartado: fala {speech_seconds:.2f} s, voz {voiced_frames}/{needed} quadros, "
+                      f"limite {threshold:.0f}", flush=True)
+                return None
 
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
         tmp.close()

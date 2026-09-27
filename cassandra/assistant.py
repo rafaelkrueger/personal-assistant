@@ -152,7 +152,9 @@ class CassandraAssistant:
             in_active_session = active_until is not None
             if mic_monitor.present is not False:
                 mic_monitor.set(phase="ouvindo o pedido" if in_active_session else "esperando o nome")
-            event = self.input_source.read(wake_phase=not in_active_session)
+            # Na sessão a escuta tem prazo: sem ninguém começar a falar até lá, ela desativa na hora (com o som).
+            wait = max(0.5, active_until - time.monotonic()) if in_active_session else None
+            event = self.input_source.read(wake_phase=not in_active_session, max_wait=wait)
 
             # Handle fired timers before anything else
             if self.timer_manager.has_fired():
@@ -169,20 +171,19 @@ class CassandraAssistant:
                 self._shutdown_with_goodbye()
                 break
 
-            now = time.monotonic()
-            if active_until is not None and now >= active_until:
-                self.sound_player.play(self.settings.off_sound_path)
-                active_until = None
-                self.memory.clear()
-                mic_monitor.event("status", "Sessão encerrada por tempo — voltou a esperar o nome")
-                if self.settings.mic_debug:
-                    print("[SESSION] Sessao expirada. Memoria limpa.")
-
             raw_text = event.text.strip()
             if not raw_text:
-                # Ruído/som curto durante a sessão: segue ouvindo em silêncio (falar "não entendi" a cada ruído
-                # travava o microfone por ~2 s e irritava).
+                # Silêncio/ruído. Na sessão, passado o prazo, desativa (som de desligar) e volta a esperar o nome;
+                # antes disso segue ouvindo em silêncio (falar "não entendi" a cada ruído irritava).
+                if active_until is not None and time.monotonic() >= active_until:
+                    self.sound_player.play(self.settings.off_sound_path)
+                    active_until = None
+                    self.memory.clear()
+                    mic_monitor.event("status", "Sessão encerrada por silêncio — voltou a esperar o nome")
+                    if self.settings.mic_debug:
+                        print("[SESSION] Sessao expirada. Memoria limpa.", flush=True)
                 continue
+            # Quem começou a falar dentro do prazo continua na sessão, mesmo que a fala termine depois dele.
 
             if self.settings.mic_debug and self.settings.input_mode in {"mic", "auto"}:
                 print(f"[ROUTER] Recebido: {raw_text!r}")
@@ -202,28 +203,10 @@ class CassandraAssistant:
                 command = wake_command
                 command_source = "wake_inline"
                 if not command:
-                    # Só o nome: espera o pedido de verdade (bips e estalos curtos são ignorados), até o prazo.
-                    mic_monitor.set(phase="ouvindo o pedido")
-                    deadline = time.monotonic() + self.settings.wake_timeout_seconds
-                    command = ""
-                    follow_exit = False
-                    while not command and time.monotonic() < deadline:
-                        follow_event = self.input_source.read(max_wait=max(1.0, deadline - time.monotonic()))
-                        if follow_event.exit_requested:
-                            follow_exit = True
-                            break
-                        command = follow_event.text.strip()
-                    if follow_exit:
-                        self._shutdown_with_goodbye()
-                        break
-                    command_source = "wake_followup"
-                    if not command:
-                        retry = "Não entendi, pode repetir?"
-                        self.voice_output.speak(retry)
-                        print(f"Cassandra: {retry}")
-                        self.sound_player.play(self.settings.on_sound_path)
-                        active_until = time.monotonic() + self.settings.wake_timeout_seconds
-                        continue
+                    # Só o nome: abre a sessão e espera o pedido. Sem fala até o prazo, desativa (no topo do loop).
+                    mic_monitor.event("status", "Ativada — pode falar o pedido")
+                    active_until = time.monotonic() + self.settings.wake_timeout_seconds
+                    continue
             else:
                 # Active session: no wake word required.
                 command = raw_text

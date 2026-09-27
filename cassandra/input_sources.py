@@ -19,6 +19,7 @@ _HALLUCINATIONS = ("legendas pela comunidade", "amaraorg", "obrigado por assisti
                    "inscrevase no canal", "se inscreva no canal", "legenda adriana", "transcricao e legendas",
                    "subtitles by", "thanks for watching", "thank you for watching")
 _OPENAI_RETRY_AFTER = 600  # depois de uma falha da OpenAI (ex.: sem créditos), usa só o local por 10 min
+_SESSION_MIN_VOICED = 4  # quadros com voz exigidos numa sessão ativa (esperando o nome são 7)
 
 
 @dataclass
@@ -160,6 +161,8 @@ class MicrophoneInputSource:
                 interrupt_event=self.interrupt_event,
                 on_frame=on_frame if stream is not None else None,
                 max_wait=max_wait,
+                # Na sessão (depois do bip) a pessoa está falando com ela: basta um pouco de voz (o chiado dá 0).
+                min_voiced=None if wake_phase else _SESSION_MIN_VOICED,
             )
         finally:
             result = stream.close() if stream is not None else None
