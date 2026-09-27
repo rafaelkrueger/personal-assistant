@@ -12,6 +12,7 @@ from pathlib import Path
 from cassandra.config import load_settings
 from cassandra.input_sources import InputEvent, MicrophoneInputSource, TextInputSource
 from cassandra.memory import ConversationMemory
+from cassandra import speech_state
 from cassandra.mic_monitor import monitor as mic_monitor
 from cassandra import llm_settings
 from cassandra.openai_client import LLMService
@@ -151,13 +152,23 @@ class CassandraAssistant:
             )
 
         active_until: float | None = None
+        # O pedido roda numa thread (ver _start_task): enquanto ela pensa, executa ou fala, o microfone continua
+        # ouvindo — só o nome — e dizer "Cassandra" interrompe tudo para um pedido novo.
+        self._task_thread: threading.Thread | None = None
+        self._task_gen: int | None = None
+        self._task_done: tuple[int, dict | None] | None = None
+        self.input_source.on_barge = lambda: mic_monitor.set(phase="ouvindo o pedido")
 
         while True:
             self._timer_interrupt.clear()
+            active_until = self._finish_task(active_until)
             # Use a shorter silence threshold when waiting for the wake word.
-            in_active_session = active_until is not None
+            working = self._task_running()
+            # Enquanto um pedido roda, só o nome vale (para interromper); a sessão reabre quando ele termina.
+            in_active_session = active_until is not None and not working
             if mic_monitor.present is not False:
-                mic_monitor.set(phase="ouvindo o pedido" if in_active_session else "esperando o nome")
+                mic_monitor.set(phase="trabalhando" if working else
+                                "ouvindo o pedido" if in_active_session else "esperando o nome")
             # Na sessão a escuta tem prazo: sem ninguém começar a falar até lá, ela desativa na hora (com o som).
             wait = max(0.5, active_until - time.monotonic()) if in_active_session else None
             event = self.input_source.read(wake_phase=not in_active_session, max_wait=wait)
@@ -183,7 +194,7 @@ class CassandraAssistant:
             if not raw_text:
                 # Silêncio/ruído. Na sessão, passado o prazo, desativa (som de desligar) e volta a esperar o nome;
                 # antes disso segue ouvindo em silêncio (falar "não entendi" a cada ruído irritava).
-                if active_until is not None and time.monotonic() >= active_until:
+                if active_until is not None and not working and time.monotonic() >= active_until:
                     self.sound_player.play(self.settings.off_sound_path)
                     active_until = None
                     self.memory.clear()
@@ -198,13 +209,17 @@ class CassandraAssistant:
 
             wake_detected, wake_command = self._parse_wake(raw_text)
 
-            if active_until is None and not wake_detected:
+            if (active_until is None or working) and not wake_detected:
                 mic_monitor.event("ignored", f"Ignorado (sem o nome): “{raw_text}”")
                 self._log_passive_heard(raw_text)
                 if self.settings.mic_debug and self.settings.input_mode in {"mic", "auto"}:
                     print("[WAKE] Ignorado: wake word nao detectada.")
                 continue
 
+            if wake_detected and working:
+                # Chamaram a Cassandra enquanto ela ainda trabalhava: o pedido anterior é abandonado.
+                speech_state.cancel()
+                mic_monitor.event("status", "Pedido anterior interrompido")
             if wake_detected:
                 if not getattr(event, "wake_signaled", False):
                     self.sound_player.play(self.settings.on_sound_path)
@@ -226,20 +241,53 @@ class CassandraAssistant:
 
             mic_monitor.event("command", f"Pedido: “{command}”")
             mic_monitor.set(phase="pensando")
-            result = self.process_text_command(
-                command,
-                source=command_source,
-                speak_response=True,
-            )
-            response = result["response"]
-            print(f"Cassandra: {response}")
-            mic_monitor.event("response", f"Resposta: “{response}”")
-            if result["dismissed"]:
-                active_until = None
-                continue
-            active_until = time.monotonic() + self.settings.wake_timeout_seconds
-            # Audible cue that Cassandra is now waiting for the user's next utterance.
-            self.sound_player.play(self.settings.on_sound_path)
+            self._start_task(command, command_source)
+            active_until = None  # a sessão reabre quando o pedido terminar (_finish_task)
+
+    # ── Pedido em segundo plano (interrompível) ─────────────────────────────
+
+    def _task_running(self) -> bool:
+        """Há um pedido da geração atual em andamento? (Um interrompido não conta.)"""
+        thread = self._task_thread
+        return (thread is not None and thread.is_alive() and self._task_gen is not None
+                and not speech_state.cancelled(self._task_gen))
+
+    def _start_task(self, command: str, source: str) -> None:
+        gen = speech_state.generation()
+
+        def run() -> None:
+            speech_state.task_begin(gen)
+            result = None
+            try:
+                result = self.process_text_command(command, source=source, speak_response=True)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[ERRO] Pedido falhou: {exc}", flush=True)
+            finally:
+                self._task_done = (gen, result)
+                self._timer_interrupt.set()  # acorda o microfone para reabrir a sessão (ou seguir esperando)
+
+        self._task_gen = gen
+        self._task_thread = threading.Thread(target=run, name="cassandra-task", daemon=True)
+        self._task_thread.start()
+
+    def _finish_task(self, active_until: float | None) -> float | None:
+        """Pedido terminou: fala e registra como antes e reabre a sessão. Interrompido: ignora em silêncio."""
+        done, self._task_done = self._task_done, None
+        if done is None:
+            return active_until
+        gen, result = done
+        if speech_state.cancelled(gen):
+            return active_until  # a pessoa já chamou a Cassandra de novo: nada de bip nem sessão do pedido velho
+        if result is None:
+            return time.monotonic() + self.settings.wake_timeout_seconds
+        response = result["response"]
+        print(f"Cassandra: {response}")
+        mic_monitor.event("response", f"Resposta: “{response}”")
+        if result["dismissed"]:
+            return None
+        # Audible cue that Cassandra is now waiting for the user's next utterance.
+        self.sound_player.play(self.settings.on_sound_path)
+        return time.monotonic() + self.settings.wake_timeout_seconds
 
     def process_text_command(
         self,

@@ -102,6 +102,15 @@ class LocalSpeech:
             return None
         return WakeStream(self)
 
+    def barge_detector(self) -> "BargeDetector | None":
+        """Detector do nome enquanto a Cassandra fala (interromper). None se o modelo não carregou."""
+        if not self.available():
+            return None
+        with self._lock:
+            if getattr(self, "_barge", None) is None:
+                self._barge = BargeDetector(self)
+        return self._barge
+
     def heard_wake_word(self, wav_path: str) -> bool:
         if not self.available():
             raise RuntimeError(f"reconhecimento local indisponível: {self._error}")
@@ -185,3 +194,45 @@ class WakeStream:
         self.speech.last_heard = text
         return heard, only_name, text
 
+
+
+class BargeDetector:
+    """Procura o nome no áudio que chega ENQUANTO a Cassandra fala (para ela ser interrompida).
+
+    Reconhecedor próprio (não disputa o do WakeStream) com a mesma gramática restrita. Olha só as últimas palavras
+    reconhecidas e recomeça a cada resultado final, para a fala dela (que vira [unk]/palavras parecidas) não
+    "empurrar" o nome para fora da janela. Usado só pela thread do microfone.
+    """
+
+    PARTIAL_EVERY = 3  # checa o parcial a cada ~90 ms
+
+    def __init__(self, speech: LocalSpeech) -> None:
+        from vosk import KaldiRecognizer  # noqa: PLC0415
+
+        self.speech = speech
+        grammar = speech.wake_words + [w for w in _COMPETITORS if w not in speech.wake_words] + ["[unk]"]
+        self._rec = KaldiRecognizer(speech._model, 16000, json.dumps(grammar))
+        self._frames = 0
+
+    def reset(self) -> None:
+        self._rec.Reset()
+        self._frames = 0
+
+    def _has_name(self, text: str) -> bool:
+        words = [w for w in text.split() if w != "[unk]"]
+        return any(w in self.speech.wake_words for w in words[-2:])
+
+    def feed(self, frame: bytes) -> bool:
+        """True quando o nome aparece (e já recomeça para a próxima vez)."""
+        self._frames += 1
+        if self._rec.AcceptWaveform(frame):
+            text = json.loads(self._rec.Result()).get("text", "")
+            self._rec.Reset()
+        elif self._frames % self.PARTIAL_EVERY == 0:
+            text = json.loads(self._rec.PartialResult()).get("partial", "")
+        else:
+            return False
+        if self._has_name(text):
+            self.reset()
+            return True
+        return False

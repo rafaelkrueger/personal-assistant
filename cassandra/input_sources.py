@@ -97,6 +97,7 @@ class MicrophoneInputSource:
             self.local.preload()
         self.local_wake = wake_word_engine == "local"
         self.on_wake = on_wake  # toca o som de ativação quando o nome é reconhecido
+        self.on_barge = None  # chamado quando a pessoa diz o nome enquanto a Cassandra fala (interromper)
         self._signaled = False
 
         from cassandra.vad_recorder import VadRecorder  # noqa: PLC0415
@@ -151,6 +152,26 @@ class MicrophoneInputSource:
         # Esperando o nome: reconhece ao vivo enquanto grava (o som de ativação sai na hora).
         stream = self.local.stream() if (wake_phase and self.local_wake and self._local_ready()) else None
 
+        barge = self.local.barge_detector() if (self.local is not None and self._local_ready()) else None
+        if barge is not None:
+            barge.reset()
+
+        def on_busy_frame(frame: bytes) -> bool:
+            """Enquanto ela fala: o nome dito por cima interrompe tudo e a gravação vira o pedido novo."""
+            if barge is None or not barge.feed(frame):
+                return False
+            if speech_state.said_recently(self.local.wake_words):
+                return False  # foi ela mesma dizendo o próprio nome ("eu sou a Cassandra")
+            speech_state.cancel()
+            monitor.event("wake", "Interrompida: nome ouvido enquanto ela falava")
+            if self.on_barge:
+                try:
+                    self.on_barge()
+                except Exception:  # noqa: BLE001
+                    pass
+            self._signal_wake()
+            return True
+
         def on_frame(frame: bytes) -> bool:
             """True = o nome já foi reconhecido (o gravador pode encerrar na primeira pausa curta)."""
             if stream is not None and stream.feed(frame):
@@ -165,6 +186,7 @@ class MicrophoneInputSource:
                 max_wait=max_wait,
                 # Na sessão (depois do bip) a pessoa está falando com ela: basta um pouco de voz (o chiado dá 0).
                 min_voiced=None if wake_phase else _SESSION_MIN_VOICED,
+                on_busy_frame=on_busy_frame if barge is not None else None,
             )
         finally:
             result = stream.close() if stream is not None else None
@@ -172,7 +194,10 @@ class MicrophoneInputSource:
             return ""
 
         try:
-            if wake_phase and self.local_wake and self._local_ready():
+            if getattr(self._recorder, "last_barged", False):
+                # O nome foi dito por cima da fala dela (o WakeStream não ouviu esse trecho): é um pedido com o nome.
+                text = self._with_wake_word(self._transcribe(wav_path))
+            elif wake_phase and self.local_wake and self._local_ready():
                 # Sem o nome, nada vai para a API.
                 heard, only_name, heard_text = result if result else (self.local.heard_wake_word(wav_path),
                                                                        self.local.last_only_name,

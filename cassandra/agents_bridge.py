@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from cassandra import speech_state
 from skills.web_search.skill import _client as _maestro
 
 _REFRESH_EVERY = 60.0  # segundos entre atualizações da lista de agentes
@@ -181,15 +182,19 @@ class AgentsBridge:
         record = self._wait(link, base, request_id, created, wait_seconds)
         if record.get("status") in _FINAL:
             return self._reply(record)
+        if speech_state.task_cancelled():
+            return AgentReply(False, error="interrompido")  # chamaram a Cassandra de novo: nada de resultado depois
         if on_late_result:
-            threading.Thread(target=self._follow, args=(link, base, request_id, record, target, on_late_result),
+            gen = speech_state.task_generation()
+            threading.Thread(target=self._follow, args=(link, base, request_id, record, target, on_late_result, gen),
                              daemon=True).start()
         return AgentReply(False, pending=True)
 
     @staticmethod
     def _wait(link, base: str, request_id: str, record: dict, seconds: float) -> dict:
         deadline = time.monotonic() + seconds
-        while record.get("status") not in _FINAL and time.monotonic() < deadline:
+        while (record.get("status") not in _FINAL and time.monotonic() < deadline
+               and not speech_state.task_cancelled()):
             time.sleep(1.0)
             try:
                 _, record = link._http(base, "GET", f"{link._prefix}/request/{request_id}", timeout=15)
@@ -197,8 +202,10 @@ class AgentsBridge:
                 continue
         return record
 
-    def _follow(self, link, base, request_id, record, target, callback) -> None:
+    def _follow(self, link, base, request_id, record, target, callback, gen=None) -> None:
         record = self._wait(link, base, request_id, record, 30 * 60)  # tarefas longas (ex.: IDE): até 30 min
+        if gen is not None and speech_state.cancelled(gen):
+            return  # a pessoa interrompeu a Cassandra depois desse pedido: não fala o resultado velho
         reply = self._reply(record) if record.get("status") in _FINAL else AgentReply(
             False, error="passou de 30 minutos sem terminar")
         try:

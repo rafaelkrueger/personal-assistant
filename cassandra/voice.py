@@ -215,6 +215,7 @@ class VoiceOutput:
         self._azure_down_until = 0.0
         self._last_engine: str | None = None
         self._play_lock = threading.Lock()  # uma fala por vez (chat web em segundo plano + microfone)
+        self._tl = threading.local()  # geração da fala desta thread: se ela for interrompida, o som para
 
     # ── API pública ───────────────────────────────────────────────────────────
 
@@ -224,8 +225,11 @@ class VoiceOutput:
         cleaned = text.strip()
         if not cleaned:
             return
+        if speech_state.task_cancelled():
+            return  # o pedido que ia falar isto foi interrompido (a pessoa chamou a Cassandra de novo)
         # Enquanto fala (e logo depois), o microfone ignora o que ouve: ela não se ativa com a própria voz.
-        with speech_state.speaking(cleaned):
+        with speech_state.speaking(cleaned) as gen:
+            self._tl.gen = gen
             if self._speak_streamed(cleaned):
                 return
             path = self._synthesize(cleaned)
@@ -233,6 +237,29 @@ class VoiceOutput:
                 self._play_file(path)
 
     # ── Voz da OpenAI em streaming ────────────────────────────────────────────
+
+    def _stopped(self) -> bool:
+        """A fala desta thread foi interrompida (a pessoa chamou a Cassandra no meio)?"""
+        gen = getattr(self._tl, "gen", None)
+        return gen is not None and speech_state.cancelled(gen)
+
+    def _wait_player(self, proc: subprocess.Popen) -> None:
+        """Espera o player terminar; se a fala for interrompida, corta o som na hora."""
+        while True:
+            try:
+                proc.wait(timeout=0.05)
+                return
+            except subprocess.TimeoutExpired:
+                if self._stopped():
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=1)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                    return
+
+    def _run_player(self, cmd: list[str], stdin=None) -> None:
+        self._wait_player(subprocess.Popen(cmd, stdin=stdin, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
 
     def _can_stream(self) -> bool:
         """Voz em streaming (Azure ou OpenAI) tocada pelo pw-play enquanto chega."""
@@ -259,7 +286,7 @@ class VoiceOutput:
         with self._play_lock:
             if cache and cache.exists():
                 with open(cache, "rb") as fh:
-                    subprocess.run(play, stdin=fh, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+                    self._run_player(play, stdin=fh)
                 return True
             proc = None
             got: list[bytes] = []
@@ -268,6 +295,8 @@ class VoiceOutput:
                     if resp.status_code != 200:
                         raise RuntimeError(f"HTTP {resp.status_code}: {resp.read()[:160]!r}")
                     for chunk in resp.iter_bytes(4096):
+                        if self._stopped():
+                            break
                         if proc is None:
                             proc = subprocess.Popen(play, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
                                                     stderr=subprocess.DEVNULL)
@@ -289,7 +318,9 @@ class VoiceOutput:
                         proc.stdin.close()
                     except OSError:
                         pass
-                    proc.wait()
+                    self._wait_player(proc)
+            if self._stopped():
+                return True
             if proc is None or proc.returncode != 0:
                 return False
             if cache and got:
@@ -317,13 +348,15 @@ class VoiceOutput:
         with self._play_lock:
             if cache and cache.exists():
                 with open(cache, "rb") as fh:
-                    subprocess.run(play, stdin=fh, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+                    self._run_player(play, stdin=fh)
                 return True
             proc = None
             got: list[bytes] = []
             try:
                 stream = self.llm.stream_speech(text, model=self.tts_model, voice=self.tts_voice)
                 for chunk in stream:
+                    if self._stopped():
+                        break
                     if proc is None:
                         proc = subprocess.Popen(play, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
                                                 stderr=subprocess.DEVNULL)
@@ -345,7 +378,9 @@ class VoiceOutput:
                         proc.stdin.close()
                     except OSError:
                         pass
-                    proc.wait()
+                    self._wait_player(proc)
+            if self._stopped():
+                return True
             if proc is None:
                 return False
             if proc.returncode != 0:
@@ -364,7 +399,10 @@ class VoiceOutput:
         ouve (speech_state): ela não se ativa nem responde à própria voz."""
         if not self.enabled:
             return "".join(token_iter)
-        with speech_state.speaking():
+        if speech_state.task_cancelled():
+            return ""
+        with speech_state.speaking() as gen:
+            self._tl.gen = gen
             return self._speak_stream(token_iter)
 
     def _speak_stream(self, token_iter: Iterator[str]) -> str:
@@ -382,12 +420,20 @@ class VoiceOutput:
 
         errors: list[BaseException] = []
 
+        owner = speech_state.task_generation()  # o pedido dono desta resposta (se houver)
+
         def collect() -> None:
+            # Esta thread roda a resposta (LLM, pesquisa, agentes): ela pertence ao mesmo pedido, para esperas e
+            # resultados atrasados pararem se a Cassandra for interrompida.
+            if owner is not None:
+                speech_state.task_begin(owner)
             # Sempre sinaliza o fim (None), mesmo se o LLM falhar no meio (sem crédito, rede...). Sem isso o
             # loop abaixo espera para sempre e trava o assistente inteiro (quem chamou segura o _state_lock).
             try:
                 buf = ""
                 for token in token_iter:
+                    if self._stopped() or speech_state.task_cancelled():
+                        break  # interrompida: nem termina de gerar a resposta
                     buf += token
                     sentences, buf = _split_sentences(buf)
                     for s in sentences:
@@ -405,7 +451,7 @@ class VoiceOutput:
             parts_stream: list[str] = []
             while True:
                 sentence = sentence_q.get()
-                if sentence is None:
+                if sentence is None or self._stopped():
                     break
                 parts_stream.append(sentence)
                 speech_state.remember(sentence)
@@ -547,6 +593,7 @@ class VoiceOutput:
             cmd = player_command(self._player, path) if self._player else None
             if cmd:
                 with self._play_lock:
-                    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+                    if not self._stopped():
+                        self._run_player(cmd)
         finally:
             os.unlink(path)

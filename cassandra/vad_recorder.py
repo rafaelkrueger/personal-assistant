@@ -187,6 +187,7 @@ class VadRecorder:
         on_frame=None,
         max_wait: float | None = None,
         min_voiced: int | None = None,
+        on_busy_frame=None,
     ) -> str | None:
         """Block until speech is detected, then record until silence.
 
@@ -218,6 +219,9 @@ class VadRecorder:
         voiced_frames = 0
         interrupted = False
         echo_aborted = False  # ela começou a falar no meio da gravação
+        barged = False  # alguém disse o nome enquanto ela falava: esta gravação é o pedido novo
+        busy_tail: list[bytes] = []  # ~1,5 s de áudio da fala dela, para a gravação incluir o nome dito por cima
+        self.last_barged = False
         threshold = self._threshold()
         fast_end = False  # quem ouve ao vivo avisou (ex.: o nome foi reconhecido): basta uma pausa curta
         fast_silence_frames = max(1, int(FAST_END_SILENCE * 1000 / FRAME_MS))
@@ -236,12 +240,25 @@ class VadRecorder:
 
                 if speech_state.busy():
                     # A Cassandra está falando (ou a caixa ainda toca o fim): o que o microfone ouve é ela mesma.
-                    # Nada disso vira pedido — senão ela se ativa sozinha e responde a si mesma em loop.
+                    # Nada disso vira pedido — senão ela se ativa sozinha e responde a si mesma em loop. Só o nome
+                    # dela interrompe: on_busy_frame procura o nome e, se achar, cancela a fala (speech_state).
                     if speaking:
                         echo_aborted = True
                         break
                     pre_roll.clear()
+                    busy_tail.append(frame)
+                    if len(busy_tail) > 50:
+                        busy_tail.pop(0)
+                    if on_busy_frame and on_busy_frame(frame):
+                        # Interrompida: a gravação começa aqui, já com o nome, e segue até a pessoa parar de falar.
+                        barged = True
+                        speaking = True
+                        recorded.extend(busy_tail)
+                        busy_tail.clear()
+                        silent_frames = 0
+                        speech_frames = voiced_frames = MIN_VOICED_FRAMES
                     continue  # também não conta no prazo de espera nem ensina o "ruído de fundo"
+                busy_tail.clear()
 
                 if not speaking:
                     waited_frames += 1
@@ -288,7 +305,8 @@ class VadRecorder:
             return None
         speech_seconds = speech_frames * FRAME_MS / 1000
         # Se o nome já foi reconhecido ao vivo (o bip já tocou), a fala é de verdade: nunca descarta.
-        if not fast_end:
+        self.last_barged = barged
+        if not fast_end and not barged:
             needed = MIN_VOICED_FRAMES if min_voiced is None else min_voiced
             if speech_seconds < MIN_SPEECH_SECONDS or voiced_frames < needed:
                 # estalo/chiado/bip: nem vai para a transcrição. Só no log do serviço (não na aba Microfone),
