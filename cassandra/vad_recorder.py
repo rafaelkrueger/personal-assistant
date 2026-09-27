@@ -9,6 +9,7 @@ import threading
 import wave
 
 from cassandra.mic_monitor import monitor
+from cassandra import speech_state
 
 SAMPLE_RATE = 16_000
 CHANNELS = 1
@@ -216,6 +217,7 @@ class VadRecorder:
         speech_frames = 0
         voiced_frames = 0
         interrupted = False
+        echo_aborted = False  # ela começou a falar no meio da gravação
         threshold = self._threshold()
         fast_end = False  # quem ouve ao vivo avisou (ex.: o nome foi reconhecido): basta uma pausa curta
         fast_silence_frames = max(1, int(FAST_END_SILENCE * 1000 / FRAME_MS))
@@ -231,6 +233,15 @@ class VadRecorder:
                 frame = _to_16k(stream.read(device_frames, exception_on_overflow=False), rate)
                 energy = self._rms(frame)
                 monitor.level(energy)
+
+                if speech_state.busy():
+                    # A Cassandra está falando (ou a caixa ainda toca o fim): o que o microfone ouve é ela mesma.
+                    # Nada disso vira pedido — senão ela se ativa sozinha e responde a si mesma em loop.
+                    if speaking:
+                        echo_aborted = True
+                        break
+                    pre_roll.clear()
+                    continue  # também não conta no prazo de espera nem ensina o "ruído de fundo"
 
                 if not speaking:
                     waited_frames += 1
@@ -270,7 +281,7 @@ class VadRecorder:
             stream.stop_stream()
             stream.close()
 
-        if interrupted:
+        if interrupted or echo_aborted:
             return None
 
         if not recorded:

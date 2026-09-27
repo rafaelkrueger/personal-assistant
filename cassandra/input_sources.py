@@ -11,6 +11,7 @@ from datetime import datetime
 from difflib import SequenceMatcher
 
 from cassandra import llm_settings
+from cassandra import speech_state
 from cassandra.mic_monitor import monitor
 from cassandra.openai_client import LLMService
 
@@ -190,6 +191,11 @@ class MicrophoneInputSource:
             os.unlink(wav_path)
 
         text = (text or "").strip()
+        if text and (speech_state.busy() or speech_state.is_echo(text)):
+            # Era a voz dela mesma (captada no fim de uma fala, ou repetindo algo que ela acabou de dizer): responder
+            # a isso fazia a Cassandra entrar em loop, conversando consigo mesma.
+            monitor.event("transcribed", f"Descartado (era a própria voz da Cassandra): “{text}”")
+            return ""
         if text and self._hallucinated(text):
             monitor.event("transcribed", f"Descartado (a transcrição inventou texto com áudio ruim): “{text}”")
             text = ""

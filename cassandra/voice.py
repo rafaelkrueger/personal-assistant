@@ -12,6 +12,8 @@ from collections.abc import Iterator
 from pathlib import Path
 from xml.sax.saxutils import escape as _xml_escape
 
+from cassandra import speech_state
+
 
 def _split_sentences(text: str) -> tuple[list[str], str]:
     """Split text into complete sentences, return (sentences, leftover)."""
@@ -222,11 +224,13 @@ class VoiceOutput:
         cleaned = text.strip()
         if not cleaned:
             return
-        if self._speak_streamed(cleaned):
-            return
-        path = self._synthesize(cleaned)
-        if path:
-            self._play_file(path)
+        # Enquanto fala (e logo depois), o microfone ignora o que ouve: ela não se ativa com a própria voz.
+        with speech_state.speaking(cleaned):
+            if self._speak_streamed(cleaned):
+                return
+            path = self._synthesize(cleaned)
+            if path:
+                self._play_file(path)
 
     # ── Voz da OpenAI em streaming ────────────────────────────────────────────
 
@@ -356,6 +360,14 @@ class VoiceOutput:
             return True
 
     def speak_stream(self, token_iter: Iterator[str]) -> str:
+        """Fala a resposta em streaming (ver _speak_stream). Durante a fala e logo depois, o microfone ignora o que
+        ouve (speech_state): ela não se ativa nem responde à própria voz."""
+        if not self.enabled:
+            return "".join(token_iter)
+        with speech_state.speaking():
+            return self._speak_stream(token_iter)
+
+    def _speak_stream(self, token_iter: Iterator[str]) -> str:
         """Stream LLM tokens, pipeline TTS per sentence, return full text.
 
         While sentence N is playing, TTS for sentence N+1 is already being
@@ -396,6 +408,7 @@ class VoiceOutput:
                 if sentence is None:
                     break
                 parts_stream.append(sentence)
+                speech_state.remember(sentence)
                 if not self._speak_streamed(sentence):
                     path = self._synthesize(sentence)
                     if path:
@@ -422,6 +435,7 @@ class VoiceOutput:
                 break
             sentence, path = item
             parts.append(sentence)
+            speech_state.remember(sentence)
             if path:
                 self._play_file(path)
 
