@@ -1,4 +1,4 @@
-"""Configuração runtime do LLM: provider ativo (openai | deepseek) + modelo + chave de cada um.
+"""Configuração runtime do LLM: provider ativo (openai | deepseek | local) + modelo + chave de cada um.
 
 Editável pela UI (Configurações > Modelo de IA, rota /api/llm) sem reiniciar — cada chamada do LLMService
 pergunta aqui qual provider usar. Começa com os valores do .env (LLM_PROVIDER, OPENAI_API_KEY, OPENAI_MODEL,
@@ -6,6 +6,10 @@ DEEPSEEK_API_KEY, DEEPSEEK_MODEL) e o que for salvo pela UI vai para data/llm_se
 prioridade sobre o .env. Esse arquivo guarda chaves: fica fora do git (.gitignore).
 
 Mesmo desenho do settings_store.py do maestro e do llm_settings.py do editor.
+
+Local = os modelos do Llama Desk (Ollama) no PC, pelas rotas /v1 compatíveis com a OpenAI que ele expõe na
+rede. Se o PC estiver desligado ou o Llama Desk falhar, o LLMService usa a OpenAI no lugar (ver
+openai_client.py).
 
 A DeepSeek só faz texto (chat). Voz (TTS) e transcrição do microfone (STT) continuam sempre na OpenAI:
 sem chave da OpenAI, a voz cai no TTS local (espeak) e o modo microfone não transcreve.
@@ -26,7 +30,7 @@ load_dotenv()
 _STORE_FILE = Path("data/llm_settings.json")
 _lock = threading.Lock()
 
-PROVIDERS = ("openai", "deepseek")
+PROVIDERS = ("openai", "deepseek", "local")
 
 # Nomes aposentados pela DeepSeek (deepseek-chat/reasoner saíram em 2026-07-24; hoje "deepseek-chat" é só um
 # apelido do deepseek-flash). Mesmo mapeamento do editor.
@@ -52,6 +56,10 @@ _DEFAULTS: dict[str, Any] = {
     "deepseek_api_key": _env("DEEPSEEK_API_KEY"),
     "deepseek_model": _env("DEEPSEEK_MODEL", "deepseek-flash") or "deepseek-flash",
     "deepseek_base_url": _env("DEEPSEEK_BASE_URL", "https://api.deepseek.com") or "https://api.deepseek.com",
+    # Modelos locais do Llama Desk no PC (mesmos nomes de campo do maestro). O modelo vem da lista do Llama Desk.
+    "local_llm_base_url": _env("LOCAL_LLM_BASE_URL", "http://desktop-cc6nlck.local:8002")
+    or "http://desktop-cc6nlck.local:8002",
+    "local_llm_model": _env("LOCAL_LLM_MODEL"),
     # Voz da Cassandra pelo Azure (Microsoft Speech). Sem chave, a voz é a da OpenAI (ver voice.py).
     "azure_speech_key": _env("AZURE_SPEECH_KEY"),
     "azure_speech_region": _env("AZURE_SPEECH_REGION", "brazilsouth") or "brazilsouth",
@@ -124,6 +132,8 @@ def get_public() -> dict[str, Any]:
         "deepseek_api_key_preview": _preview(s["deepseek_api_key"]),
         # Microfone depende da OpenAI; a voz usa o Azure se houver chave, senão a OpenAI.
         "audio_available": bool(s["openai_api_key"]),
+        "local_llm_base_url": s["local_llm_base_url"],
+        "local_llm_model": s["local_llm_model"],
         "azure_speech_key_set": bool(s["azure_speech_key"]),
         "azure_speech_key_preview": _preview(s["azure_speech_key"]),
         "azure_speech_region": s["azure_speech_region"],
@@ -134,7 +144,7 @@ def get_public() -> dict[str, Any]:
 def update(fields: dict[str, Any]) -> dict[str, Any]:
     provider = fields.get("llm_provider")
     if provider is not None and provider not in PROVIDERS:
-        raise ValueError(f"llm_provider inválido: {provider!r} (use openai ou deepseek)")
+        raise ValueError(f"llm_provider inválido: {provider!r} (use openai, deepseek ou local)")
     with _lock:
         for key, value in fields.items():
             if key not in _DEFAULTS:
@@ -151,21 +161,72 @@ def active_provider() -> str:
     return get()["llm_provider"]
 
 
-def _client(api_key: str, base_url: str = "") -> OpenAI:
+def _client(api_key: str, base_url: str = "", **options: Any) -> OpenAI:
     key = (api_key, base_url)
     with _lock:
         client = _clients.get(key)
         if client is None:
-            kwargs: dict[str, Any] = {"api_key": api_key}
+            kwargs: dict[str, Any] = {"api_key": api_key, **options}
             if base_url:
                 kwargs["base_url"] = base_url
             client = _clients[key] = OpenAI(**kwargs)
         return client
 
 
+# Depois de uma falha do modelo local (PC desligado, Llama Desk fora, IA pausada), usa a OpenAI por um tempo em
+# vez de esperar a falha de novo em cada pedido.
+_LOCAL_RETRY_AFTER = 120
+_local_down_until = 0.0
+
+
+def mark_local_failed(reason: str) -> bool:
+    """Registra a falha do local. True se a OpenAI pode assumir (há chave)."""
+    global _local_down_until
+    import time  # noqa: PLC0415
+
+    first = time.monotonic() >= _local_down_until
+    _local_down_until = time.monotonic() + _LOCAL_RETRY_AFTER
+    can = bool(get()["openai_api_key"])
+    if first:
+        print(f"[LLM] Modelo local falhou ({reason[:160]}); "
+              f"{'usando a OpenAI' if can else 'sem OpenAI para assumir'} por {_LOCAL_RETRY_AFTER // 60} min.",
+              flush=True)
+    return can
+
+
+def _openai_client() -> tuple[OpenAI, str, str, dict[str, Any]]:
+    s = get()
+    if not s["openai_api_key"]:
+        raise RuntimeError("Chave da OpenAI não configurada (Configurações > Modelo de IA).")
+    return _client(s["openai_api_key"]), s["openai_model"], _OPENAI_FAST_MODEL, {}
+
+
+def local_models() -> list[str]:
+    """Modelos instalados no Llama Desk (Ollama no PC), para o seletor da UI."""
+    import urllib.request  # noqa: PLC0415
+
+    base = get()["local_llm_base_url"].rstrip("/")
+    with urllib.request.urlopen(base + "/v1/models", timeout=8) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    return sorted(m["id"] for m in data.get("data", []) if m.get("id"))
+
+
 def chat_client() -> tuple[OpenAI, str, str, dict[str, Any]]:
     """(cliente, modelo principal, modelo rápido, extra_body) do provider ativo agora."""
     s = get()
+    if s["llm_provider"] == "local":
+        import time  # noqa: PLC0415
+
+        if time.monotonic() < _local_down_until and s["openai_api_key"]:
+            return _openai_client()  # o local falhou há pouco: a OpenAI segura até ele voltar
+        if not s["local_llm_model"]:
+            raise RuntimeError("Modelo local não escolhido (Configurações > Modelo de IA).")
+        # CPU: a 1ª resposta de um modelo frio pode passar de um minuto. Sem novas tentativas: se o PC estiver
+        # desligado, a falha sai logo e a OpenAI assume.
+        client = _client("local", s["local_llm_base_url"].rstrip("/") + "/v1", timeout=240.0, max_retries=0)
+        # Modelos que "pensam" (qwen3...) levavam ~80 s por resposta; sem o raciocínio, ~1-4 s.
+        extra = {"reasoning_effort": "none"}
+        return client, s["local_llm_model"], s["local_llm_model"], extra
     if s["llm_provider"] == "deepseek":
         if not s["deepseek_api_key"]:
             raise RuntimeError("Chave da DeepSeek não configurada (Configurações > Modelo de IA).")

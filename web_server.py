@@ -1188,7 +1188,7 @@ HTML_PAGE = """<!doctype html>
             <div class="settings-card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>Modelo de IA</div>
             <div class="settings-row">
               <div class="settings-row-info"><div class="settings-row-label">Provedor</div><div class="settings-row-desc">Quem responde as conversas e as habilidades. Vale na hora, sem reiniciar.</div></div>
-              <div class="settings-row-control"><select id="llm-provider" class="settings-select"><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option></select></div>
+              <div class="settings-row-control"><select id="llm-provider" class="settings-select"><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="local">Local (Llama Desk)</option></select></div>
             </div>
             <div class="settings-row">
               <div class="settings-row-info"><div class="settings-row-label">OpenAI <span class="llm-active" id="llm-openai-active"></span></div><div class="settings-row-desc" id="llm-openai-desc">Modelo e chave da OpenAI</div></div>
@@ -1202,6 +1202,14 @@ HTML_PAGE = """<!doctype html>
               <div class="settings-row-control" style="gap:8px;flex-wrap:wrap">
                 <input type="text" id="llm-deepseek-model" class="llm-input" list="llm-deepseek-models" placeholder="deepseek-flash"/>
                 <input type="password" id="llm-deepseek-key" class="llm-input" placeholder="Chave (sk-...)" autocomplete="off"/>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-info"><div class="settings-row-label">Local · Llama Desk <span class="llm-active" id="llm-local-active"></span></div><div class="settings-row-desc" id="llm-local-desc">Modelos do Llama Desk rodando no seu PC (grátis, sem internet). Na CPU a 1ª resposta demora; se o PC estiver desligado, a OpenAI responde no lugar.</div></div>
+              <div class="settings-row-control" style="gap:8px;flex-wrap:wrap">
+                <input type="text" id="llm-local-url" class="llm-input" placeholder="http://desktop-cc6nlck.local:8002"/>
+                <select id="llm-local-model" class="settings-select"><option value="">—</option></select>
+                <button type="button" class="btn btn-ghost btn-sm" id="llmLocalRefresh" title="Buscar os modelos do Llama Desk">Atualizar</button>
               </div>
             </div>
             <div class="settings-row">
@@ -2199,6 +2207,9 @@ function applyLlm(l){
   document.getElementById("llm-provider").value=l.llm_provider||"openai";
   document.getElementById("llm-openai-model").value=l.openai_model||"";
   document.getElementById("llm-deepseek-model").value=l.deepseek_model||"";
+  document.getElementById("llm-local-url").value=l.local_llm_base_url||"";
+  document.getElementById("llm-local-active").textContent=l.llm_provider==="local"?"· em uso":"";
+  loadLocalModels(l.local_llm_model);
   for(const p of ["openai","deepseek"]){
     const key=document.getElementById(`llm-${p}-key`);
     key.value="";
@@ -2219,9 +2230,28 @@ function applyLlm(l){
     note.className="llm-note warn";
     note.textContent="Sem chave da OpenAI: a Cassandra fala com a voz local (espeak) e o modo microfone não transcreve. A DeepSeek só faz texto.";
   }
-  const name=l.llm_provider==="deepseek"?`DeepSeek · ${l.deepseek_model}`:`OpenAI · ${l.openai_model}`;
+  const name=l.llm_provider==="deepseek"?`DeepSeek · ${l.deepseek_model}`:l.llm_provider==="local"?`Local · ${l.local_llm_model||"sem modelo"}`:`OpenAI · ${l.openai_model}`;
   document.getElementById("info-model").textContent=name;
 }
+
+async function loadLocalModels(current){
+  const sel=document.getElementById("llm-local-model");
+  const desc=document.getElementById("llm-local-desc");
+  const keep=current!==undefined?current:sel.value;
+  let d={models:[]};
+  try{d=await api("/api/llm/local-models");}catch(e){d={models:[],error:e.message};}
+  const models=d.models||[];
+  if(keep&&!models.includes(keep)) models.unshift(keep);
+  sel.innerHTML=(models.length?"":`<option value="">nenhum modelo</option>`)+models.map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join("");
+  if(keep) sel.value=keep;
+  desc.classList.toggle("warn",!!d.error);
+  desc.textContent=d.error?`Não consegui falar com o Llama Desk (${d.error}). Ele precisa estar ligado no PC (Agent Toggle).`:"Modelos do Llama Desk rodando no seu PC (grátis, sem internet). Na CPU a 1ª resposta demora; se o PC estiver desligado, a OpenAI responde no lugar.";
+}
+document.getElementById("llmLocalRefresh").addEventListener("click",async()=>{
+  const url=document.getElementById("llm-local-url").value.trim();
+  if(url){try{await api("/api/llm","POST",{local_llm_base_url:url});}catch(e){}}
+  loadLocalModels();
+});
 
 async function loadAzureVoices(current){
   const sel=document.getElementById("llm-azure-voice");
@@ -2260,6 +2290,8 @@ document.getElementById("saveLlmBtn").addEventListener("click",async()=>{
     deepseek_model:document.getElementById("llm-deepseek-model").value.trim(),
   };
   Object.assign(body,azureFields());
+  body.local_llm_base_url=document.getElementById("llm-local-url").value.trim();
+  body.local_llm_model=document.getElementById("llm-local-model").value;
   const ok=document.getElementById("llm-openai-key").value.trim();
   const dk=document.getElementById("llm-deepseek-key").value.trim();
   if(ok) body.openai_api_key=ok;
@@ -2268,7 +2300,8 @@ document.getElementById("saveLlmBtn").addEventListener("click",async()=>{
   try{
     const l=await api("/api/llm","POST",body);
     applyLlm(l);
-    if(!l[`${l.llm_provider}_api_key_set`]){toast.textContent="Salvo — falta a chave desse provedor";}
+    if(l.llm_provider==="local"){toast.textContent=l.local_llm_model?"Salvo!":"Salvo — escolha o modelo local";}
+    else if(!l[`${l.llm_provider}_api_key_set`]){toast.textContent="Salvo — falta a chave desse provedor";}
     else toast.textContent="Salvo!";
   }catch(e){toast.textContent=`Erro: ${e.message}`;}
   toast.classList.add("show");setTimeout(()=>{toast.classList.remove("show");toast.textContent="Salvo!";},3000);
@@ -3471,6 +3504,12 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                 return
             if parsed.path == "/api/llm":
                 self._send_json(llm_settings.get_public())
+                return
+            if parsed.path == "/api/llm/local-models":
+                try:
+                    self._send_json({"models": llm_settings.local_models()})
+                except Exception as exc:  # noqa: BLE001 — PC desligado, Llama Desk fora do ar...
+                    self._send_json({"models": [], "error": str(exc)[:160]})
                 return
             if parsed.path == "/api/azure/voices":
                 from cassandra.voice import azure_voices  # noqa: PLC0415

@@ -26,13 +26,17 @@ class LLMService:
         """chat.completions.create no provider ativo. fast=True usa o modelo rápido/barato do provider
         (gpt-4o-mini na OpenAI) — para classificações curtas das skills."""
         client, model, fast_model, extra = llm_settings.chat_client()
+        call = dict(kwargs)
         if extra:
-            kwargs["extra_body"] = {**extra, **kwargs.get("extra_body", {})}
-        return client.chat.completions.create(
-            model=fast_model if fast else model,
-            messages=messages,
-            **kwargs,
-        )
+            call["extra_body"] = {**extra, **kwargs.get("extra_body", {})}
+        try:
+            return client.chat.completions.create(model=fast_model if fast else model, messages=messages, **call)
+        except Exception as exc:
+            # Modelo local (Llama Desk no PC) fora do ar: a OpenAI responde no lugar, sem a pessoa perceber.
+            if llm_settings.active_provider() != "local" or not llm_settings.mark_local_failed(str(exc)):
+                raise
+            client, model, fast_model, _extra = llm_settings.chat_client()
+            return client.chat.completions.create(model=fast_model if fast else model, messages=messages, **kwargs)
 
     @staticmethod
     def _messages(
