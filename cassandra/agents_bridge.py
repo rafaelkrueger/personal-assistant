@@ -20,7 +20,7 @@ from typing import Callable
 from skills.web_search.skill import _client as _maestro
 
 _REFRESH_EVERY = 60.0  # segundos entre atualizações da lista de agentes
-_DESCRIPTION_CHARS = 900  # quanto do CAPABILITIES.md de cada agente vai para o prompt
+_DESCRIPTION_CHARS = 1800  # tamanho máximo do resumo de cada agente no prompt
 _FINAL = {"done", "error", "rejected"}
 
 # Como a Cassandra fala o nome de cada agente em voz alta.
@@ -34,6 +34,41 @@ SPOKEN_NAMES = {
 
 def spoken(name: str) -> str:
     return SPOKEN_NAMES.get(name, f"o agente {name}")
+
+
+def _clean(text: str) -> str:
+    text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)  # [texto](link) -> texto
+    return re.sub(r"\s+", " ", re.sub(r"[*`>|#]+", "", text)).strip()
+
+
+def summarize(agent: dict) -> str:
+    """Resumo do CAPABILITIES.md para o prompt: a frase de apresentação + o primeiro trecho de cada item da seção
+    "Pode" (ou "O que ele faz"). Cortar o começo do arquivo gastava o espaço com cabeçalhos e explicações para o
+    Maestro, e ficavam de fora coisas como o WhatsApp do web-agent."""
+    doc = agent.get("description") or ""
+    tagline = _clean(agent.get("tagline") or "")
+    section = re.search(r"^##\s*(?:Pode|O que ele faz)\b[^\n]*\n(.*?)(?=^##\s|\Z)", doc, re.M | re.S)
+    items: list[str] = []
+    if section:
+        current = ""
+        for line in section.group(1).splitlines():
+            if re.match(r"\s*[-*]\s+", line):
+                if current:
+                    items.append(current)
+                current = re.sub(r"^\s*[-*]\s+", "", line)
+            elif line.strip() and current:
+                current += " " + line.strip()
+            elif not line.strip() and current:
+                items.append(current)
+                current = ""
+        if current:
+            items.append(current)
+    # Só o começo de cada item (até o primeiro "—" ou ponto), que é o que diz o que ele faz.
+    short = [re.split(r" — |\. |: |; |\(", _clean(i))[0].strip(" .;")[:110] for i in items]
+    if tagline and tagline[-1] not in ".!?":
+        tagline += "."
+    text = tagline + (" Pode: " + "; ".join(s for s in short if s) + "." if short else "")
+    return (text or _clean(doc))[:_DESCRIPTION_CHARS]
 
 
 @dataclass
@@ -78,12 +113,7 @@ class AgentsBridge:
         agents = self.snapshot()
         if not agents:
             return ""
-        parts = []
-        for a in agents:
-            desc = re.sub(r"[#>*`|]+", " ", a.get("description") or a.get("tagline") or "")
-            desc = re.sub(r"\s+", " ", desc).strip()[:_DESCRIPTION_CHARS]
-            parts.append(f"- {a['name']} ({spoken(a['name'])}): {desc}")
-        return "\n".join(parts)
+        return "\n".join(f"- {a['name']} ({spoken(a['name'])}): {summarize(a)}" for a in agents)
 
     # ── Mandar um pedido ─────────────────────────────────────────────────────
 
