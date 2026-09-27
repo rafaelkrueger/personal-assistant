@@ -180,7 +180,12 @@ class SpotifyClient:
         try:
             with urllib.request.urlopen(req, timeout=15) as resp:
                 raw = resp.read()
-                return json.loads(raw) if raw.strip() else None
+                if not raw.strip():
+                    return None
+                try:
+                    return json.loads(raw)
+                except ValueError:
+                    return None  # o player do Spotify às vezes responde 200 com um corpo que não é JSON
         except urllib.error.HTTPError as exc:
             raw = exc.read().decode(errors="replace")
             try:
