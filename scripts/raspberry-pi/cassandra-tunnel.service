@@ -1,5 +1,5 @@
 # Túnel público da Cassandra (Cloudflare quick tunnel -> localhost:8080), usado pelo site no Netlify.
-# A URL muda a cada início: depois de um reboot, rode no PC `python atualizar.py` (pasta cassandra-netlify).
+# A URL muda a cada início; o serviço cassandra-netlify-sync republica o site no Netlify sozinho (~30 s).
 # O log é recriado a cada início, então a URL que está nele é sempre a atual.
 [Unit]
 Description=Tunel publico da Cassandra (Cloudflare)
