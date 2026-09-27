@@ -644,6 +644,14 @@ HTML_PAGE = """<!doctype html>
     .llm-note{font-size:12px;line-height:1.45;color:var(--text2);padding:10px 12px;border-radius:var(--r);background:rgba(255,255,255,.03);border:1px solid var(--border);margin-top:12px}
     .llm-section{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--brand2);margin:18px 0 2px;padding-top:12px;border-top:1px solid var(--border)}
     .sc-body > .llm-section:first-child{border-top:0;padding-top:0;margin-top:0}
+    @media(max-width:640px){
+      .llm-card .settings-row-control{flex:1 1 100%;flex-wrap:wrap;gap:8px}
+      .llm-card .settings-row-control > *{flex:1 1 100%;max-width:none;width:100%}
+      .llm-card .settings-row-control > .btn{flex:0 0 auto;width:auto}
+      .llm-card .settings-row-control > .llm-active{flex:0 0 auto;width:auto}
+      .llm-card .settings-row-desc{font-size:11.5px}
+    }
+    .llm-card .settings-select{max-width:260px}
     .llm-note.warn{color:var(--amber);background:var(--amber-dim);border-color:rgba(251,191,36,.25)}
     .llm-active{color:var(--green);font-weight:700}
   </style>
@@ -1186,50 +1194,50 @@ HTML_PAGE = """<!doctype html>
         <div class="settings-layout">
 
           <!-- Modelo de IA (LLM) -->
-          <div class="settings-card full">
+          <div class="settings-card full llm-card">
             <div class="settings-card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>Modelo de IA</div>
-            <div class="llm-section">Texto · conversa e habilidades</div>
+            <div class="llm-section">Texto</div>
             <div class="settings-row">
-              <div class="settings-row-info"><div class="settings-row-label">Provedor</div><div class="settings-row-desc">Quem responde as conversas e as habilidades. Vale na hora, sem reiniciar.</div></div>
+              <div class="settings-row-info"><div class="settings-row-label">Provedor</div><div class="settings-row-desc">Quem conversa e executa os pedidos</div></div>
               <div class="settings-row-control"><select id="llm-provider" class="settings-select"><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="local">Local (Llama Desk)</option></select></div>
             </div>
             <div class="settings-row">
-              <div class="settings-row-info"><div class="settings-row-label">OpenAI <span class="llm-active" id="llm-openai-active"></span></div><div class="settings-row-desc" id="llm-openai-desc">Modelo e chave da OpenAI (a mesma chave serve para a voz e a transcrição da OpenAI)</div></div>
+              <div class="settings-row-info"><div class="settings-row-label">OpenAI <span class="llm-active" id="llm-openai-active"></span></div><div class="settings-row-desc" id="llm-openai-desc">Modelo e chave</div></div>
               <div class="settings-row-control" style="gap:8px;flex-wrap:wrap">
                 <input type="text" id="llm-openai-model" class="llm-input" list="llm-openai-models" placeholder="gpt-4o-mini"/>
                 <input type="password" id="llm-openai-key" class="llm-input" placeholder="Chave (sk-...)" autocomplete="off"/>
               </div>
             </div>
             <div class="settings-row">
-              <div class="settings-row-info"><div class="settings-row-label">DeepSeek <span class="llm-active" id="llm-deepseek-active"></span></div><div class="settings-row-desc" id="llm-deepseek-desc">Modelo e chave da DeepSeek</div></div>
+              <div class="settings-row-info"><div class="settings-row-label">DeepSeek <span class="llm-active" id="llm-deepseek-active"></span></div><div class="settings-row-desc" id="llm-deepseek-desc">Modelo e chave</div></div>
               <div class="settings-row-control" style="gap:8px;flex-wrap:wrap">
                 <input type="text" id="llm-deepseek-model" class="llm-input" list="llm-deepseek-models" placeholder="deepseek-flash"/>
                 <input type="password" id="llm-deepseek-key" class="llm-input" placeholder="Chave (sk-...)" autocomplete="off"/>
               </div>
             </div>
             <div class="settings-row">
-              <div class="settings-row-info"><div class="settings-row-label">Local · Llama Desk <span class="llm-active" id="llm-local-active"></span></div><div class="settings-row-desc" id="llm-local-desc">Modelos do Llama Desk rodando no seu PC (grátis, sem internet). Na CPU a 1ª resposta demora; se o PC estiver desligado, a OpenAI responde no lugar.</div></div>
+              <div class="settings-row-info"><div class="settings-row-label">Local · Llama Desk <span class="llm-active" id="llm-local-active"></span></div><div class="settings-row-desc" id="llm-local-desc">Modelos do Llama Desk no PC</div></div>
               <div class="settings-row-control" style="gap:8px;flex-wrap:wrap">
                 <input type="text" id="llm-local-url" class="llm-input" placeholder="http://desktop-cc6nlck.local:8002"/>
                 <select id="llm-local-model" class="settings-select"><option value="">—</option></select>
                 <button type="button" class="btn btn-ghost btn-sm" id="llmLocalRefresh" title="Buscar os modelos do Llama Desk">Atualizar</button>
               </div>
             </div>
-            <div class="llm-section">Voz da Cassandra · a fala dela</div>
+            <div class="llm-section">Voz</div>
             <div class="settings-row">
-              <div class="settings-row-info"><div class="settings-row-label">Motor de voz</div><div class="settings-row-desc">Automático: Azure (se configurado), depois OpenAI; sem os dois, a voz grátis do espeak.</div></div>
+              <div class="settings-row-info"><div class="settings-row-label">Motor de voz</div><div class="settings-row-desc">Automático: Azure, depois OpenAI</div></div>
               <div class="settings-row-control">
                 <select id="voice-engine" class="settings-select">
                   <option value="auto">Automático</option>
-                  <option value="azure">Azure (Microsoft, grátis até 500 mil caracteres/mês)</option>
+                  <option value="azure">Azure (grátis)</option>
                   <option value="openai">OpenAI (pago)</option>
-                  <option value="espeak">espeak (grátis, feminina, robótica, instantânea)</option>
-                  <option value="piper">Piper (grátis, masculina, ~3 s por frase)</option>
+                  <option value="espeak">espeak (grátis, robótica)</option>
+                  <option value="piper">Piper (grátis, lenta)</option>
                 </select>
               </div>
             </div>
             <div class="settings-row">
-              <div class="settings-row-info"><div class="settings-row-label">Voz do Azure <span class="llm-active" id="llm-azure-active"></span></div><div class="settings-row-desc" id="llm-azure-desc">A voz da Cassandra (Microsoft). Grátis até 500 mil caracteres por mês; sem chave, ou se falhar, ela fala com a voz da OpenAI.</div></div>
+              <div class="settings-row-info"><div class="settings-row-label">Voz do Azure <span class="llm-active" id="llm-azure-active"></span></div><div class="settings-row-desc" id="llm-azure-desc">Grátis até 500 mil caracteres/mês</div></div>
               <div class="settings-row-control" style="gap:8px;flex-wrap:wrap">
                 <input type="password" id="llm-azure-key" class="llm-input" placeholder="Chave do Azure" autocomplete="off"/>
                 <input type="text" id="llm-azure-region" class="llm-input" placeholder="brazilsouth" style="max-width:130px"/>
@@ -1238,12 +1246,12 @@ HTML_PAGE = """<!doctype html>
               </div>
             </div>
             <div class="settings-row">
-              <div class="settings-row-info"><div class="settings-row-label">Voz da OpenAI</div><div class="settings-row-desc">Modelo e voz quando a fala sai pela OpenAI (pago; usa a chave da OpenAI acima).</div></div>
+              <div class="settings-row-info"><div class="settings-row-label">Voz da OpenAI</div><div class="settings-row-desc">Pago · usa a chave da OpenAI</div></div>
               <div class="settings-row-control" style="gap:8px;flex-wrap:wrap">
                 <select id="voice-tts-model" class="settings-select">
-                  <option value="gpt-4o-mini-tts">gpt-4o-mini-tts (mais rápido)</option>
+                  <option value="gpt-4o-mini-tts">gpt-4o-mini-tts</option>
                   <option value="tts-1">tts-1</option>
-                  <option value="tts-1-hd">tts-1-hd (HD)</option>
+                  <option value="tts-1-hd">tts-1-hd</option>
                 </select>
                 <select id="voice-tts-voice" class="settings-select">
                   <option value="alloy">Alloy</option>
@@ -1255,30 +1263,30 @@ HTML_PAGE = """<!doctype html>
                 </select>
               </div>
             </div>
-            <div class="llm-section">Transcrição · o que você fala vira texto</div>
+            <div class="llm-section">Transcrição</div>
             <div class="settings-row">
-              <div class="settings-row-info"><div class="settings-row-label">Quem transcreve</div><div class="settings-row-desc">Depois que você chama "Cassandra", o que você fala é transcrito por aqui. Automático: OpenAI e, se falhar, a local.</div></div>
+              <div class="settings-row-info"><div class="settings-row-label">Quem transcreve</div><div class="settings-row-desc">O que você fala vira texto</div></div>
               <div class="settings-row-control">
                 <select id="stt-provider" class="settings-select">
                   <option value="auto">Automático</option>
                   <option value="openai">OpenAI (pago)</option>
-                  <option value="azure">Azure (Microsoft, grátis até 5 h/mês)</option>
-                  <option value="local">Local · Vosk (grátis, sem internet, menos preciso)</option>
+                  <option value="azure">Azure (grátis até 5 h/mês)</option>
+                  <option value="local">Local (grátis, menos preciso)</option>
                 </select>
               </div>
             </div>
             <div class="settings-row">
-              <div class="settings-row-info"><div class="settings-row-label">Modelo da OpenAI</div><div class="settings-row-desc">Usado quando a transcrição é da OpenAI.</div></div>
+              <div class="settings-row-info"><div class="settings-row-label">Modelo da OpenAI</div><div class="settings-row-desc">Quando for pela OpenAI</div></div>
               <div class="settings-row-control">
                 <select id="stt-model" class="settings-select">
-                  <option value="gpt-4o-mini-transcribe">gpt-4o-mini-transcribe (rápido e barato)</option>
-                  <option value="gpt-4o-transcribe">gpt-4o-transcribe (mais preciso)</option>
+                  <option value="gpt-4o-mini-transcribe">gpt-4o-mini-transcribe</option>
+                  <option value="gpt-4o-transcribe">gpt-4o-transcribe</option>
                   <option value="whisper-1">whisper-1</option>
                 </select>
               </div>
             </div>
             <div class="settings-row">
-              <div class="settings-row-info"><div class="settings-row-label">Detecção do nome</div><div class="settings-row-desc">Ouvir "Cassandra" é sempre local (Vosk, no próprio Pi): grátis e sem mandar nada para a internet.</div></div>
+              <div class="settings-row-info"><div class="settings-row-label">Detecção do nome</div><div class="settings-row-desc">Sempre no próprio Pi</div></div>
               <div class="settings-row-control"><span class="llm-active">local · grátis</span></div>
             </div>
             <datalist id="llm-openai-models"><option value="gpt-4o-mini"/><option value="gpt-4o"/></datalist>
@@ -2252,10 +2260,12 @@ function applyLlm(l){
   const note=document.getElementById("llm-audio-note");
   if(l.audio_available){
     note.className="llm-note";
-    note.textContent=l.azure_speech_key_set?"DeepSeek e o modelo local só fazem texto. A voz e a transcrição usam o que estiver escolhido nas seções abaixo.":"DeepSeek e o modelo local só fazem texto. Sem chave do Azure, a voz e a transcrição usam a OpenAI (configure o Azure para saírem de graça).";
+    note.style.display="none";
+    note.textContent=l.azure_speech_key_set?"DeepSeek e o modelo local só fazem texto. A voz e a transcrição usam o que estiver escolhido nas seções abaixo.":"";
   }else{
     note.className="llm-note warn";
-    note.textContent="Sem chave da OpenAI: a Cassandra fala com a voz local (espeak) e o modo microfone não transcreve. A DeepSeek só faz texto.";
+    note.style.display="";
+    note.textContent=l.azure_speech_key_set?"Sem chave da OpenAI: a transcrição só funciona pelo Azure ou pela local.":"Sem chave da OpenAI nem do Azure: voz robótica (espeak) e transcrição só local.";
   }
   const name=l.llm_provider==="deepseek"?`DeepSeek · ${l.deepseek_model}`:l.llm_provider==="local"?`Local · ${l.local_llm_model||"sem modelo"}`:`OpenAI · ${l.openai_model}`;
   document.getElementById("info-model").textContent=name;
@@ -2272,7 +2282,7 @@ async function loadLocalModels(current){
   sel.innerHTML=(models.length?"":`<option value="">nenhum modelo</option>`)+models.map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join("");
   if(keep) sel.value=keep;
   desc.classList.toggle("warn",!!d.error);
-  desc.textContent=d.error?`Não consegui falar com o Llama Desk (${d.error}). Ele precisa estar ligado no PC (Agent Toggle).`:"Modelos do Llama Desk rodando no seu PC (grátis, sem internet). Na CPU a 1ª resposta demora; se o PC estiver desligado, a OpenAI responde no lugar.";
+  desc.textContent=d.error?"Llama Desk fora do ar (PC desligado?)":"Modelos do Llama Desk no PC";
 }
 document.getElementById("llmLocalRefresh").addEventListener("click",async()=>{
   const url=document.getElementById("llm-local-url").value.trim();
