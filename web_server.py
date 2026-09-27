@@ -172,6 +172,10 @@ HTML_PAGE = """<!doctype html>
     @keyframes atRing{0%,100%{transform:rotate(0)}20%{transform:rotate(-14deg)}40%{transform:rotate(12deg)}60%{transform:rotate(-8deg)}80%{transform:rotate(5deg)}}
     @media(max-width:640px){.alarm-toast{bottom:16px;width:calc(100vw - 32px)}.alarm-toast .at-text{flex:1}}
     .alarm-pill.ringing{border-color:rgba(251,191,36,.35);background:var(--amber-dim);color:var(--amber);box-shadow:0 0 16px rgba(251,191,36,.15)}
+    button.alarm-pill{font-family:inherit;cursor:default}
+    button.alarm-pill.ringing{cursor:pointer;font-size:12.5px;font-weight:700;padding:6px 14px;background:var(--amber);color:#1a1204;border-color:var(--amber);animation:tpBlink 1s ease-in-out infinite}
+    button.alarm-pill.ringing .sdot{background:#1a1204!important;box-shadow:none}
+    button.alarm-pill.ringing:hover{animation:none;filter:brightness(1.08)}
 
     /* ═══ BODY ═══ */
     .body{flex:1;overflow-y:auto;padding:20px 18px calc(40px + env(safe-area-inset-bottom));-webkit-overflow-scrolling:touch}
@@ -580,7 +584,7 @@ HTML_PAGE = """<!doctype html>
         <span class="timer-pills" id="timerPills"></span>
         <span class="clock" id="clock"></span>
         <button class="restart-btn" id="restartBtn" title="Reiniciar a Cassandra"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg></button>
-        <span class="alarm-pill" id="alarmPill"><span class="sdot" id="alarmPillDot"></span><span id="alarmPillText">Ok</span></span>
+        <button type="button" class="alarm-pill" id="alarmPill" title="Status do alarme"><span class="sdot" id="alarmPillDot"></span><span id="alarmPillText">Ok</span></button>
       </div>
     </header>
 
@@ -1597,11 +1601,20 @@ document.getElementById("alarmToastStop").addEventListener("click",async e=>{
 });
 
 // ── Alarm status ──
+document.getElementById("alarmPill").addEventListener("click",async e=>{
+  const b=e.currentTarget; if(!b.classList.contains("ringing")) return;
+  b.disabled=true;
+  try{await api("/api/alarms/stop","POST",{});renderAlarmStatus(false);renderAlarmToast([]);}
+  catch(err){console.error(err);}
+  finally{b.disabled=false;}
+});
 function renderAlarmStatus(ringing){
   [document.getElementById("alarmDot"),document.getElementById("alarmPillDot")].forEach(d=>{d.className="sdot"+(ringing?" warn":"");});
   document.getElementById("alarmStatusText").textContent=ringing?"Alarme tocando!":"Sistema ok";
-  document.getElementById("alarmPillText").textContent=ringing?"Alarme!":"Ok";
-  document.getElementById("alarmPill").className="alarm-pill"+(ringing?" ringing":"");
+  document.getElementById("alarmPillText").textContent=ringing?"Parar alarme":"Ok";
+  const pill=document.getElementById("alarmPill");
+  pill.className="alarm-pill"+(ringing?" ringing":"");
+  pill.title=ringing?"Parar o alarme que está tocando":"Status do alarme";
 }
 
 // ── Day picker ──
