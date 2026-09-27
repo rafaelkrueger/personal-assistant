@@ -1204,6 +1204,15 @@ HTML_PAGE = """<!doctype html>
                 <input type="password" id="llm-deepseek-key" class="llm-input" placeholder="Chave (sk-...)" autocomplete="off"/>
               </div>
             </div>
+            <div class="settings-row">
+              <div class="settings-row-info"><div class="settings-row-label">Voz · Azure Speech <span class="llm-active" id="llm-azure-active"></span></div><div class="settings-row-desc" id="llm-azure-desc">A voz da Cassandra (Microsoft). Grátis até 500 mil caracteres por mês; sem chave, ou se falhar, ela fala com a voz da OpenAI.</div></div>
+              <div class="settings-row-control" style="gap:8px;flex-wrap:wrap">
+                <input type="password" id="llm-azure-key" class="llm-input" placeholder="Chave do Azure" autocomplete="off"/>
+                <input type="text" id="llm-azure-region" class="llm-input" placeholder="brazilsouth" style="max-width:130px"/>
+                <select id="llm-azure-voice" class="settings-select"><option value="">—</option></select>
+                <button type="button" class="btn btn-ghost btn-sm" id="llmAzureTest">Testar voz</button>
+              </div>
+            </div>
             <datalist id="llm-openai-models"><option value="gpt-4o-mini"/><option value="gpt-4o"/></datalist>
             <datalist id="llm-deepseek-models"><option value="deepseek-flash"/><option value="deepseek-v4-pro"/></datalist>
             <div class="llm-note" id="llm-audio-note">A DeepSeek só faz texto. Voz (fala da Cassandra) e microfone usam sempre a OpenAI.</div>
@@ -2196,10 +2205,16 @@ function applyLlm(l){
     key.placeholder=l[`${p}_api_key_set`]?`Configurada (${l[`${p}_api_key_preview`]}) — vazio mantém`:"Cole a chave (sk-...)";
     document.getElementById(`llm-${p}-active`).textContent=l.llm_provider===p?"· em uso":"";
   }
+  const ak=document.getElementById("llm-azure-key");
+  ak.value="";
+  ak.placeholder=l.azure_speech_key_set?`Configurada (${l.azure_speech_key_preview}) — vazio mantém`:"Cole a chave do Azure";
+  document.getElementById("llm-azure-region").value=l.azure_speech_region||"brazilsouth";
+  document.getElementById("llm-azure-active").textContent=l.azure_speech_key_set?"· voz em uso":"";
+  loadAzureVoices(l.azure_tts_voice);
   const note=document.getElementById("llm-audio-note");
   if(l.audio_available){
     note.className="llm-note";
-    note.textContent="A DeepSeek só faz texto. Voz (fala da Cassandra) e microfone usam sempre a OpenAI — sua chave da OpenAI continua sendo usada para isso.";
+    note.textContent=l.azure_speech_key_set?"A DeepSeek só faz texto. A voz da Cassandra usa o Azure (a OpenAI fica de reserva) e o microfone usa a OpenAI.":"A DeepSeek só faz texto. Voz (fala da Cassandra) e microfone usam a OpenAI — ou configure o Azure acima para a voz sair de graça.";
   }else{
     note.className="llm-note warn";
     note.textContent="Sem chave da OpenAI: a Cassandra fala com a voz local (espeak) e o modo microfone não transcreve. A DeepSeek só faz texto.";
@@ -2207,6 +2222,32 @@ function applyLlm(l){
   const name=l.llm_provider==="deepseek"?`DeepSeek · ${l.deepseek_model}`:`OpenAI · ${l.openai_model}`;
   document.getElementById("info-model").textContent=name;
 }
+
+async function loadAzureVoices(current){
+  const sel=document.getElementById("llm-azure-voice");
+  const keep=current||sel.value||"pt-BR-FranciscaNeural";
+  let voices=[];
+  try{voices=(await api("/api/azure/voices")).voices||[];}catch(e){}
+  if(!voices.length) voices=[{name:keep,label:keep.replace("pt-BR-","").replace("Neural",""),gender:""}];
+  if(!voices.some(v=>v.name===keep)) voices.unshift({name:keep,label:keep,gender:""});
+  sel.innerHTML=voices.map(v=>`<option value="${esc(v.name)}">${esc(v.label)}${v.gender?" ("+esc(v.gender)+")":""}</option>`).join("");
+  sel.value=keep;
+}
+function azureFields(){
+  const b={azure_speech_region:document.getElementById("llm-azure-region").value.trim(),
+           azure_tts_voice:document.getElementById("llm-azure-voice").value};
+  const k=document.getElementById("llm-azure-key").value.trim();
+  if(k) b.azure_speech_key=k;
+  return b;
+}
+document.getElementById("llmAzureTest").addEventListener("click",async e=>{
+  const b=e.currentTarget; b.disabled=true; b.textContent="Falando…";
+  try{
+    applyLlm(await api("/api/llm","POST",azureFields()));
+    await api("/api/speak","POST",{text:"Oi! Esta é a minha voz. O que você achou?"});
+  }catch(err){alert(err.message);}
+  finally{setTimeout(()=>{b.disabled=false;b.textContent="Testar voz";},2500);}
+});
 
 async function loadLlm(){
   try{applyLlm(await api("/api/llm"));}catch(e){console.error("LLM:",e);}
@@ -2218,6 +2259,7 @@ document.getElementById("saveLlmBtn").addEventListener("click",async()=>{
     openai_model:document.getElementById("llm-openai-model").value.trim(),
     deepseek_model:document.getElementById("llm-deepseek-model").value.trim(),
   };
+  Object.assign(body,azureFields());
   const ok=document.getElementById("llm-openai-key").value.trim();
   const dk=document.getElementById("llm-deepseek-key").value.trim();
   if(ok) body.openai_api_key=ok;
@@ -3430,6 +3472,14 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
             if parsed.path == "/api/llm":
                 self._send_json(llm_settings.get_public())
                 return
+            if parsed.path == "/api/azure/voices":
+                from cassandra.voice import azure_voices  # noqa: PLC0415
+
+                try:
+                    self._send_json({"voices": azure_voices()})
+                except Exception as exc:  # noqa: BLE001 — chave errada, sem rede...: a UI mostra só a voz atual
+                    self._send_json({"voices": [], "error": str(exc)[:200]})
+                return
             if parsed.path == "/api/routines":
                 self._send_json({"routines": assistant.get_routines()})
                 return
@@ -3866,7 +3916,9 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
             if parsed.path == "/api/llm":
                 # Mesmo formato do maestro/editor: campos parciais; chave vazia/omitida nunca apaga a salva.
                 try:
-                    self._send_json(llm_settings.update(self._read_json_body()))
+                    result = llm_settings.update(self._read_json_body())
+                    assistant.voice_output.reset_failures()  # chave/voz nova: tenta o Azure de novo na hora
+                    self._send_json(result)
                 except ValueError as exc:
                     self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
                 return

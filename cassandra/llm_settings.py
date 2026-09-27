@@ -52,6 +52,10 @@ _DEFAULTS: dict[str, Any] = {
     "deepseek_api_key": _env("DEEPSEEK_API_KEY"),
     "deepseek_model": _env("DEEPSEEK_MODEL", "deepseek-flash") or "deepseek-flash",
     "deepseek_base_url": _env("DEEPSEEK_BASE_URL", "https://api.deepseek.com") or "https://api.deepseek.com",
+    # Voz da Cassandra pelo Azure (Microsoft Speech). Sem chave, a voz é a da OpenAI (ver voice.py).
+    "azure_speech_key": _env("AZURE_SPEECH_KEY"),
+    "azure_speech_region": _env("AZURE_SPEECH_REGION", "brazilsouth") or "brazilsouth",
+    "azure_tts_voice": _env("AZURE_TTS_VOICE", "pt-BR-FranciscaNeural") or "pt-BR-FranciscaNeural",
 }
 if _DEFAULTS["llm_provider"] not in PROVIDERS:
     _DEFAULTS["llm_provider"] = "openai"
@@ -118,8 +122,12 @@ def get_public() -> dict[str, Any]:
         "deepseek_base_url": s["deepseek_base_url"],
         "deepseek_api_key_set": bool(s["deepseek_api_key"]),
         "deepseek_api_key_preview": _preview(s["deepseek_api_key"]),
-        # Voz e microfone dependem da OpenAI, qualquer que seja o provider do chat.
+        # Microfone depende da OpenAI; a voz usa o Azure se houver chave, senão a OpenAI.
         "audio_available": bool(s["openai_api_key"]),
+        "azure_speech_key_set": bool(s["azure_speech_key"]),
+        "azure_speech_key_preview": _preview(s["azure_speech_key"]),
+        "azure_speech_region": s["azure_speech_region"],
+        "azure_tts_voice": s["azure_tts_voice"],
     }
 
 

@@ -49,8 +49,42 @@ AZURE_DEFAULT_VOICE = "pt-BR-FranciscaNeural"
 
 
 def _azure_config() -> tuple[str, str, str]:
-    return (os.getenv("AZURE_SPEECH_KEY", "").strip(), os.getenv("AZURE_SPEECH_REGION", "brazilsouth").strip(),
-            os.getenv("AZURE_TTS_VOICE", AZURE_DEFAULT_VOICE).strip() or AZURE_DEFAULT_VOICE)
+    """(chave, região, voz) — das Configurações > Modelo de IA (llm_settings; o .env é o padrão). Vale na hora."""
+    from cassandra import llm_settings  # noqa: PLC0415
+
+    s = llm_settings.get()
+    return (s.get("azure_speech_key", ""), s.get("azure_speech_region") or "brazilsouth",
+            s.get("azure_tts_voice") or AZURE_DEFAULT_VOICE)
+
+
+_voices_cache: tuple[float, str, list[dict]] = (0.0, "", [])
+
+
+def azure_voices() -> list[dict]:
+    """Vozes em pt-BR da conta do Azure (nome, rótulo, gênero), para o seletor da UI. Cache de 1 h."""
+    global _voices_cache
+    import json  # noqa: PLC0415
+    import urllib.request  # noqa: PLC0415
+
+    key, region, _voice = _azure_config()
+    if not key:
+        return []
+    at, cached_for, voices = _voices_cache
+    if voices and cached_for == f"{region}|{key[-6:]}" and time.monotonic() - at < 3600:
+        return voices
+    req = urllib.request.Request(
+        f"https://{region}.tts.speech.microsoft.com/cognitiveservices/voices/list",
+        headers={"Ocp-Apim-Subscription-Key": key, "User-Agent": "cassandra"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    gender = {"Female": "feminina", "Male": "masculina"}
+    voices = sorted(
+        ({"name": v["ShortName"], "label": v.get("LocalName") or v.get("DisplayName") or v["ShortName"],
+          "gender": gender.get(v.get("Gender", ""), "")}
+         for v in data if v.get("Locale") == "pt-BR"),
+        key=lambda v: (v["gender"] != "feminina", v["label"]))
+    _voices_cache = (time.monotonic(), f"{region}|{key[-6:]}", voices)
+    return voices
 
 
 class _AzureResponse:
@@ -396,6 +430,11 @@ class VoiceOutput:
         return " ".join(parts)
 
     # ── Síntese ───────────────────────────────────────────────────────────────
+
+    def reset_failures(self) -> None:
+        """Chave/voz trocadas nas Configurações: tenta de novo na hora, sem esperar os 10 min de uma falha."""
+        self._azure_down_until = 0.0
+        self._openai_down_until = 0.0
 
     def set_engine(self, engine: str) -> None:
         self.engine = engine if engine in self.ENGINES else "auto"
