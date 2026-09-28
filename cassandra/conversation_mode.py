@@ -33,8 +33,11 @@ STYLE = (
 
 GREETING = ("(O usuario acabou de ligar o modo conversa.) Cumprimente de forma calorosa e puxe um assunto com uma "
             "pergunta aberta, levando em conta a hora do dia. No maximo 2 frases.")
-NUDGE = ("(O usuario ficou em silencio por um tempo.) Retome a conversa: faca uma pergunta sobre algo que ele "
-         "contou antes ou puxe um assunto novo e leve. Uma ou duas frases curtas, sem cobrar resposta.")
+NUDGE = ("(O usuario ficou em silencio e nao respondeu.) Retome a conversa com uma ou duas frases curtas, sem "
+         "cobrar resposta. Se ele JA contou algo nesta conversa (mensagens com papel de usuario), pergunte sobre "
+         "isso; se ainda nao disse nada, puxe um assunto novo e leve (gostos, planos, uma curiosidade). Nunca diga "
+         "que ele mencionou algo que so voce falou, e nao invente fatos atuais (clima, noticias, precos): voce nao "
+         "tem esses dados aqui.")
 GOING_QUIET = "Vou ficar quietinha. Quando quiser continuar a conversa, é só me chamar."
 STOPPED = "Tudo bem, saí do modo conversa. Foi bom conversar!"
 
