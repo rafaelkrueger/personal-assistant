@@ -125,6 +125,13 @@ HTML_PAGE = """<!doctype html>
     @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
 
     /* ═══ TOPBAR ═══ */
+    .conv-btn{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 12px;border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.04);color:var(--text2);cursor:pointer;font-size:12.5px;font-weight:700;transition:all .15s;flex-shrink:0}
+    .conv-btn svg{width:15px;height:15px}
+    .conv-btn:hover{border-color:var(--border2);color:var(--text)}
+    .conv-btn.on{border-color:rgba(52,211,153,.5);background:rgba(52,211,153,.14);color:#6ee7b7}
+    .conv-btn.on .conv-dot{display:inline-block}
+    .conv-dot{display:none;width:7px;height:7px;border-radius:99px;background:#34d399;animation:tpBlink 1.4s ease-in-out infinite}
+    @media(max-width:640px){.conv-btn .conv-label{display:none}.conv-btn{padding:0 9px}}
     .restart-btn{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.04);color:var(--text2);cursor:pointer;transition:all .15s;flex-shrink:0}
     .restart-btn:hover{color:var(--text);border-color:var(--border2);background:rgba(255,255,255,.08)}
     .restart-btn svg{width:16px;height:16px}
@@ -703,6 +710,7 @@ HTML_PAGE = """<!doctype html>
       <div class="topbar-right">
         <span class="timer-pills" id="timerPills"></span>
         <span class="clock" id="clock"></span>
+        <button type="button" class="conv-btn" id="convBtn" title="Modo conversa: ela bate papo, puxa assunto e espera mais por você"><span class="conv-dot"></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.4 8.4 0 01-9 8.4 8.8 8.8 0 01-3.8-.9L3 21l1.9-5.2A8.4 8.4 0 1121 11.5z"/></svg><span class="conv-label">Conversa</span></button>
         <button class="restart-btn" id="restartBtn" title="Reiniciar a Cassandra"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg></button>
         <button type="button" class="alarm-pill" id="alarmPill" title="Status do alarme"><span class="sdot" id="alarmPillDot"></span><span id="alarmPillText">Ok</span></button>
       </div>
@@ -3432,6 +3440,21 @@ async function init(){
 }
 init();
 setInterval(refresh,5000);
+
+// ── Modo conversa (botão no header) ──
+function renderConv(d){
+  const b=document.getElementById("convBtn");
+  const on=!!(d&&d.active);
+  b.classList.toggle("on",on);
+  b.title=on?"Modo conversa ligado — toque para desligar":"Modo conversa: ela bate papo, puxa assunto e espera mais por você";
+}
+async function loadConv(){try{renderConv(await api("/api/conversation"));}catch(e){}}
+document.getElementById("convBtn").addEventListener("click",async e=>{
+  const on=!e.currentTarget.classList.contains("on");
+  renderConv({active:on});
+  try{renderConv(await api("/api/conversation","POST",{active:on}));}catch(err){loadConv();}
+});
+loadConv();setInterval(loadConv,5000);
 setInterval(loadAlarmRinging,2000);  // o aviso de alarme aparece em até 2 s
 setInterval(()=>{if(tmList.length) loadTimers();},2000);
 setInterval(checkWebAgentStatus,30000);
@@ -3638,6 +3661,9 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                 return
             if parsed.path == "/api/timers":
                 self._send_json({"timers": assistant.timer_manager.snapshot(), "now": time.time()})
+                return
+            if parsed.path == "/api/conversation":
+                self._send_json(assistant.get_conversation_mode())
                 return
             if parsed.path == "/api/dashboard":
                 self._send_json({
@@ -4048,6 +4074,10 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                 name = str(self._read_json_body().get("name", "")).strip()
                 assistant.timer_manager.cancel(name)
                 self._send_json({"timers": assistant.timer_manager.snapshot(), "now": time.time()})
+                return
+
+            if parsed.path == "/api/conversation":
+                self._send_json(assistant.set_conversation_mode(bool(self._read_json_body().get("active"))))
                 return
 
             if parsed.path == "/api/alarms/stop":

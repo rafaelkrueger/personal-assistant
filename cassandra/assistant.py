@@ -15,7 +15,7 @@ from cassandra.memory import ConversationMemory
 from cassandra import speech_state
 from cassandra.mic_monitor import monitor as mic_monitor
 from cassandra.music_pause import MusicPause
-from cassandra import notices
+from cassandra import conversation_mode, notices
 from cassandra import llm_settings
 from cassandra.openai_client import LLMService
 from cassandra.router import SkillRouter
@@ -92,7 +92,8 @@ class CassandraAssistant:
             bridge.snapshot()  # já busca os agentes (em segundo plano): o 1º pedido não chega sem eles
             _skills.append(WebSearchSkill(self.llm, announce=lambda text: self.announce(text)))
         # announce: resultado de tarefa longa de outro agente (ex.: o IDE criando um site) é falado quando chega
-        _skills.append(GeneralChatSkill(self.llm, self.memory, announce=lambda text: self.announce(text)))
+        self.general_chat = GeneralChatSkill(self.llm, self.memory, announce=lambda text: self.announce(text))
+        _skills.append(self.general_chat)
         self.router = SkillRouter(skills=_skills)
         if self.settings.input_mode in {"mic", "auto"}:
             # auto: escuta o microfone quando houver um; sem microfone, espera em silêncio até ele ser plugado.
@@ -161,12 +162,31 @@ class CassandraAssistant:
         self._task_gen: int | None = None
         self._task_done: tuple[int, dict | None] | None = None
         self.input_source.on_barge = lambda: mic_monitor.set(phase="ouvindo o pedido")
+        self._conv_nudges = 0  # vezes seguidas que ela puxou assunto sem resposta (modo conversa)
 
         while True:
             self._timer_interrupt.clear()
             active_until = self._finish_task(active_until)
             # Use a shorter silence threshold when waiting for the wake word.
             working = self._task_running()
+            request, self._conv_request = getattr(self, "_conv_request", None), None
+            if request == "start":
+                # Modo conversa ligado (botão no header): ela cumprimenta e puxa assunto na hora.
+                speech_state.cancel()
+                self.sound_player.play(self.settings.on_sound_path)
+                self.music_pause.pause()
+                self._conv_nudges = 0
+                mic_monitor.event("status", "Modo conversa ligado")
+                self._start_prompt_task(conversation_mode.GREETING)
+                active_until = None
+                continue
+            if request == "stop":
+                speech_state.cancel()
+                self._speak_in_background(conversation_mode.STOPPED, then_sound=self.settings.off_sound_path)
+                self.music_pause.resume()
+                mic_monitor.event("status", "Modo conversa desligado")
+                active_until = None
+                continue
             # Enquanto um pedido roda, só o nome vale (para interromper); a sessão reabre quando ele termina.
             in_active_session = active_until is not None and not working
             if mic_monitor.present is not False:
@@ -174,7 +194,9 @@ class CassandraAssistant:
                                 "ouvindo o pedido" if in_active_session else "esperando o nome")
             # Na sessão a escuta tem prazo: sem ninguém começar a falar até lá, ela desativa na hora (com o som).
             wait = max(0.5, active_until - time.monotonic()) if in_active_session else None
-            event = self.input_source.read(wake_phase=not in_active_session, max_wait=wait)
+            # Conversa: a pessoa pensa no meio da frase — pausa maior antes de dar a fala por terminada.
+            silence = conversation_mode.SILENCE_SECONDS if in_active_session and conversation_mode.active() else None
+            event = self.input_source.read(wake_phase=not in_active_session, max_wait=wait, silence=silence)
 
             # Handle fired timers before anything else
             if self.timer_manager.has_fired():
@@ -198,6 +220,22 @@ class CassandraAssistant:
                 # Silêncio/ruído. Na sessão, passado o prazo, desativa (som de desligar) e volta a esperar o nome;
                 # antes disso segue ouvindo em silêncio (falar "não entendi" a cada ruído irritava).
                 if active_until is not None and not working and time.monotonic() >= active_until:
+                    if conversation_mode.active():
+                        # Conversa: em vez de desativar, ela puxa assunto; depois de algumas vezes sem resposta,
+                        # fica quieta (sem esquecer a conversa) e espera o nome.
+                        if self._conv_nudges < conversation_mode.MAX_NUDGES:
+                            self._conv_nudges += 1
+                            mic_monitor.event("status", "Conversa: puxando assunto")
+                            self._start_prompt_task(conversation_mode.NUDGE)
+                            active_until = None
+                            continue
+                        self._conv_nudges = 0
+                        self._speak_in_background(conversation_mode.GOING_QUIET,
+                                                  then_sound=self.settings.off_sound_path)
+                        active_until = None
+                        self.music_pause.resume()
+                        mic_monitor.event("status", "Conversa em pausa — voltou a esperar o nome")
+                        continue
                     self.sound_player.play(self.settings.off_sound_path)
                     active_until = None
                     self.memory.clear()
@@ -244,6 +282,13 @@ class CassandraAssistant:
                 active_until = time.monotonic() + self.settings.wake_timeout_seconds
                 continue
 
+            self._conv_nudges = 0
+            if conversation_mode.is_start(command) and not conversation_mode.active():
+                self.set_conversation_mode(True)
+                continue
+            if conversation_mode.is_stop(command) and conversation_mode.active():
+                self.set_conversation_mode(False)
+                continue
             mic_monitor.event("command", f"Pedido: “{command}”")
             mic_monitor.set(phase="pensando")
             self._start_task(command, command_source)
@@ -287,19 +332,67 @@ class CassandraAssistant:
             response = result["response"]
             print(f"Cassandra: {response}")
             mic_monitor.event("response", f"Resposta: “{response}”")
-        if self.music_pause.active:
+        if result is not None and result["dismissed"]:
+            if conversation_mode.set_active(False):
+                mic_monitor.event("status", "Modo conversa desligado (despedida)")
+            self.music_pause.resume()
+            return None
+        if self.music_pause.active and not conversation_mode.active():
             # A música tinha sido pausada para ouvir o pedido: respondido, ela volta (se o pedido não mexeu nela)
-            # e a sessão fecha — com música tocando, a escuta sem o nome pegaria a letra como pedido.
+            # e a sessão fecha — com música tocando, a escuta sem o nome pegaria a letra como pedido. No modo
+            # conversa ela só volta quando a conversa para.
             self.music_pause.resume()
             mic_monitor.event("status", "Pedido respondido — música de volta")
             return None
         if result is None:
-            return time.monotonic() + self.settings.wake_timeout_seconds
-        if result["dismissed"]:
-            return None
+            return time.monotonic() + self._session_seconds()
         # Audible cue that Cassandra is now waiting for the user's next utterance.
         self.sound_player.play(self.settings.on_sound_path)
-        return time.monotonic() + self.settings.wake_timeout_seconds
+        return time.monotonic() + self._session_seconds()
+
+    def _session_seconds(self) -> float:
+        """Quanto ela espera a pessoa voltar a falar depois de responder (bem mais no modo conversa)."""
+        return conversation_mode.LISTEN_SECONDS if conversation_mode.active() else self.settings.wake_timeout_seconds
+
+    # ── Modo conversa ───────────────────────────────────────────────────────
+
+    def get_conversation_mode(self) -> dict:
+        return {"active": conversation_mode.active()}
+
+    def set_conversation_mode(self, on: bool) -> dict:
+        """Liga/desliga (botão no header ou por voz). O loop do microfone faz o resto: cumprimenta ou se despede."""
+        if conversation_mode.set_active(on):
+            self._conv_request = "start" if on else "stop"
+            self._timer_interrupt.set()  # acorda o microfone para agir já
+        return self.get_conversation_mode()
+
+    def _start_prompt_task(self, instruction: str) -> None:
+        """Ela mesma fala primeiro (cumprimento ao ligar a conversa, ou puxando assunto no silêncio), no estilo
+        da conversa e com o que já foi dito. Roda como um pedido: o nome interrompe e a sessão reabre no fim."""
+        gen = speech_state.generation()
+
+        def run() -> None:
+            speech_state.task_begin(gen)
+            result = None
+            try:
+                with self._state_lock:
+                    stream = self.llm.answer_stream(user_text=instruction,
+                                                    system_prompt=self.general_chat._build_system_prompt(),
+                                                    history=self.memory.get_messages())
+                    response = self.voice_output.speak_stream(stream).strip()
+                    if response and not speech_state.cancelled(gen):
+                        self.memory.add_assistant(response)
+                        self._append_history(role="assistant", content=response, source="assistant", kind="chat")
+                        result = {"response": response, "dismissed": False}
+            except Exception as exc:  # noqa: BLE001
+                print(f"[CONVERSA] Falhou ao puxar assunto: {exc}", flush=True)
+            finally:
+                self._task_done = (gen, result)
+                self._timer_interrupt.set()
+
+        self._task_gen = gen
+        self._task_thread = threading.Thread(target=run, name="cassandra-conversa", daemon=True)
+        self._task_thread.start()
 
     def process_text_command(
         self,

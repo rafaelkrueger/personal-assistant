@@ -32,8 +32,9 @@ class InputEvent:
 
 
 class TextInputSource:
-    def read(self, wake_phase: bool = False, max_wait: float | None = None) -> InputEvent:
-        _ = wake_phase
+    def read(self, wake_phase: bool = False, max_wait: float | None = None,
+             silence: float | None = None) -> InputEvent:
+        _ = wake_phase, silence
         raw_text = input("\nVoce: ").strip()
         if raw_text.lower() in {"sair", "exit", "quit"}:
             return InputEvent(text="", exit_requested=True)
@@ -109,17 +110,19 @@ class MicrophoneInputSource:
             max_duration=vad_max_duration,
         )
 
-    def read(self, wake_phase: bool = False, max_wait: float | None = None) -> InputEvent:
+    def read(self, wake_phase: bool = False, max_wait: float | None = None,
+             silence: float | None = None) -> InputEvent:
         """Block until a complete utterance is spoken, then transcribe it.
 
         Args:
             wake_phase: When True, uses the shorter wake-word silence threshold
                 so activation is faster after the user says just the assistant name.
+            silence: pausa que encerra a fala (fora da espera do nome); o modo conversa aceita pausas maiores.
         """
         if self.wait_for_device and not self._check_microphone():
             time.sleep(3)
             return InputEvent(text="")
-        silence_override = self.vad_wake_silence_duration if wake_phase else None
+        silence_override = self.vad_wake_silence_duration if wake_phase else silence
         self._signaled = False
         try:
             text = self._capture_and_transcribe(silence_override, wake_phase=wake_phase, max_wait=max_wait)
