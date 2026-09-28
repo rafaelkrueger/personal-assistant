@@ -186,7 +186,7 @@ class GeneralChatSkill(Skill):
             notices.searching() if target == "web-agent" else notices.working())
         if notice[-1] not in ".!?":
             notice += "."
-        yield notice + " "
+        yield notices.Notice(notice + " ")  # mensagem própria, dita antes de começar (ver assistant._notices)
         print(f"[AGENTES] {target} ← {task[:160]}", flush=True)
 
         reply = bridge.run(target, task, _WAIT_SECONDS.get(target, _WAIT_DEFAULT),

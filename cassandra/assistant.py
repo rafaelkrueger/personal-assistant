@@ -15,6 +15,7 @@ from cassandra.memory import ConversationMemory
 from cassandra import speech_state
 from cassandra.mic_monitor import monitor as mic_monitor
 from cassandra.music_pause import MusicPause
+from cassandra import notices
 from cassandra import llm_settings
 from cassandra.openai_client import LLMService
 from cassandra.router import SkillRouter
@@ -348,9 +349,13 @@ class CassandraAssistant:
 
             skill = self.router.route(text)
             if hasattr(skill, "handle_stream"):
-                stream = skill.handle_stream(text)
+                said: list[str] = []
+                stream = self._notices(skill.handle_stream(text), said, speak_now=not speak_response)
                 if speak_response:
                     response = self.voice_output.speak_stream(stream)
+                    for note in said:  # o aviso já foi dito e registrado à parte: a resposta é só o resultado
+                        if response.startswith(note):
+                            response = response[len(note):].strip()
                 else:
                     response = "".join(stream)
             else:
@@ -367,6 +372,21 @@ class CassandraAssistant:
                 kind="chat",
             )
             return {"response": response, "dismissed": False}
+
+    def _notices(self, stream, said: list[str], speak_now: bool):
+        """Separa o aviso ("Deixa eu dar uma olhada nisso.") do resultado: ele vira uma mensagem própria no chat na
+        hora, antes de a tarefa começar, e é dito na hora. Antes o aviso saía colado no resultado, numa resposta só,
+        quando tudo terminava. Na voz o aviso segue no streaming (é falado primeiro, enquanto a tarefa roda); no chat
+        de texto (speak_now) ele é falado em segundo plano e sai da resposta."""
+        for token in stream:
+            if isinstance(token, notices.Notice):
+                note = token.strip()
+                said.append(note)
+                self._append_history(role="assistant", content=note, source="assistant", kind="chat")
+                if speak_now:
+                    self._speak_in_background(note)
+                    continue
+            yield token
 
     def process_web_message(self, message: str) -> dict[str, str | bool]:
         """Handles web messages with wake-word flow similar to voice mode."""
@@ -451,8 +471,9 @@ class CassandraAssistant:
         return {"ok": True, "spoken": spoken}
 
     def get_conversation_history(self) -> list[dict[str, str]]:
-        with self._state_lock:
-            return [dict(item) for item in self._conversation_history]
+        # Sem a trava: um pedido em andamento a segura até terminar (uma pesquisa leva um minuto) e o chat não via
+        # o aviso já dito ("deixa eu dar uma olhada") até tudo acabar. Copiar a lista é seguro sem ela.
+        return [dict(item) for item in list(self._conversation_history)]
 
     def clear_conversation(self) -> None:
         with self._state_lock:

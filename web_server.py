@@ -1790,6 +1790,17 @@ async function loadCosts(){
 }
 document.getElementById("costDays").addEventListener("change",loadCosts);
 
+// Enquanto a Cassandra trabalha num pedido do chat, mostra o que já chegou — ex.: o aviso "deixa eu dar uma
+// olhada" antes de uma pesquisa ou de outro agente; o resultado vem depois, em outra mensagem.
+setInterval(async()=>{
+  if(currentTab!=="chat"||!document.getElementById("typingIndicator")) return;
+  try{
+    const d=await api("/api/history");
+    const items=d.history||[];
+    if(items.length>document.querySelectorAll("#messages .msg").length){renderMessages(items);showTyping();}
+  }catch(e){}
+},1500);
+
 // ── Sidebar ──
 const sidebar=document.getElementById("sidebar");
 if(localStorage.getItem("sbCollapsed")==="1") sidebar.classList.add("collapsed");

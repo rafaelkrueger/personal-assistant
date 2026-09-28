@@ -25,17 +25,22 @@ _TASK = (
 _last: dict[str, str] = {}
 
 
+class Notice(str):
+    """Aviso antes de uma tarefa demorada, dentro do streaming da resposta. Quem fala/mostra a resposta o trata como
+    uma mensagem à parte: é dito e aparece no chat na hora, e o resultado vem depois, em outra mensagem."""
+
+
 def _pick(kind: str, options: tuple[str, ...]) -> str:
     choice = random.choice([o for o in options if o != _last.get(kind)] or list(options))
     _last[kind] = choice
     return choice
 
 
-def searching() -> str:
+def searching() -> Notice:
     """Antes de uma pesquisa (notícias, cotação, "pesquise X"...)."""
-    return _pick("search", _SEARCH)
+    return Notice(_pick("search", _SEARCH))
 
 
-def working() -> str:
+def working() -> Notice:
     """Antes de uma tarefa pedida a outro agente (WhatsApp, criar um site, exames...)."""
-    return _pick("task", _TASK)
+    return Notice(_pick("task", _TASK))

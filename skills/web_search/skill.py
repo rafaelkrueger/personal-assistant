@@ -326,7 +326,7 @@ class WebSearchSkill(Skill):
         """Avisa na hora que vai pesquisar (a busca pode levar mais de um minuto) e depois responde."""
         from cassandra import notices  # noqa: PLC0415
 
-        yield notices.searching() + " "
+        yield notices.Notice(notices.searching() + " ")  # mensagem própria, dita antes da busca
         yield self.handle(text)
 
     def handle(self, text: str) -> str:
