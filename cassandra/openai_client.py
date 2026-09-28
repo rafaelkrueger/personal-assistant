@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from cassandra import llm_settings
+from cassandra import llm_settings, usage_log
 
 
 class LLMService:
@@ -26,17 +26,42 @@ class LLMService:
         """chat.completions.create no provider ativo. fast=True usa o modelo rápido/barato do provider
         (gpt-4o-mini na OpenAI) — para classificações curtas das skills."""
         client, model, fast_model, extra = llm_settings.chat_client()
+        provider = llm_settings.active_provider()
+        if provider == "local" and model == llm_settings.get()["openai_model"]:
+            provider = "openai"  # o local caiu há pouco e a OpenAI está segurando
         call = dict(kwargs)
         if extra:
             call["extra_body"] = {**extra, **kwargs.get("extra_body", {})}
         try:
-            return client.chat.completions.create(model=fast_model if fast else model, messages=messages, **call)
+            return self._tracked(client, provider, fast_model if fast else model, messages, call)
         except Exception as exc:
             # Modelo local (Llama Desk no PC) fora do ar: a OpenAI responde no lugar, sem a pessoa perceber.
             if llm_settings.active_provider() != "local" or not llm_settings.mark_local_failed(str(exc)):
                 raise
             client, model, fast_model, _extra = llm_settings.chat_client()
-            return client.chat.completions.create(model=fast_model if fast else model, messages=messages, **kwargs)
+            return self._tracked(client, "openai", fast_model if fast else model, messages, dict(kwargs))
+
+    @staticmethod
+    def _tracked(client, provider: str, model: str, messages: list[dict], call: dict):
+        """Chama o LLM e registra os tokens gastos (aba Gastos). Em streaming, pede o uso no último pedaço."""
+        if call.get("stream") and provider != "local":
+            call.setdefault("stream_options", {"include_usage": True})
+        response = client.chat.completions.create(model=model, messages=messages, **call)
+        if not call.get("stream"):
+            usage_log.record_llm(provider, model, getattr(response, "usage", None))
+            return response
+
+        def chunks():
+            usage = None
+            try:
+                for chunk in response:
+                    if getattr(chunk, "usage", None):
+                        usage = chunk.usage
+                    yield chunk
+            finally:
+                usage_log.record_llm(provider, model, usage)
+
+        return chunks()
 
     @staticmethod
     def _messages(
@@ -124,6 +149,7 @@ class LLMService:
             voice=voice,
             input=text,
         )
+        usage_log.record_tts("openai", model, len(text))
         return response.content
 
     def stream_speech(self, text: str, model: str = "gpt-4o-mini-tts", voice: str = "nova"):
@@ -132,7 +158,14 @@ class LLMService:
         with client.audio.speech.with_streaming_response.create(
             model=model, voice=voice, input=text, response_format="pcm",
         ) as response:
-            yield from response.iter_bytes(4096)
+            got = 0
+            try:
+                for chunk in response.iter_bytes(4096):
+                    got += len(chunk)
+                    yield chunk
+            finally:
+                if got:  # PCM 16-bit 24 kHz: 48 000 bytes por segundo de fala
+                    usage_log.record_tts("openai", model, len(text), seconds=got / 48000)
 
     def transcribe_audio_file(
         self,
@@ -148,4 +181,5 @@ class LLMService:
                 language=language,
                 prompt=prompt,
             )
+        usage_log.record_stt("openai", model, usage_log.wav_seconds(audio_path))
         return (response.text or "").strip()

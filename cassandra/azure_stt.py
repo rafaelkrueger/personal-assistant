@@ -34,6 +34,9 @@ def transcribe(wav_path: str, language: str = "pt") -> str:
             data = json.loads(resp.read().decode("utf-8") or "{}")
     except urllib.error.HTTPError as exc:
         raise RuntimeError(f"HTTP {exc.code}: {exc.read()[:160]!r}") from exc
+    from cassandra import usage_log  # noqa: PLC0415
+
+    usage_log.record_stt("azure", "azure", usage_log.wav_seconds(wav_path))  # cobrado mesmo sem fala
     status = data.get("RecognitionStatus")
     if status == "Success":
         return (data.get("DisplayText") or "").strip()

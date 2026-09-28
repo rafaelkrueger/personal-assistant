@@ -266,6 +266,17 @@ HTML_PAGE = """<!doctype html>
     .alarm-row-mini{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--border)}
     .alarm-row-mini:last-child{border-bottom:none}
     .alarm-time-lg{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.03em}
+    .cost-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:14px}
+    .cost-chart{width:100%;height:190px;display:block}
+    .cost-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--text2);margin-top:8px}
+    .cost-legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+    .cost-table{width:100%;border-collapse:collapse;font-size:12.5px}
+    .cost-table td,.cost-table th{padding:7px 6px;border-bottom:1px solid var(--border);text-align:left}
+    .cost-table th{font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;font-weight:700}
+    .cost-table td.num,.cost-table th.num{text-align:right;font-variant-numeric:tabular-nums}
+    .cost-bar{height:7px;border-radius:99px;background:var(--border2);overflow:hidden;margin-top:6px}
+    .cost-bar>div{height:100%;background:var(--brand)}
+    .cost-note{font-size:12px;color:var(--text3);margin-top:10px;line-height:1.5}
     .tips-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
     .tip-card{
       background:var(--glass);border:1px solid var(--border);border-radius:var(--rl);
@@ -737,6 +748,39 @@ HTML_PAGE = """<!doctype html>
           <div class="sec-hdr"><span class="sec-title">O que posso fazer</span></div>
           <div class="tips-grid" id="tipsGrid"></div>
         </div>
+      </div>
+
+      <!-- ══ GASTOS ══ -->
+      <div class="tab-panel hidden" id="tab-costs">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+          <select id="costDays" class="settings-select" style="max-width:180px">
+            <option value="7">Últimos 7 dias</option><option value="30" selected>Últimos 30 dias</option><option value="90">Últimos 90 dias</option>
+          </select>
+          <span class="cost-note" id="costUpdated" style="margin:0"></span>
+        </div>
+        <div class="cost-grid">
+          <div class="stat-card"><div class="stat-val" id="costToday">—</div><div class="stat-lbl">hoje</div></div>
+          <div class="stat-card"><div class="stat-val" id="costMonth">—</div><div class="stat-lbl">este mês</div></div>
+          <div class="stat-card"><div class="stat-val" id="costProj">—</div><div class="stat-lbl">previsão do mês</div></div>
+          <div class="stat-card"><div class="stat-val" id="costPeriod">—</div><div class="stat-lbl" id="costPeriodLbl">no período</div></div>
+        </div>
+        <div class="dash-section" style="margin-bottom:14px">
+          <div class="dash-section-title">Gasto por dia (US$)</div>
+          <svg class="cost-chart" id="costChart" viewBox="0 0 600 190" preserveAspectRatio="none"></svg>
+          <div class="cost-legend" id="costLegend"></div>
+        </div>
+        <div class="dash-cols">
+          <div class="dash-section">
+            <div class="dash-section-title">Por modelo</div>
+            <div style="overflow-x:auto"><table class="cost-table" id="costModels"></table></div>
+          </div>
+          <div class="dash-section">
+            <div class="dash-section-title">Azure (cota grátis do mês) e cache da voz</div>
+            <div id="costAzure"></div>
+            <div id="costCache" style="margin-top:14px"></div>
+          </div>
+        </div>
+        <div class="cost-note">Estimativa pela tabela de preços de cada provedor (US$, sem impostos), a partir do que a Cassandra registra em cada chamada. Transcrição local (Vosk) e voz local (Piper) são grátis e não aparecem.</div>
       </div>
 
       <!-- ══ CHAT ══ -->
@@ -1589,6 +1633,7 @@ const IC = {
   routines: `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>`,
   agenda:   `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`,
   settings: `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>`,
+  costs:    `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>`,
   trash:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>`,
   check:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`,
   undo:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 00-4-4H4"/></svg>`,
@@ -1608,12 +1653,13 @@ const ALL_TABS = [
   {id:"alarms",    label:"Alarmes",    group:"Automação"},
   {id:"routines",  label:"Rotinas",    group:"Automação"},
   {id:"mic",       label:"Microfone",  group:"Sistema"},
+  {id:"costs",     label:"Gastos",     group:"Sistema"},
   {id:"settings",  label:"Config.",    group:"Sistema"},
 ];
 let currentTab = "dashboard";
 const PAGE_TITLES = {
   dashboard:"Dashboard",chat:"Chat",music:"Música",devices:"Aparelhos",mic:"Microfone",shopping:"Compras",
-  todos:"Tarefas",alarms:"Alarmes",routines:"Rotinas",agenda:"Agenda",settings:"Configurações",
+  todos:"Tarefas",alarms:"Alarmes",routines:"Rotinas",agenda:"Agenda",settings:"Configurações",costs:"Gastos",
 };
 const DAY_NAMES = ["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"];
 const MONTHS_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
@@ -1693,7 +1739,56 @@ function gotoTab(tab){
   if(tab==="devices") dvOpen();
   if(tab==="mic") micOpen(); else micClose();
   if(tab==="alarms") renderAlmCalendar();
+  if(tab==="costs") loadCosts();
 }
+
+// ── Gastos ──
+const COST_COLORS={llm:"#5b9aff",tts:"#f472b6",stt:"#34d399"};
+function usd(v){if(v==null)return"—";return v<0.01&&v>0?"US$ "+v.toFixed(4):"US$ "+v.toFixed(2);}
+function fmtSecs(s){s=Math.round(s||0);return s>=3600?(s/3600).toFixed(1)+" h":s>=60?Math.round(s/60)+" min":s+" s";}
+function fmtNum(n){return (n||0).toLocaleString("pt-BR");}
+function drawCostChart(d){
+  const svg=document.getElementById("costChart"),W=600,H=190,P=24,days=d.days,n=days.length;
+  const kinds=Object.keys(d.kinds);
+  const totals=days.map((_,i)=>kinds.reduce((a,k)=>a+d.daily[k][i],0));
+  const max=Math.max(...totals,...kinds.flatMap(k=>d.daily[k]),0.0001);
+  const x=i=>P+(n<2?0:i*(W-2*P)/(n-1)), y=v=>H-P-(v/max)*(H-2*P);
+  let out=`<line x1="${P}" y1="${H-P}" x2="${W-P}" y2="${H-P}" stroke="var(--border2)"/>`;
+  out+=`<text x="${P}" y="12" font-size="10" fill="var(--text3)">${usd(max)}</text>`;
+  const line=(vals,color,w,dash)=>`<polyline fill="none" stroke="${color}" stroke-width="${w}" ${dash?'stroke-dasharray="4 4"':""} stroke-linejoin="round" vector-effect="non-scaling-stroke" points="${vals.map((v,i)=>x(i)+","+y(v)).join(" ")}"/>`;
+  out+=line(totals,"var(--text3)",1.5,true);
+  kinds.forEach(k=>{out+=line(d.daily[k],COST_COLORS[k],2.2);});
+  [0,Math.floor((n-1)/2),n-1].forEach(i=>{out+=`<text x="${x(i)}" y="${H-6}" font-size="10" fill="var(--text3)" text-anchor="${i===0?"start":i===n-1?"end":"middle"}">${days[i].slice(8,10)}/${days[i].slice(5,7)}</text>`;});
+  svg.innerHTML=out;
+  document.getElementById("costLegend").innerHTML=kinds.map(k=>`<span><i style="background:${COST_COLORS[k]}"></i>${d.kinds[k]} ${usd(d.daily[k].reduce((a,b)=>a+b,0))}</span>`).join("")+`<span><i style="background:var(--text3)"></i>Total</span>`;
+}
+async function loadCosts(){
+  const days=+document.getElementById("costDays").value||30;
+  let d;
+  try{d=await api("/api/usage?days="+days);}catch(e){document.getElementById("costUpdated").textContent=e.message;return;}
+  document.getElementById("costToday").textContent=usd(d.totals.today);
+  document.getElementById("costMonth").textContent=usd(d.totals.month);
+  document.getElementById("costProj").textContent=usd(d.month_projection);
+  document.getElementById("costPeriod").textContent=usd(d.totals.period);
+  document.getElementById("costPeriodLbl").textContent=`nos últimos ${days} dias`;
+  document.getElementById("costUpdated").textContent="Atualizado às "+new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
+  drawCostChart(d);
+  const rows=d.by_model.map(m=>{
+    const qty=m.kind==="llm"?`${fmtNum(m.tokens_in)} → ${fmtNum(m.tokens_out)} tokens`:m.kind==="tts"?`${fmtNum(m.chars)} caracteres`:fmtSecs(m.seconds)+" de áudio";
+    return `<tr><td><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${COST_COLORS[m.kind]};margin-right:6px"></i>${esc(d.kinds[m.kind])}</td><td>${esc(m.provider)} · ${esc(m.model)}</td><td class="num">${fmtNum(m.calls)}</td><td class="num">${qty}</td><td class="num">${usd(m.cost)}</td></tr>`;
+  }).join("");
+  document.getElementById("costModels").innerHTML=rows?`<tr><th>Tipo</th><th>Modelo</th><th class="num">Chamadas</th><th class="num">Uso</th><th class="num">Custo</th></tr>${rows}`:'<tr><td class="cost-note">Nada registrado ainda — o registro começa a contar a partir de agora.</td></tr>';
+  const a=d.azure,tp=Math.min(100,a.tts_chars/a.tts_free*100),sp=Math.min(100,a.stt_seconds/a.stt_free*100);
+  document.getElementById("costAzure").innerHTML=a.free_tier
+    ?`<div style="font-size:13px">Voz: ${fmtNum(a.tts_chars)} de ${fmtNum(a.tts_free)} caracteres</div><div class="cost-bar"><div style="width:${tp}%"></div></div>
+      <div style="font-size:13px;margin-top:10px">Transcrição: ${fmtSecs(a.stt_seconds)} de ${fmtSecs(a.stt_free)}</div><div class="cost-bar"><div style="width:${sp}%"></div></div>
+      <div class="cost-note">Plano gratuito (F0): dentro da cota o Azure não cobra. Passando dela, ele recusa e a Cassandra usa a OpenAI.</div>`
+    :`<div class="cost-note">Plano pago (S0): voz ${fmtNum(a.tts_chars)} caracteres, transcrição ${fmtSecs(a.stt_seconds)} este mês.</div>`;
+  const c=d.cache;
+  document.getElementById("costCache").innerHTML=`<div style="font-size:13px">${fmtNum(c.hits)} frases tocadas do cache (${fmtNum(c.chars)} caracteres sem gerar voz de novo) — cerca de ${usd(c.saved)} economizados.</div>`
+    +(d.unpriced.length?`<div class="cost-note">Sem preço cadastrado: ${d.unpriced.map(esc).join(", ")}.</div>`:"");
+}
+document.getElementById("costDays").addEventListener("change",loadCosts);
 
 // ── Sidebar ──
 const sidebar=document.getElementById("sidebar");
@@ -3550,6 +3645,15 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                 return
             if parsed.path == "/api/llm":
                 self._send_json(llm_settings.get_public())
+                return
+            if parsed.path == "/api/usage":
+                from cassandra import usage_log  # noqa: PLC0415
+
+                try:
+                    days = max(1, min(365, int((parse_qs(parsed.query).get("days") or ["30"])[0])))
+                except ValueError:
+                    days = 30
+                self._send_json(usage_log.summary(days))
                 return
             if parsed.path == "/api/llm/local-models":
                 try:

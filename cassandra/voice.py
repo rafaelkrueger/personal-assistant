@@ -12,6 +12,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from xml.sax.saxutils import escape as _xml_escape
 
+from cassandra import usage_log
 from cassandra import speech_state
 
 
@@ -108,6 +109,9 @@ class _AzureResponse:
         try:
             self._resp = urllib.request.urlopen(req, timeout=15)
             self.status_code = self._resp.status
+            from cassandra import usage_log  # noqa: PLC0415
+
+            usage_log.record_tts("azure", voice, len(text))
         except urllib.error.HTTPError as exc:  # 401 chave errada, 429 franquia/limite, ...
             self._resp = exc
             self.status_code = exc.code
@@ -287,6 +291,7 @@ class VoiceOutput:
             if cache and cache.exists():
                 with open(cache, "rb") as fh:
                     self._run_player(play, stdin=fh)
+                usage_log.record_tts("azure", voice, len(text), cached=True)
                 return True
             proc = None
             got: list[bytes] = []
@@ -349,6 +354,7 @@ class VoiceOutput:
             if cache and cache.exists():
                 with open(cache, "rb") as fh:
                     self._run_player(play, stdin=fh)
+                usage_log.record_tts("openai", self.tts_model, len(text), cached=True)
                 return True
             proc = None
             got: list[bytes] = []
