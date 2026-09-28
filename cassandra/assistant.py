@@ -14,6 +14,7 @@ from cassandra.input_sources import InputEvent, MicrophoneInputSource, TextInput
 from cassandra.memory import ConversationMemory
 from cassandra import speech_state
 from cassandra.mic_monitor import monitor as mic_monitor
+from cassandra.music_pause import MusicPause
 from cassandra import llm_settings
 from cassandra.openai_client import LLMService
 from cassandra.router import SkillRouter
@@ -51,6 +52,7 @@ class CassandraAssistant:
         _ui_sounds = self.settings_store.get().get("sounds", {})
         self.sound_player.enabled = bool(_ui_sounds.get("enabled", True))
         self.sound_player.play(self.settings.startup_sound_path)
+        self.music_pause = MusicPause()  # pausa o Spotify ao ouvir o nome e volta depois do pedido
         self._timer_interrupt = threading.Event()
         self.timer_manager = TimerManager(on_fire=self._timer_interrupt)
         self.routine_manager = RoutineManager(
@@ -111,7 +113,7 @@ class CassandraAssistant:
                 transcription_provider=self.settings.transcription_provider,
                 vosk_model_path=self.settings.vosk_model_path,
                 wait_for_device=self.settings.input_mode == "auto",
-                on_wake=lambda: self.sound_player.play(self.settings.on_sound_path),
+                on_wake=self._on_wake,
             )
         else:
             self.input_source = TextInputSource()
@@ -198,6 +200,7 @@ class CassandraAssistant:
                     self.sound_player.play(self.settings.off_sound_path)
                     active_until = None
                     self.memory.clear()
+                    self.music_pause.resume()  # chamou e não pediu nada: a música volta
                     mic_monitor.event("status", "Sessão encerrada por silêncio — voltou a esperar o nome")
                     if self.settings.mic_debug:
                         print("[SESSION] Sessao expirada. Memoria limpa.", flush=True)
@@ -223,6 +226,7 @@ class CassandraAssistant:
             if wake_detected:
                 if not getattr(event, "wake_signaled", False):
                     self.sound_player.play(self.settings.on_sound_path)
+                self.music_pause.pause()  # já pausada pelo _on_wake na maioria das vezes; repetir não faz nada
                 command = wake_command
                 command_source = "wake_inline"
                 if not command:
@@ -278,11 +282,18 @@ class CassandraAssistant:
         gen, result = done
         if speech_state.cancelled(gen):
             return active_until  # a pessoa já chamou a Cassandra de novo: nada de bip nem sessão do pedido velho
+        if result is not None:
+            response = result["response"]
+            print(f"Cassandra: {response}")
+            mic_monitor.event("response", f"Resposta: “{response}”")
+        if self.music_pause.active:
+            # A música tinha sido pausada para ouvir o pedido: respondido, ela volta (se o pedido não mexeu nela)
+            # e a sessão fecha — com música tocando, a escuta sem o nome pegaria a letra como pedido.
+            self.music_pause.resume()
+            mic_monitor.event("status", "Pedido respondido — música de volta")
+            return None
         if result is None:
             return time.monotonic() + self.settings.wake_timeout_seconds
-        response = result["response"]
-        print(f"Cassandra: {response}")
-        mic_monitor.event("response", f"Resposta: “{response}”")
         if result["dismissed"]:
             return None
         # Audible cue that Cassandra is now waiting for the user's next utterance.
@@ -683,6 +694,11 @@ class CassandraAssistant:
             )
         except OSError:
             pass
+
+    def _on_wake(self) -> None:
+        """Nome reconhecido ao vivo: som de ativação e pausa da música, antes mesmo do pedido."""
+        self.sound_player.play(self.settings.on_sound_path)
+        self.music_pause.pause()
 
     def _shutdown_with_goodbye(self) -> None:
         self.memory.clear()

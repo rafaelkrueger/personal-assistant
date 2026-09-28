@@ -68,6 +68,9 @@ class SpotifyClient:
         self._token: dict[str, Any] | None = self._load_token()
         self._me: dict[str, Any] | None = None
         self._last_link = 0.0
+        # Sobe a cada play/pause/próxima pedido pela pessoa (a pausa automática ao ouvir o nome usa _player direto
+        # e não conta): assim music_pause sabe que o pedido mexeu na música e não a volta sozinha.
+        self.control_gen = 0
 
     # ── estado ──
     @property
@@ -280,6 +283,7 @@ class SpotifyClient:
     # ── tocar ──
     def play(self, uris: list[str] | None = None, context_uri: str | None = None,
              offset: dict | None = None) -> dict[str, Any]:
+        self.control_gen += 1
         device = self.pick_device()
         body: dict[str, Any] = {}
         if context_uri:
@@ -315,9 +319,11 @@ class SpotifyClient:
             raise self._friendly(exc) from exc
 
     def pause(self) -> None:
+        self.control_gen += 1
         self._player("PUT", "/me/player/pause")
 
     def resume(self) -> None:
+        self.control_gen += 1
         state = self.playback()
         if state and state.get("device"):
             self._player("PUT", "/me/player/play", {"device_id": state["device"].get("id")})
@@ -325,9 +331,11 @@ class SpotifyClient:
             self.play()
 
     def next(self) -> None:
+        self.control_gen += 1
         self._player("POST", "/me/player/next")
 
     def previous(self) -> None:
+        self.control_gen += 1
         self._player("POST", "/me/player/previous")
 
     def set_volume(self, pct: int) -> int:
