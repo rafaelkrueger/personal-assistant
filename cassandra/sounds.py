@@ -84,6 +84,10 @@ def waiting():
         finally:
             if proc is not None and proc.poll() is None:
                 proc.terminate()
+                try:
+                    proc.wait(timeout=1)  # sem isso o processo ficava "defunct"
+                except subprocess.TimeoutExpired:
+                    proc.kill()
 
     thread = threading.Thread(target=loop, name="som-de-espera", daemon=True)
     thread.start()

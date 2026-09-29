@@ -11,6 +11,9 @@ class _Proc:
     def terminate(self):
         pass
 
+    def wait(self, timeout=None):
+        return 0
+
 
 def test_waiting_loops_softly_and_stops_with_the_block(monkeypatch):
     played = []
