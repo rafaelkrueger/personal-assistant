@@ -4,7 +4,7 @@ import json
 from collections.abc import Callable, Iterator
 from datetime import datetime
 
-from cassandra import conversation_mode, notices
+from cassandra import conversation_mode, notices, sounds
 from cassandra.agents_bridge import AgentReply, bridge, spoken
 from cassandra.memory import ConversationMemory
 from cassandra.openai_client import LLMService
@@ -191,8 +191,9 @@ class GeneralChatSkill(Skill):
         yield notices.Notice(notice + " ")  # mensagem própria, dita antes de começar (ver assistant._notices)
         print(f"[AGENTES] {target} ← {task[:160]}", flush=True)
 
-        reply = bridge.run(target, task, _WAIT_SECONDS.get(target, _WAIT_DEFAULT),
-                           on_late_result=lambda t, r: self._late_result(user_text, t, r))
+        with sounds.waiting():  # som baixinho de "trabalhando" enquanto o agente faz a tarefa
+            reply = bridge.run(target, task, _WAIT_SECONDS.get(target, _WAIT_DEFAULT),
+                               on_late_result=lambda t, r: self._late_result(user_text, t, r))
         if reply.pending:
             yield f"Isso vai levar um tempo. Te aviso quando {spoken(target)} terminar."
             return

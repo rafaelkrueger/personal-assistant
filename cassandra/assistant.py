@@ -20,6 +20,7 @@ from cassandra import llm_settings
 from cassandra.openai_client import LLMService
 from cassandra.router import SkillRouter
 from cassandra.settings_store import SettingsStore
+from cassandra import sounds
 from cassandra.sounds import SoundPlayer
 from cassandra.speaker_keepalive import SpeakerKeepAlive
 from cassandra.timer_manager import TimerManager, format_duration
@@ -341,7 +342,8 @@ class CassandraAssistant:
             # Pedido atendido: ela desativa e só volta a ouvir quando chamarem o nome de novo (reabrir a escuta
             # sozinha fazia ela pegar a TV/conversas da casa como pedido). Música pausada para ouvir o pedido volta
             # agora, se o pedido não mexeu nela. Só o modo conversa segue ouvindo depois de responder.
-            self.sound_player.play(self.settings.off_sound_path)  # o som de "desativei", como no fim da espera
+            # o som de "desativei", como no fim da espera — mais baixo que o de ativação
+            self.sound_player.play(self.settings.off_sound_path, volume=sounds.SOFT_VOLUME)
             if self.music_pause.active:
                 self.music_pause.resume()
                 mic_monitor.event("status", "Pedido respondido — música de volta")

@@ -356,11 +356,14 @@ class WebSearchSkill(Skill):
         from skills.general_chat.skill import _human_error  # noqa: PLC0415
 
         log.debug("Pedindo ao web-agent: %s", query)
-        reply = bridge.run(
-            "web-agent", f"Pesquise na internet e responda em português, de forma objetiva: {query}",
-            _SEARCH_WAIT, on_late_result=lambda _t, r: self._late_result(text, category, r),
-            parameters={"max_seconds": _SEARCH_BUDGET},
-        )
+        from cassandra import sounds  # noqa: PLC0415
+
+        with sounds.waiting():  # som baixinho de "pesquisando" enquanto o web-agent busca
+            reply = bridge.run(
+                "web-agent", f"Pesquise na internet e responda em português, de forma objetiva: {query}",
+                _SEARCH_WAIT, on_late_result=lambda _t, r: self._late_result(text, category, r),
+                parameters={"max_seconds": _SEARCH_BUDGET},
+            )
         if reply.pending:
             return "Essa pesquisa está levando mais tempo que o normal. Assim que chegar eu te conto."
         if not reply.ok or not reply.text:
