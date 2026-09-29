@@ -26,8 +26,12 @@ from pathlib import Path
 DEFAULT_MODEL_PATH = "models/vosk-model-small-pt-0.3"
 _MODEL_URL = "https://alphacephei.com/vosk/models/{name}.zip"
 
-# Palavras parecidas com "cassandra" que precisam existir na gramática para não virarem o nome.
-_COMPETITORS = ["casa", "da", "casada", "cansada"]
+# Palavras parecidas com "cassandra" que precisam existir na gramática para não virarem o nome (todas existem
+# no vocabulário do modelo pequeno; palavras fora dele são ignoradas pelo Vosk). Mais concorrentes = menos falas
+# da casa viram "candidato a nome" (cada candidato custa uma transcrição para conferir).
+_COMPETITORS = ["casa", "da", "casada", "cansada", "cansado", "cansa", "passa", "sandro", "alexandre", "alessandro",
+                "varanda", "lasanha", "banda", "manda", "mandar", "anda", "andar", "canta", "cassino", "candidata",
+                "agenda", "fazenda", "saudade", "senhora", "nada", "ainda", "vamos", "assim", "sabe", "sala"]
 _BARGE_LOCK = threading.Lock()  # cria o detector de interrupção uma vez só (ver barge_detector)
 
 

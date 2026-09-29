@@ -100,7 +100,9 @@ class MicrophoneInputSource:
         self.local_wake = wake_word_engine == "local"
         self.on_wake = on_wake  # toca o som de ativação quando o nome é reconhecido
         self.on_barge = None  # chamado quando a pessoa diz o nome enquanto a Cassandra fala (interromper)
-        self._signaled = False
+        self._signaled = False  # nome confirmado (o bip já tocou)
+        self._candidate = False  # o Vosk achou o nome ao vivo, falta a transcrição confirmar
+        self.wake_words = [w.strip().lower() for w in (wake_words or [assistant_name]) if w.strip()]
 
         from cassandra.vad_recorder import VadRecorder  # noqa: PLC0415
 
@@ -124,6 +126,7 @@ class MicrophoneInputSource:
             return InputEvent(text="")
         silence_override = self.vad_wake_silence_duration if wake_phase else silence
         self._signaled = False
+        self._candidate = False
         try:
             text = self._capture_and_transcribe(silence_override, wake_phase=wake_phase, max_wait=max_wait)
         except Exception as exc:  # noqa: BLE001
@@ -139,12 +142,19 @@ class MicrophoneInputSource:
             return InputEvent(text="", exit_requested=True)
         return InputEvent(text=text, wake_signaled=self._signaled)
 
+    def _mark_candidate(self) -> None:
+        """O Vosk achou o nome ao vivo: só um CANDIDATO. Encerra a gravação na próxima pausa (para verificar logo),
+        mas não toca o bip nem ativa nada — quem confirma é a transcrição (ver _verify_name)."""
+        if not self._candidate:
+            self._candidate = True
+            monitor.event("wake", "Nome talvez ouvido — conferindo")
+
     def _signal_wake(self) -> None:
-        """O nome acabou de ser reconhecido (ao vivo): toca o som de ativação já, sem esperar o fim da fala."""
+        """Nome confirmado: toca o som de ativação (e pausa a música, via on_wake)."""
         if self._signaled:
             return
         self._signaled = True
-        monitor.event("wake", "Nome detectado (na hora)")
+        monitor.event("wake", "Nome confirmado")
         if self.on_wake:
             try:
                 self.on_wake()
@@ -181,10 +191,10 @@ class MicrophoneInputSource:
             return True
 
         def on_frame(frame: bytes) -> bool:
-            """True = o nome já foi reconhecido (o gravador pode encerrar na primeira pausa curta)."""
+            """True = o nome talvez foi dito (o gravador pode encerrar na primeira pausa depois dele)."""
             if stream is not None and stream.feed(frame):
-                self._signal_wake()
-            return self._signaled
+                self._mark_candidate()
+            return self._candidate
 
         try:
             wav_path = self._recorder.record_utterance(
@@ -214,11 +224,17 @@ class MicrophoneInputSource:
                     if heard_text:  # sem nada reconhecível é só ruído: não registra
                         monitor.event("no_wake", f"Sem o nome — ouvido: “{heard_text}”")
                     return ""
-                self._signal_wake()  # se o ao vivo não pegou, toca agora
-                if only_name:
-                    text = self.assistant_name  # só o nome: abre a sessão sem gastar transcrição
-                else:
-                    text = self._with_wake_word(self._transcribe(wav_path))
+                # O Vosk (gramática restrita) força falas parecidas para o nome e disparava com conversa da casa e
+                # TV ("...porque são 2 senadores..." virava "cassandra, ..."). A transcrição de verdade confirma:
+                # o nome tem que estar lá, no começo ou no fim da frase. Só então ela bipa e ativa.
+                confirmed, full = self._verify_name(wav_path, heard_text)
+                if not confirmed:
+                    monitor.event("no_wake", f"Falso alarme descartado — a transcrição não tem o nome: “{full}”")
+                    return ""
+                self._signal_wake()
+                rest = self._without_name(full)
+                # Mesmo que o Vosk achasse que foi "só o nome", vale o que a transcrição ouviu depois dele.
+                text = f"{self.assistant_name}, {rest}" if rest else self.assistant_name
             else:
                 text = self._transcribe(wav_path)
         finally:
@@ -316,6 +332,53 @@ class MicrophoneInputSource:
                                                       or SequenceMatcher(None, t, prompt).ratio() >= 0.6):
             return True
         return any(p in t for p in _HALLUCINATIONS)
+
+    # ── Confirmação do nome ─────────────────────────────────────────────────
+
+    _VOCATIVES = {"o", "oi", "ei", "e", "ola", "hey", "alo"}
+    _NAME_RATIO = 0.72  # "casandra", "kassandra", "sandra", "alessandra" passam; "casa", "sandro", "cassino" não
+
+    @staticmethod
+    def _tokens(text: str) -> list[str]:
+        t = unicodedata.normalize("NFKD", (text or "").lower())
+        t = "".join(c for c in t if not unicodedata.combining(c))
+        return re.findall(r"[a-z]+", t)
+
+    def _is_name(self, word: str) -> bool:
+        return word in self.wake_words or SequenceMatcher(None, word, self.assistant_name.lower()).ratio() >= \
+            self._NAME_RATIO
+
+    def _name_in(self, text: str) -> bool:
+        """O nome aparece como chamado: nas 3 primeiras palavras ("Cassandra, ...", "ô Cassandra, ...") ou nas 2
+        últimas ("..., Cassandra?"). No meio da frase é alguém falando DELA, não com ela."""
+        words = self._tokens(text)
+        full = self.assistant_name.lower()
+        whole = [w for w in words[:3] + words[-2:] if SequenceMatcher(None, w, full).ratio() >= 0.85]
+        # Variações ("Sandra", "Alessandra") só como a 1ª palavra, depois de um "ô/oi/ei" no máximo: "casa da
+        # Sandra" não chama. O nome inteiro vale nas 3 primeiras ou nas 2 últimas palavras.
+        first = next((w for w in words if w not in self._VOCATIVES), "")
+        return bool(whole) or (bool(first) and self._is_name(first))
+
+    def _without_name(self, text: str) -> str:
+        """O pedido sem o nome (e sem vocativos em volta), para virar "Cassandra, <pedido>"."""
+        parts = (text or "").strip().split()
+        while parts and (self._is_name(("".join(self._tokens(parts[0])) or "x")) or
+                         "".join(self._tokens(parts[0])) in self._VOCATIVES):
+            parts.pop(0)
+        while parts and self._is_name("".join(self._tokens(parts[-1])) or "x"):
+            parts.pop()
+        return " ".join(parts).strip(" ,.;:!?")
+
+    def _verify_name(self, wav_path: str, vosk_text: str) -> tuple[bool, str]:
+        """(confirmado, transcrição). Sem transcrição disponível (sem internet, cota do Azure...), aceita só se o
+        Vosk ouviu o nome completo "cassandra" como a 1ª palavra — melhor que ficar surda."""
+        try:
+            full = (self._transcribe(wav_path) or "").strip()
+        except Exception as exc:  # noqa: BLE001
+            print(f"[WAKE] Sem transcrição para conferir o nome ({str(exc)[:120]}).", flush=True)
+            words = [w for w in (vosk_text or "").split() if w != "[unk]"]
+            return bool(words) and words[0] == self.assistant_name.lower(), vosk_text
+        return self._name_in(full), full
 
     def _with_wake_word(self, text: str) -> str:
         """O nome foi detectado localmente, mas a transcrição completa às vezes o erra ("sandra que horas
