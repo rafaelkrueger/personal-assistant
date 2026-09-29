@@ -44,3 +44,15 @@ def searching() -> Notice:
 def working() -> Notice:
     """Antes de uma tarefa pedida a outro agente (WhatsApp, criar um site, exames...)."""
     return Notice(_pick("task", _TASK))
+
+
+# Tamanho da resposta falada quando ela resume o que a web ou outro agente trouxe (o resultado bruto costuma ser
+# longo: cotação com variação, horário, fonte, histórico...). Vai no FIM do prompt, para valer sobre o resto.
+BRIEF_ANSWER = (
+    " TAMANHO — REGRA MAIS IMPORTANTE: esta resposta vai ser falada. Por padrao responda em 1 ou 2 frases curtas "
+    "(ate umas 35 palavras), so com o essencial que responde a pergunta: o numero, o fato, a conclusao. Nao repita "
+    "a pergunta, nao cite sites ou fontes e deixe de fora contexto, horario de atualizacao, variacoes e detalhes "
+    "que nao foram pedidos. De mais detalhes so se o usuario pediu (\"detalhe\", \"explica\", \"me conta tudo\", "
+    "\"quais sao\", \"lista\", \"as noticias do dia\") ou se a informacao completa for indispensavel para a "
+    "resposta fazer sentido — e mesmo assim no maximo 4 ou 5 frases."
+)

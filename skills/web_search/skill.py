@@ -386,7 +386,10 @@ class WebSearchSkill(Skill):
 
     def _format(self, text: str, category: str, raw: str) -> str:
         # ── 4. Formata a resposta com prompt específico da categoria ───────────
-        format_prompt = _FORMAT_PROMPTS.get(category, _FORMAT_PROMPTS["web_geral"])
+        from cassandra.notices import BRIEF_ANSWER  # noqa: PLC0415
+
+        # A categoria diz o que destacar; BRIEF_ANSWER (no fim) manda resumir — o resultado da web é longo.
+        format_prompt = _FORMAT_PROMPTS.get(category, _FORMAT_PROMPTS["web_geral"]) + BRIEF_ANSWER
         return self.llm.answer(
             user_text=(
                 f"Pergunta original: {text}\n\n"

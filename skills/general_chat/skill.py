@@ -211,9 +211,9 @@ class GeneralChatSkill(Skill):
     def _summary_system() -> str:
         return (
             "Voce e a Cassandra, assistente pessoal de voz. " + _VOICE_RULES +
-            "Outro agente acabou de fazer uma tarefa para o usuario. Responda ao pedido dele com base no resultado, "
-            "em no maximo 4 frases, direto ao ponto. Nao mencione que houve um resultado ou um agente, a nao ser que "
-            "o resultado diga que algo falhou. Nao invente nada que nao esteja no resultado."
+            "Outro agente acabou de fazer uma tarefa para o usuario. Responda ao pedido dele resumindo o resultado. "
+            "Nao mencione que houve um resultado ou um agente, a nao ser que o resultado diga que algo falhou. Nao "
+            "invente nada que nao esteja no resultado." + notices.BRIEF_ANSWER
         )
 
     @staticmethod
