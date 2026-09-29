@@ -321,7 +321,7 @@ class CassandraAssistant:
         self._task_thread.start()
 
     def _finish_task(self, active_until: float | None) -> float | None:
-        """Pedido terminou: fala e registra como antes e reabre a sessão. Interrompido: ignora em silêncio."""
+        """Pedido terminou: registra e desativa (no modo conversa, reabre a escuta). Interrompido: ignora em silêncio."""
         done, self._task_done = self._task_done, None
         if done is None:
             return active_until
@@ -337,16 +337,17 @@ class CassandraAssistant:
                 mic_monitor.event("status", "Modo conversa desligado (despedida)")
             self.music_pause.resume()
             return None
-        if self.music_pause.active and not conversation_mode.active():
-            # A música tinha sido pausada para ouvir o pedido: respondido, ela volta (se o pedido não mexeu nela)
-            # e a sessão fecha — com música tocando, a escuta sem o nome pegaria a letra como pedido. No modo
-            # conversa ela só volta quando a conversa para.
-            self.music_pause.resume()
-            mic_monitor.event("status", "Pedido respondido — música de volta")
+        if not conversation_mode.active():
+            # Pedido atendido: ela desativa e só volta a ouvir quando chamarem o nome de novo (reabrir a escuta
+            # sozinha fazia ela pegar a TV/conversas da casa como pedido). Música pausada para ouvir o pedido volta
+            # agora, se o pedido não mexeu nela. Só o modo conversa segue ouvindo depois de responder.
+            if self.music_pause.active:
+                self.music_pause.resume()
+                mic_monitor.event("status", "Pedido respondido — música de volta")
+            else:
+                mic_monitor.event("status", "Pedido respondido — esperando o nome de novo")
             return None
-        if result is None:
-            return time.monotonic() + self._session_seconds()
-        # Audible cue that Cassandra is now waiting for the user's next utterance.
+        # Modo conversa: bip de que está ouvindo de novo e espera a pessoa responder.
         self.sound_player.play(self.settings.on_sound_path)
         return time.monotonic() + self._session_seconds()
 
