@@ -34,6 +34,41 @@ _COMPETITORS = ["casa", "da", "casada", "cansada", "cansado", "cansa", "passa", 
                 "agenda", "fazenda", "saudade", "senhora", "nada", "ainda", "vamos", "assim", "sabe", "sala"]
 _BARGE_LOCK = threading.Lock()  # cria o detector de interrupção uma vez só (ver barge_detector)
 
+# Concorrentes que, como 1ª palavra, costumam ser o próprio nome mal ouvido de longe ("Sandro, ..." no lugar de
+# "Cassandra, ..."). Viram só CANDIDATO: a transcrição confirma e "Sandro, vem jantar" é descartado lá.
+_NEAR_NAME_FIRST = {"sandro"}  # medido: "alessandro" não resgatava nenhuma chamada e só gerava conferências
+
+# Ganho antes do Vosk. O modelo pequeno trata fala baixa (voz do outro lado da sala num microfone USB barato, RMS
+# ~500-800 com chiado ~270) como silêncio e devolve texto VAZIO — medido: longe, 12% das chamadas reconhecidas.
+# O ganho acompanha o nível da própria fala (ataque imediato, sem soltar dentro da gravação): fala baixa sobe até
+# AGC_MAX_GAIN vezes, fala perto fica quase igual. Só o que vai para o Vosk; a gravação guardada não muda.
+AGC_TARGET_RMS = 3500.0
+AGC_MAX_GAIN = 5.0
+
+
+class _Agc:
+    def __init__(self) -> None:
+        self.level = 0.0
+
+    def reset(self) -> None:
+        self.level = 0.0
+
+    def __call__(self, frame: bytes) -> bytes:
+        import numpy as np  # noqa: PLC0415
+
+        x = np.frombuffer(frame, dtype=np.int16).astype(np.float32)
+        if not len(x):
+            return frame
+        rms = float(np.sqrt(np.mean(x * x)))
+        self.level = max(self.level, rms)
+        gain = min(AGC_MAX_GAIN, max(1.0, AGC_TARGET_RMS / max(self.level, 1.0)))
+        if gain == 1.0:
+            return frame
+        y = x * gain
+        # Limitador suave em vez de cortar o pico (corte vira chiado e atrapalha o reconhecedor).
+        y = np.tanh(y / 32768.0) * 32767.0
+        return y.astype(np.int16).tobytes()
+
 
 class LocalSpeech:
     def __init__(self, wake_words: list[str], model_path: str = DEFAULT_MODEL_PATH, debug: bool = False) -> None:
@@ -92,14 +127,19 @@ class LocalSpeech:
     # ── Reconhecimento ────────────────────────────────────────────────────────
 
     @staticmethod
-    def _feed(rec, wav_path: str) -> dict:
+    def _feed(rec, wav_path: str, agc: "_Agc | None" = None) -> dict:
         with wave.open(wav_path, "rb") as wf:
             while True:
-                data = wf.readframes(4000)
+                data = wf.readframes(480)
                 if not data:
                     break
-                rec.AcceptWaveform(data)
+                rec.AcceptWaveform(agc(data) if agc else data)
         return json.loads(rec.FinalResult())
+
+    def has_name(self, words: list[str]) -> bool:
+        """O nome (ou um concorrente que costuma ser ele mal ouvido) entre as 2 primeiras palavras reconhecidas."""
+        words = [w for w in words if w != "[unk]"]
+        return any(w in self.wake_words for w in words[:2]) or (bool(words) and words[0] in _NEAR_NAME_FIRST)
 
     def stream(self) -> "WakeStream | None":
         """Reconhecimento do nome ao vivo, quadro a quadro (ver WakeStream). None se o modelo não carregou."""
@@ -123,10 +163,9 @@ class LocalSpeech:
             raise RuntimeError(f"reconhecimento local indisponível: {self._error}")
         with self._lock:
             self._wake_rec.Reset()
-            result = self._feed(self._wake_rec, wav_path)
+            result = self._feed(self._wake_rec, wav_path, _Agc())
         all_words = [w["word"] for w in result.get("result", [])]
-        words = [w for w in all_words if w != "[unk]"]
-        heard = any(w in self.wake_words for w in words[:2])
+        heard = self.has_name(all_words)
         self.last_only_name = heard and all(w in self.wake_words for w in all_words)
         self.last_heard = result.get("text", "")
         if self.debug:
@@ -158,14 +197,16 @@ class WakeStream:
         speech._lock.acquire()
         self._rec = speech._wake_rec
         self._rec.Reset()
+        self._agc = _Agc()
         self._open = True
 
     def _has_name(self, text: str) -> bool:
-        words = [w for w in text.split() if w != "[unk]"]
-        return any(w in self.speech.wake_words for w in words[:2])
+        return self.speech.has_name(text.split())
 
     def feed(self, frame: bytes) -> bool:
         """True só na primeira vez que o nome aparece."""
+        if self._open:
+            frame = self._agc(frame)
         if not self._open or self.heard:
             if self._open:
                 self._rec.AcceptWaveform(frame)
@@ -221,10 +262,12 @@ class BargeDetector:
         self.speech = speech
         grammar = speech.wake_words + [w for w in _COMPETITORS if w not in speech.wake_words] + ["[unk]"]
         self._rec = KaldiRecognizer(speech._model, 16000, json.dumps(grammar))
+        self._agc = _Agc()
         self._frames = 0
 
     def reset(self) -> None:
         self._rec.Reset()
+        self._agc.reset()
         self._frames = 0
 
     def _has_name(self, text: str) -> bool:
@@ -234,7 +277,7 @@ class BargeDetector:
     def feed(self, frame: bytes) -> bool:
         """True quando o nome aparece (e já recomeça para a próxima vez)."""
         self._frames += 1
-        if self._rec.AcceptWaveform(frame):
+        if self._rec.AcceptWaveform(self._agc(frame)):
             text = json.loads(self._rec.Result()).get("text", "")
             self._rec.Reset()
         elif self._frames % self.PARTIAL_EVERY == 0:

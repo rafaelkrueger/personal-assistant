@@ -336,7 +336,11 @@ class MicrophoneInputSource:
     # ── Confirmação do nome ─────────────────────────────────────────────────
 
     _VOCATIVES = {"o", "oi", "ei", "e", "ola", "hey", "alo"}
-    _NAME_RATIO = 0.72  # "casandra", "kassandra", "sandra", "alessandra" passam; "casa", "sandro", "cassino" não
+    # O nome é comparado pela forma "fonética" (ver _phon): Cassandra, Kassandra, Casandra, Cássandra e Cassandre
+    # viram todos "casandra". A semelhança solta de antes (>= 0,72) aceitava "cansada", "casada" e "alessandro".
+    _FULL_KEYS = {"casandra", "casanda"}
+    _SHORT_KEYS = {"sandra", "alesandra", "lesandra"}  # só valem como 1ª palavra (a transcrição comeu o começo)
+    _FULL_RATIO = 0.87  # "cacandra" passa; "casada" (0,86), "cansada" (0,80), "alesandro" (0,70) não
 
     @staticmethod
     def _tokens(text: str) -> list[str]:
@@ -344,28 +348,55 @@ class MicrophoneInputSource:
         t = "".join(c for c in t if not unicodedata.combining(c))
         return re.findall(r"[a-z]+", t)
 
+    @staticmethod
+    def _phon(word: str) -> str:
+        w = word.replace("k", "c").replace("ss", "s").replace("ç", "s")
+        return w[:-1] + "a" if w.endswith("dre") else w
+
+    def _is_full_name(self, word: str) -> bool:
+        p = self._phon(word)
+        return p in self._FULL_KEYS or SequenceMatcher(None, p, "casandra").ratio() >= self._FULL_RATIO
+
     def _is_name(self, word: str) -> bool:
-        return word in self.wake_words or SequenceMatcher(None, word, self.assistant_name.lower()).ratio() >= \
-            self._NAME_RATIO
+        """Serve como chamada na 1ª posição: o nome inteiro ou uma variação curta ("Sandra", "Alessandra")."""
+        return self._is_full_name(word) or self._phon(word) in self._SHORT_KEYS
+
+    def _name_len_at(self, words: list[str], i: int, short_ok: bool) -> int:
+        """Quantas palavras o nome ocupa a partir de i (0 = não é o nome). Aceita o nome quebrado em dois pela
+        transcrição: "Cas Sandra", "Casa Sandra", "Ca Sandra"."""
+        if i >= len(words):
+            return 0
+        if self._is_full_name(words[i]) or (short_ok and self._phon(words[i]) in self._SHORT_KEYS):
+            return 1
+        if i + 1 < len(words) and self._phon(words[i]) in {"ca", "cas", "casa"} and self._phon(words[i + 1]) == "sandra":
+            return 2
+        return 0
 
     def _name_in(self, text: str) -> bool:
-        """O nome aparece como chamado: nas 3 primeiras palavras ("Cassandra, ...", "ô Cassandra, ...") ou nas 2
-        últimas ("..., Cassandra?"). No meio da frase é alguém falando DELA, não com ela."""
+        """O nome aparece como CHAMADO: no começo (depois de no máximo um "ô/oi/ei": "Cassandra, ...", "ô Cassandra,
+        ...") ou nas 2 últimas palavras ("..., Cassandra?"). No meio da frase é alguém falando DELA, não com ela.
+        Variações curtas ("Sandra") só no começo: "casa da Sandra" não chama."""
         words = self._tokens(text)
-        full = self.assistant_name.lower()
-        whole = [w for w in words[:3] + words[-2:] if SequenceMatcher(None, w, full).ratio() >= 0.85]
-        # Variações ("Sandra", "Alessandra") só como a 1ª palavra, depois de um "ô/oi/ei" no máximo: "casa da
-        # Sandra" não chama. O nome inteiro vale nas 3 primeiras ou nas 2 últimas palavras.
-        first = next((w for w in words if w not in self._VOCATIVES), "")
-        return bool(whole) or (bool(first) and self._is_name(first))
+        i = 0
+        while i < len(words) and words[i] in self._VOCATIVES:
+            i += 1
+        if self._name_len_at(words, i, short_ok=True):
+            return True
+        return any(self._is_full_name(w) for w in words[-2:])
 
     def _without_name(self, text: str) -> str:
         """O pedido sem o nome (e sem vocativos em volta), para virar "Cassandra, <pedido>"."""
         parts = (text or "").strip().split()
-        while parts and (self._is_name(("".join(self._tokens(parts[0])) or "x")) or
-                         "".join(self._tokens(parts[0])) in self._VOCATIVES):
-            parts.pop(0)
-        while parts and self._is_name("".join(self._tokens(parts[-1])) or "x"):
+        norm = lambda p: "".join(self._tokens(p)) or "x"  # noqa: E731
+        while parts:
+            if norm(parts[0]) in self._VOCATIVES:
+                parts.pop(0)
+                continue
+            n = self._name_len_at([norm(p) for p in parts[:2]], 0, short_ok=True)
+            if not n:
+                break
+            del parts[:n]
+        while parts and self._is_full_name(norm(parts[-1])):
             parts.pop()
         return " ".join(parts).strip(" ,.;:!?")
 

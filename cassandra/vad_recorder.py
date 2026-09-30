@@ -41,6 +41,12 @@ _NOISE_PERCENTILE = 0.2  # o "fundo" do ambiente; a mediana incluía sons baixos
 # Depois do nome, a pausa que encerra a frase: cobre a vírgula de "Cassandra, que horas são?".
 _AFTER_NAME_SILENCE = 0.9
 MIN_VOICED_FRAMES = 3  # ~0,2 s de voz
+# Histerese: começar a falar exige passar do limite; PARAR exige ficar abaixo de SILENCE_RATIO × limite. Com um
+# limite só, a fala fraca (voz de longe) caía abaixo dele no meio da palavra e a gravação acabava ali — o Vosk
+# recebia um pedaço do nome e ouvia "nada".
+SILENCE_RATIO = 0.7
+# Áudio guardado de antes do limite ser cruzado: o começo do nome ("Cas-") é fraco e ficava de fora.
+PRE_ROLL_FRAMES = 15  # ~0,45 s
 
 
 def _is_voiced(frame: bytes) -> bool:
@@ -88,7 +94,7 @@ class VadRecorder:
             Typical ambient noise is 50-200; speech is 500-5000+. Tune via MIC_DEBUG.
         silence_duration: Seconds of sustained silence required to end recording.
         max_duration: Hard cap on recording length in seconds.
-        pre_roll_frames: Number of 30ms frames to keep before speech onset (~200ms).
+        pre_roll_frames: Number of 30ms frames to keep before speech onset (~450ms).
     """
 
     def __init__(
@@ -96,7 +102,7 @@ class VadRecorder:
         energy_threshold: int = 400,
         silence_duration: float = 1.2,
         max_duration: float = 30.0,
-        pre_roll_frames: int = 7,
+        pre_roll_frames: int = PRE_ROLL_FRAMES,
     ) -> None:
         self.energy_threshold = energy_threshold
         self.silence_duration = silence_duration
@@ -311,7 +317,7 @@ class VadRecorder:
                     voiced_frames += _is_voiced(frame)
                     if on_frame:
                         fast_end = bool(on_frame(frame)) or fast_end
-                    if energy < threshold:
+                    if energy < threshold * SILENCE_RATIO:
                         silent_frames += 1
                         if silent_frames >= (fast_silence_frames if fast_end else silence_frames_needed):
                             break
