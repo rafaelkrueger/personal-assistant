@@ -24,6 +24,23 @@ _BARGE_WHILE_SPEAKING = os.getenv("BARGE_IN_WHILE_SPEAKING", "").strip().lower()
 _SESSION_MIN_VOICED = 2  # quadros com voz exigidos numa sessão ativa (esperando o nome são 7)
 
 
+def _trim_wav(path: str, start_seconds: float) -> str:
+    """Cópia do WAV a partir de start_seconds (arquivo temporário novo; quem chama apaga)."""
+    import tempfile  # noqa: PLC0415
+    import wave  # noqa: PLC0415
+
+    with wave.open(path, "rb") as src:
+        params = src.getparams()
+        src.setpos(min(src.getnframes(), max(0, int(start_seconds * src.getframerate()))))
+        data = src.readframes(src.getnframes())
+    fd, out = tempfile.mkstemp(suffix=".wav")
+    os.close(fd)
+    with wave.open(out, "wb") as dst:
+        dst.setparams(params)
+        dst.writeframes(data)
+    return out
+
+
 @dataclass
 class InputEvent:
     text: str
@@ -227,7 +244,15 @@ class MicrophoneInputSource:
                 # O Vosk (gramática restrita) força falas parecidas para o nome e disparava com conversa da casa e
                 # TV ("...porque são 2 senadores..." virava "cassandra, ..."). A transcrição de verdade confirma:
                 # o nome tem que estar lá, no começo ou no fim da frase. Só então ela bipa e ativa.
-                confirmed, full = self._verify_name(wav_path, heard_text)
+                # Nome dito depois de uma pausa, no meio de outra fala (TV ligada): confere só dali em diante.
+                name_start = getattr(stream, "name_start", None) if stream is not None else None
+                check_path = _trim_wav(wav_path, name_start - 0.25) if name_start and name_start > 0.6 else wav_path
+                try:
+                    # No meio de outra fala, só o nome inteiro confirma (nada de "Sandra" da novela).
+                    confirmed, full = self._verify_name(check_path, heard_text, full_only=check_path != wav_path)
+                finally:
+                    if check_path != wav_path:
+                        os.unlink(check_path)
                 if not confirmed:
                     monitor.event("no_wake", f"Falso alarme descartado — a transcrição não tem o nome: “{full}”")
                     return ""
@@ -372,7 +397,7 @@ class MicrophoneInputSource:
             return 2
         return 0
 
-    def _name_in(self, text: str) -> bool:
+    def _name_in(self, text: str, full_only: bool = False) -> bool:
         """O nome aparece como CHAMADO: no começo (depois de no máximo um "ô/oi/ei": "Cassandra, ...", "ô Cassandra,
         ...") ou nas 2 últimas palavras ("..., Cassandra?"). No meio da frase é alguém falando DELA, não com ela.
         Variações curtas ("Sandra") só no começo: "casa da Sandra" não chama."""
@@ -380,7 +405,7 @@ class MicrophoneInputSource:
         i = 0
         while i < len(words) and words[i] in self._VOCATIVES:
             i += 1
-        if self._name_len_at(words, i, short_ok=True):
+        if self._name_len_at(words, i, short_ok=not full_only):
             return True
         return any(self._is_full_name(w) for w in words[-2:])
 
@@ -400,7 +425,7 @@ class MicrophoneInputSource:
             parts.pop()
         return " ".join(parts).strip(" ,.;:!?")
 
-    def _verify_name(self, wav_path: str, vosk_text: str) -> tuple[bool, str]:
+    def _verify_name(self, wav_path: str, vosk_text: str, full_only: bool = False) -> tuple[bool, str]:
         """(confirmado, transcrição). Sem transcrição disponível (sem internet, cota do Azure...), aceita só se o
         Vosk ouviu o nome completo "cassandra" como a 1ª palavra — melhor que ficar surda."""
         try:
@@ -409,7 +434,7 @@ class MicrophoneInputSource:
             print(f"[WAKE] Sem transcrição para conferir o nome ({str(exc)[:120]}).", flush=True)
             words = [w for w in (vosk_text or "").split() if w != "[unk]"]
             return bool(words) and words[0] == self.assistant_name.lower(), vosk_text
-        return self._name_in(full), full
+        return self._name_in(full, full_only=full_only), full
 
     def _with_wake_word(self, text: str) -> str:
         """O nome foi detectado localmente, mas a transcrição completa às vezes o erra ("sandra que horas

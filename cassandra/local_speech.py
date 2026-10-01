@@ -36,7 +36,10 @@ _BARGE_LOCK = threading.Lock()  # cria o detector de interrupção uma vez só (
 
 # Concorrentes que, como 1ª palavra, costumam ser o próprio nome mal ouvido de longe ("Sandro, ..." no lugar de
 # "Cassandra, ..."). Viram só CANDIDATO: a transcrição confirma e "Sandro, vem jantar" é descartado lá.
-_NEAR_NAME_FIRST = {"sandro"}  # medido: "alessandro" não resgatava nenhuma chamada e só gerava conferências
+_NEAR_NAME_FIRST = {"sandro"}
+# Variações curtas do nome: valem no começo de uma gravação, mas NUNCA no meio de outra fala ("Sandra, vem cá"
+# numa novela) — lá só o nome inteiro.
+_SHORT_NAMES = {"sandra", "alessandra", "lessandra"}  # medido: "alessandro" não resgatava nenhuma chamada e só gerava conferências
 
 # Ganho antes do Vosk. O modelo pequeno trata fala baixa (voz do outro lado da sala num microfone USB barato, RMS
 # ~500-800 com chiado ~270) como silêncio e devolve texto VAZIO — medido: longe, 12% das chamadas reconhecidas.
@@ -188,11 +191,17 @@ class WakeStream:
     gravação inteira: o som de ativação sai quase na hora. Segura o reconhecedor do nome até close()."""
 
     PARTIAL_EVERY = 2  # checa o parcial a cada ~60 ms
+    # Chamar por cima de outra fala (TV, conversa): o nome não está nas 2 primeiras palavras da gravação, mas vem
+    # depois de uma pausa — o jeito natural de chamar alguém. name_start marca onde, para a confirmação transcrever
+    # só dali em diante (senão a transcrição começaria pela fala da TV e o nome ficaria "no meio").
+    PAUSE_BEFORE_NAME = 0.35
 
     def __init__(self, speech: LocalSpeech) -> None:
         self.speech = speech
         self.heard = False
+        self.name_start: float | None = None  # segundos desde o começo da gravação; None = no começo mesmo
         self._texts: list[str] = []
+        self._words: list[dict] = []  # palavras finais com tempo (start/end), inclusive [unk]
         self._frames = 0
         speech._lock.acquire()
         self._rec = speech._wake_rec
@@ -203,6 +212,16 @@ class WakeStream:
     def _has_name(self, text: str) -> bool:
         return self.speech.has_name(text.split())
 
+    def _check(self, words: list[dict]) -> bool:
+        # Primeiro o nome depois de uma pausa (inclusive depois de fala ininteligível, [unk]): marca o corte.
+        for prev, w in zip(words, words[1:]):
+            word = w.get("word")
+            if (word in self.speech.wake_words and word not in _SHORT_NAMES
+                    and w.get("start", 0) - prev.get("end", 0) >= self.PAUSE_BEFORE_NAME):
+                self.name_start = float(w["start"])
+                return True
+        return self.speech.has_name([w.get("word", "") for w in words])
+
     def feed(self, frame: bytes) -> bool:
         """True só na primeira vez que o nome aparece."""
         if self._open:
@@ -212,15 +231,19 @@ class WakeStream:
                 self._rec.AcceptWaveform(frame)
             return False
         self._frames += 1
+        # A pausa antes do nome é medida nos resultados FINAIS (tempos confiáveis); o parcial segue só pelo texto.
+        # Ligar tempo por palavra no parcial (SetPartialWords) mudava o próprio reconhecimento: medido, -4 a -9 pontos.
         if self._rec.AcceptWaveform(frame):
-            text = json.loads(self._rec.Result()).get("text", "")
-            self._texts.append(text)
-            current = " ".join(self._texts)
+            res = json.loads(self._rec.Result())
+            self._texts.append(res.get("text", ""))
+            self._words.extend(res.get("result", []))
+            found = self._check(self._words)
         elif self._frames % self.PARTIAL_EVERY == 0:
-            current = " ".join([*self._texts, json.loads(self._rec.PartialResult()).get("partial", "")])
+            partial = json.loads(self._rec.PartialResult()).get("partial", "")
+            found = self._has_name(" ".join([*self._texts, partial]))
         else:
             return False
-        if self._has_name(current):
+        if found:
             self.heard = True
             return True
         return False
@@ -230,12 +253,16 @@ class WakeStream:
         if not self._open:
             return self.heard, False, " ".join(self._texts)
         try:
-            self._texts.append(json.loads(self._rec.FinalResult()).get("text", ""))
+            res = json.loads(self._rec.FinalResult())
+            self._texts.append(res.get("text", ""))
+            self._words.extend(res.get("result", []))
         finally:
             self._open = False
             self.speech._lock.release()
         text = " ".join(t for t in self._texts if t).strip()
-        heard = self.heard or self._has_name(text)
+        if self.heard and self.name_start is None:
+            self._check(self._words)  # achado pelo parcial: agora, com os tempos finais, marca onde o nome começa
+        heard = self.heard or self._check(self._words)
         words = text.split()
         # "Só o nome" = nenhuma outra palavra. [unk] é o resto da frase que a gramática restrita não conhece
         # ("que horas são"): contar isso como nada jogava o pedido fora sem transcrever.
