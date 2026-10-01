@@ -23,7 +23,8 @@ HTML_PAGE = """<!doctype html>
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
-  <title>Cassandra</title>
+  <title>Cassandra · Assistente pessoal</title>
+  <!--PERSONA_JS-->
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 
@@ -33,18 +34,19 @@ HTML_PAGE = """<!doctype html>
       --glass:rgba(12,18,32,0.7);--glass2:rgba(17,24,39,0.8);
       --border:rgba(255,255,255,0.055);--border2:rgba(255,255,255,0.1);--border3:rgba(255,255,255,0.15);
       --text:#e2eaff;--text2:#8899b8;--text3:#3d5070;
-      --brand:#5b9aff;--brand2:#89bbff;--brand3:#c0daff;
-      --brand-dim:rgba(91,154,255,0.12);--brand-glow:rgba(91,154,255,0.35);
-      --purple:#a78bfa;--purple-dim:rgba(167,139,250,0.12);--purple-glow:rgba(167,139,250,0.25);
+      /* Cassandra (persona.js): laranja quente → rosa. */
+      --brand:#fb923c;--brand2:#fdba74;--brand3:#fed7aa;
+      --brand-dim:rgba(251,146,60,0.12);--brand-glow:rgba(251,146,60,0.35);
+      --purple:#f472b6;--purple-dim:rgba(244,114,182,0.12);--purple-glow:rgba(244,114,182,0.25);
       --cyan:#22d3ee;--cyan-dim:rgba(34,211,238,0.1);
       --green:#34d399;--green-dim:rgba(52,211,153,0.1);--green-glow:rgba(52,211,153,0.25);
       --amber:#fbbf24;--amber-dim:rgba(251,191,36,0.1);
       --red:#f87171;--red-dim:rgba(248,113,113,0.1);
-      --r:10px;--rl:14px;--rx:18px;--rxl:24px;
+      --r:12px;--rl:18px;--rx:24px;--rxl:30px;
       --sidebar-w:236px;--sidebar-collapsed:62px;
       --topbar-h:56px;
       --shadow:0 8px 32px rgba(0,0,0,0.6);--shadow-sm:0 2px 12px rgba(0,0,0,0.4);
-      --shadow-glow:0 0 40px rgba(91,154,255,0.08);
+      --shadow-glow:0 0 40px rgba(251,146,60,0.08);
     }
     html,body{height:100%;overflow:hidden;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
     /* sem zoom: nada de toque duplo/pinça e o iPhone não amplia ao focar um campo (precisa de fonte >= 16px) */
@@ -52,8 +54,8 @@ HTML_PAGE = """<!doctype html>
     @media(max-width:767px){input,select,textarea{font-size:16px!important}}
     body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5}
     body::before{content:"";position:fixed;inset:0;background:
-      radial-gradient(ellipse 80% 60% at 20% -10%,rgba(91,154,255,0.07) 0%,transparent 60%),
-      radial-gradient(ellipse 60% 40% at 80% 100%,rgba(167,139,250,0.06) 0%,transparent 60%),
+      radial-gradient(ellipse 80% 60% at 20% -10%,rgba(251,146,60,0.07) 0%,transparent 60%),
+      radial-gradient(ellipse 60% 40% at 80% 100%,rgba(244,114,182,0.06) 0%,transparent 60%),
       radial-gradient(ellipse 40% 40% at 50% 50%,rgba(34,211,238,0.03) 0%,transparent 70%);
       pointer-events:none;z-index:0}
     body>*{position:relative;z-index:1}
@@ -78,11 +80,25 @@ HTML_PAGE = """<!doctype html>
     .sb-top{display:flex;align-items:center;gap:10px;padding:14px 12px;border-bottom:1px solid var(--border);flex-shrink:0;min-height:var(--topbar-h)}
     .brand-icon{
       width:36px;height:36px;border-radius:11px;flex-shrink:0;
-      background:linear-gradient(135deg,#5b9aff,#a78bfa);
+      background:linear-gradient(135deg,#fb923c,#f472b6);
       display:flex;align-items:center;justify-content:center;
-      box-shadow:0 0 20px rgba(91,154,255,0.45),0 2px 8px rgba(0,0,0,0.4);
+      box-shadow:0 0 20px rgba(251,146,60,0.45),0 2px 8px rgba(0,0,0,0.4);
     }
     .brand-icon svg{width:17px;height:17px;color:#fff}
+    .brand-face{display:grid;place-items:center;flex-shrink:0;width:40px;height:40px}
+    .brand-text{font-style:italic}
+
+    /* ═══ CASSANDRA: bolhas bem redondas, calor, rosto dela no chat ═══ */
+    .msg.assistant{flex-direction:row;align-items:flex-end;gap:10px}
+    .msg-col{display:flex;flex-direction:column;min-width:0}
+    .messages .msg.assistant .bubble{border-radius:24px 24px 24px 8px;background:linear-gradient(150deg,rgba(251,146,60,.14),rgba(244,114,182,.07) 55%,var(--glass2));border-color:rgba(251,146,60,.2)}
+    .messages .msg.user .bubble{border-radius:24px 24px 8px 24px}
+    .typing .ap-face{margin-right:6px}
+    .cass-empty{display:flex;flex-direction:column;align-items:center;gap:10px;padding:40px 0 24px;text-align:center}
+    .cass-empty .ce-face{position:relative;display:grid;place-items:center}
+    .cass-empty .ce-face::before{content:"";position:absolute;inset:-40%;border-radius:50%;background:radial-gradient(circle,rgba(251,146,60,.32),rgba(244,114,182,.10) 45%,transparent 70%)}
+    .cass-empty b{font-size:22px;font-style:italic;background:linear-gradient(90deg,#fff,var(--brand) 50%,var(--purple));-webkit-background-clip:text;background-clip:text;color:transparent}
+    .cass-empty span{color:var(--text2);font-size:13.5px}
     .brand-text{font-size:15px;font-weight:800;white-space:nowrap;letter-spacing:-.02em;background:linear-gradient(90deg,var(--brand2),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
     .brand-sub{font-size:10px;color:var(--text3);white-space:nowrap;margin-top:-1px;letter-spacing:.02em;-webkit-text-fill-color:var(--text3)}
     .collapsed .brand-text,.collapsed .brand-sub{display:none}
@@ -101,7 +117,7 @@ HTML_PAGE = """<!doctype html>
     }
     .nav-item:hover{background:rgba(255,255,255,.04);color:var(--text)}
     .nav-item.active{
-      background:linear-gradient(90deg,var(--brand-dim),rgba(91,154,255,0.06));
+      background:linear-gradient(90deg,var(--brand-dim),rgba(251,146,60,0.06));
       color:var(--brand2);
     }
     .nav-item.active::before{content:"";position:absolute;left:0;top:20%;bottom:20%;width:2.5px;border-radius:99px;background:linear-gradient(180deg,var(--brand),var(--purple))}
@@ -204,8 +220,8 @@ HTML_PAGE = """<!doctype html>
     .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:9px 16px;border:none;border-radius:var(--r);font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;white-space:nowrap;font-family:inherit;letter-spacing:-.01em}
     .btn:active{transform:scale(.95)}
     .btn svg{width:14px;height:14px}
-    .btn-primary{background:linear-gradient(135deg,var(--brand),#4880e8);color:#fff;box-shadow:0 2px 12px rgba(91,154,255,.25)}
-    .btn-primary:hover{background:linear-gradient(135deg,#6baeff,#5b8ef5);box-shadow:0 4px 20px var(--brand-glow)}
+    .btn-primary{background:linear-gradient(135deg,var(--brand),#4880e8);color:#fff;box-shadow:0 2px 12px rgba(251,146,60,.25)}
+    .btn-primary:hover{background:linear-gradient(135deg,#fdba74,#f97316);box-shadow:0 4px 20px var(--brand-glow)}
     .btn-ghost{background:rgba(255,255,255,.04);border:1px solid var(--border);color:var(--text)}
     .btn-ghost:hover{background:rgba(255,255,255,.07);border-color:var(--border2)}
     .btn-danger{background:var(--red-dim);border:1px solid rgba(248,113,113,.18);color:#fca5a5}
@@ -225,9 +241,9 @@ HTML_PAGE = """<!doctype html>
       transition:border-color .15s,box-shadow .15s,background .15s;font-family:inherit;
     }
     input:focus,select:focus,textarea:focus{
-      border-color:rgba(91,154,255,.5);
-      box-shadow:0 0 0 3px rgba(91,154,255,.1);
-      background:rgba(91,154,255,.04);
+      border-color:rgba(251,146,60,.5);
+      box-shadow:0 0 0 3px rgba(251,146,60,.1);
+      background:rgba(251,146,60,.04);
     }
     input::placeholder,textarea::placeholder{color:var(--text3)}
     select option{background:var(--surface2)}
@@ -239,13 +255,16 @@ HTML_PAGE = """<!doctype html>
 
     /* ═══ DASHBOARD ═══ */
     .dash-hero{
-      background:linear-gradient(135deg,rgba(91,154,255,.09),rgba(167,139,250,.07),rgba(34,211,238,.04));
-      border:1px solid rgba(91,154,255,.14);border-radius:var(--rxl);
+      background:linear-gradient(135deg,rgba(251,146,60,.09),rgba(244,114,182,.07),rgba(34,211,238,.04));
+      border:1px solid rgba(251,146,60,.14);border-radius:var(--rxl);
       padding:24px 26px;margin-bottom:20px;position:relative;overflow:hidden;
     }
-    .dash-hero::before{content:"";position:absolute;top:-60px;right:-60px;width:220px;height:220px;border-radius:50%;background:radial-gradient(circle,rgba(91,154,255,.12),transparent 70%);pointer-events:none}
-    .dash-hero::after{content:"";position:absolute;bottom:-40px;left:30%;width:160px;height:160px;border-radius:50%;background:radial-gradient(circle,rgba(167,139,250,.08),transparent 70%);pointer-events:none}
+    .dash-hero::before{content:"";position:absolute;top:-60px;right:-60px;width:220px;height:220px;border-radius:50%;background:radial-gradient(circle,rgba(251,146,60,.12),transparent 70%);pointer-events:none}
+    .dash-hero::after{content:"";position:absolute;bottom:-40px;left:30%;width:160px;height:160px;border-radius:50%;background:radial-gradient(circle,rgba(244,114,182,.08),transparent 70%);pointer-events:none}
     .dash-greeting{font-size:26px;font-weight:900;margin-bottom:5px;letter-spacing:-.04em;background:linear-gradient(135deg,var(--text),var(--brand3));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+    .dash-face{float:right;margin:-6px -4px 0 12px;position:relative;z-index:1}
+    .dash-face .brand-face{width:92px;height:92px}
+    @media(max-width:520px){.dash-face{float:none;margin:0 0 8px}}
     .dash-date{font-size:13px;color:var(--text2);font-weight:500;letter-spacing:.01em}
     .dash-status-row{display:flex;align-items:center;gap:8px;margin-top:16px;flex-wrap:wrap}
     .dash-status-badge{display:inline-flex;align-items:center;gap:6px;padding:5px 13px;border-radius:99px;font-size:12px;font-weight:600;background:rgba(52,211,153,.08);border:1px solid rgba(52,211,153,.2);color:var(--green)}
@@ -256,7 +275,7 @@ HTML_PAGE = """<!doctype html>
       padding:18px;cursor:pointer;transition:all .2s;position:relative;overflow:hidden;
       backdrop-filter:blur(12px);
     }
-    .stat-card:hover{border-color:var(--border2);transform:translateY(-3px);box-shadow:var(--shadow-sm),0 0 20px rgba(91,154,255,.06)}
+    .stat-card:hover{border-color:var(--border2);transform:translateY(-3px);box-shadow:var(--shadow-sm),0 0 20px rgba(251,146,60,.06)}
     .stat-card::after{content:"";position:absolute;inset:0;border-radius:inherit;background:linear-gradient(135deg,rgba(255,255,255,.03),transparent);pointer-events:none}
     .stat-icon{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center;margin-bottom:12px}
     .stat-icon svg{width:17px;height:17px}
@@ -310,7 +329,7 @@ HTML_PAGE = """<!doctype html>
     .msg.assistant{align-self:flex-start}
     .msg.system{align-self:center;max-width:92%}
     .bubble{padding:11px 16px;border-radius:16px;line-height:1.6;white-space:pre-wrap;word-break:break-word;font-size:13.5px}
-    .msg.user .bubble{background:linear-gradient(135deg,var(--brand),#4775e0);color:#fff;border-bottom-right-radius:4px;box-shadow:0 2px 16px rgba(91,154,255,.25)}
+    .msg.user .bubble{background:linear-gradient(135deg,var(--brand),#ec4899);color:#fff;border-bottom-right-radius:4px;box-shadow:0 2px 16px rgba(251,146,60,.25)}
     .msg.assistant .bubble{background:var(--glass2);border:1px solid var(--border);border-bottom-left-radius:4px;backdrop-filter:blur(8px)}
     .msg.system .bubble{background:transparent;border:1px dashed var(--border2);color:var(--text2);font-size:12px;text-align:center;padding:8px 16px}
     .msg-meta{font-size:10.5px;color:var(--text3);margin-top:5px;padding:0 4px;font-weight:600;letter-spacing:.02em}
@@ -320,12 +339,12 @@ HTML_PAGE = """<!doctype html>
       padding:10px 12px;transition:border-color .15s,box-shadow .15s;
       backdrop-filter:blur(12px);
     }
-    .chat-bar:focus-within{border-color:rgba(91,154,255,.4);box-shadow:0 0 0 3px rgba(91,154,255,.08)}
+    .chat-bar:focus-within{border-color:rgba(251,146,60,.4);box-shadow:0 0 0 3px rgba(251,146,60,.08)}
     .chat-bar textarea{flex:1;overflow-y:hidden;background:transparent;border:none;padding:6px 0;font-size:15px;line-height:1.45;outline:none;color:var(--text);resize:none;max-height:140px;min-height:24px;box-shadow:none!important;font-family:inherit}
     .chat-bar textarea:focus{background:transparent;box-shadow:none}
     .chat-bar textarea::placeholder{color:var(--text3)}
     @media(max-width:640px){.msg{max-width:88%}.bubble{font-size:15px;padding:10px 14px}.messages{padding:14px}}
-    .chat-send{background:linear-gradient(135deg,var(--brand),#4775e0);border:none;border-radius:10px;color:#fff;cursor:pointer;padding:9px;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0;box-shadow:0 2px 8px rgba(91,154,255,.3)}
+    .chat-send{background:linear-gradient(135deg,var(--brand),#ec4899);border:none;border-radius:10px;color:#fff;cursor:pointer;padding:9px;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0;box-shadow:0 2px 8px rgba(251,146,60,.3)}
     .chat-send:hover{box-shadow:0 4px 16px var(--brand-glow);transform:scale(1.04)}
     .chat-send:active{transform:scale(.9)}
     .chat-send svg{width:17px;height:17px}
@@ -367,13 +386,13 @@ HTML_PAGE = """<!doctype html>
       cursor:pointer;transition:all .15s;font-family:inherit;
     }
     .day-btn:hover{border-color:var(--border2);color:var(--text)}
-    .day-btn.on{background:var(--brand-dim);border-color:rgba(91,154,255,.35);color:var(--brand2)}
+    .day-btn.on{background:var(--brand-dim);border-color:rgba(251,146,60,.35);color:var(--brand2)}
     .day-presets{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
     .alarm-list-time{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.03em}
     .alarm-dot-led{width:10px;height:10px;border-radius:50%;flex-shrink:0}
     .alarm-dot-led.on{background:var(--green);box-shadow:0 0 8px var(--green-glow)}
     .alarm-dot-led.off{background:var(--text3)}
-    .day-tag{display:inline-flex;align-items:center;padding:2px 9px;border-radius:99px;font-size:11px;font-weight:600;background:var(--brand-dim);border:1px solid rgba(91,154,255,.2);color:var(--brand2);margin:2px 2px 0 0}
+    .day-tag{display:inline-flex;align-items:center;padding:2px 9px;border-radius:99px;font-size:11px;font-weight:600;background:var(--brand-dim);border:1px solid rgba(251,146,60,.2);color:var(--brand2);margin:2px 2px 0 0}
 
     /* ═══ ALARM CALENDAR ═══ */
     .alm-page{display:flex;flex-direction:column;gap:16px}
@@ -407,7 +426,7 @@ HTML_PAGE = """<!doctype html>
       border-radius:10px;padding:10px 6px;font:700 12px inherit;cursor:pointer;
     }
     .alm-cal-month-btn:hover{border-color:var(--brand);color:var(--brand2)}
-    .alm-cal-month-btn.on{background:var(--brand-dim);border-color:rgba(91,154,255,.45);color:var(--brand2)}
+    .alm-cal-month-btn.on{background:var(--brand-dim);border-color:rgba(251,146,60,.45);color:var(--brand2)}
     .alm-cal-dow,.alm-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
     .alm-cal-dow{margin-bottom:4px}
     .alm-cal-dow span{text-align:center;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;padding:2px 0}
@@ -419,9 +438,9 @@ HTML_PAGE = """<!doctype html>
     .alm-cal-cell:hover{background:var(--brand-dim)}
     .alm-cal-cell.out{color:var(--text3);opacity:.45}
     .alm-cal-cell.today{background:var(--brand-dim);color:var(--brand2)}
-    .alm-cal-cell.selected{box-shadow:inset 0 0 0 1.5px var(--brand);background:rgba(91,154,255,.16)}
+    .alm-cal-cell.selected{box-shadow:inset 0 0 0 1.5px var(--brand);background:rgba(251,146,60,.16)}
     .alm-cal-cell.past:not(.today){opacity:.55}
-    .alm-cal-cell.has-alarms:not(.selected):not(.today){background:rgba(91,154,255,.08)}
+    .alm-cal-cell.has-alarms:not(.selected):not(.today){background:rgba(251,146,60,.08)}
     .alm-cal-cell.has-draft:not(.selected){background:rgba(251,191,36,.14)}
     .alm-cal-dots{display:flex;gap:2px;justify-content:center;min-height:6px;margin-top:3px}
     .alm-cal-more{font-size:9px;font-weight:700;color:var(--text2)}
@@ -450,15 +469,15 @@ HTML_PAGE = """<!doctype html>
       background:rgba(255,255,255,.03);color:var(--text2);border:1px solid var(--border);
       border-radius:10px;padding:8px 6px;font:700 12px inherit;cursor:pointer;
     }
-    .alm-type-pill.active,.alm-time-pill.active{background:var(--brand-dim);color:var(--brand2);border-color:rgba(91,154,255,.45)}
+    .alm-type-pill.active,.alm-time-pill.active{background:var(--brand-dim);color:var(--brand2);border-color:rgba(251,146,60,.45)}
     .alm-picked{
-      background:rgba(255,255,255,.03);border:1px dashed rgba(91,154,255,.4);
+      background:rgba(255,255,255,.03);border:1px dashed rgba(251,146,60,.4);
       border-radius:10px;padding:8px 11px;color:var(--text);font:700 13px inherit;
       width:100%;text-align:left;cursor:pointer;
     }
     .alm-picked:hover{border-style:solid;border-color:var(--brand);color:var(--brand2)}
     .alm-preview{
-      background:var(--brand-dim);border:1px solid rgba(91,154,255,.3);
+      background:var(--brand-dim);border:1px solid rgba(251,146,60,.3);
       border-radius:10px;padding:9px 12px;color:var(--text);font-weight:700;line-height:1.45;font-size:12.5px;
     }
     .alm-preview.hint{background:rgba(255,255,255,.03);border-style:dashed;color:var(--text2);font-weight:600}
@@ -481,7 +500,7 @@ HTML_PAGE = """<!doctype html>
     .ag-row .settings-row-label{display:flex;align-items:center;gap:8px}
     .ag-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:#6b7280}
     .ag-dot.online{background:var(--green)}
-    .ag-dot.cli{background:#a78bfa}
+    .ag-dot.cli{background:#f472b6}
     .ag-state{font-size:11px;font-weight:600;color:var(--text3,var(--text2));opacity:.8}
     .ag-row.ag-off .settings-row-info{opacity:.55}
     .settings-card{
@@ -503,7 +522,7 @@ HTML_PAGE = """<!doctype html>
     .toggle input{opacity:0;width:0;height:0;position:absolute}
     .toggle-slider{position:absolute;inset:0;background:rgba(255,255,255,.06);border-radius:99px;cursor:pointer;transition:.2s;border:1px solid var(--border2)}
     .toggle-slider::before{content:"";position:absolute;width:18px;height:18px;border-radius:50%;background:#fff;bottom:2px;left:2px;transition:.2s;box-shadow:0 1px 4px rgba(0,0,0,.4)}
-    .toggle input:checked + .toggle-slider{background:linear-gradient(135deg,var(--brand),#4775e0);border-color:transparent;box-shadow:0 0 12px rgba(91,154,255,.3)}
+    .toggle input:checked + .toggle-slider{background:linear-gradient(135deg,var(--brand),#ec4899);border-color:transparent;box-shadow:0 0 12px rgba(251,146,60,.3)}
     .toggle input:checked + .toggle-slider::before{transform:translateX(20px)}
     /* Range */
     .settings-range{display:flex;align-items:center;gap:8px;min-width:130px;max-width:190px}
@@ -530,7 +549,7 @@ HTML_PAGE = """<!doctype html>
     .bt-dot{width:9px;height:9px;border-radius:50%;background:var(--text3);flex-shrink:0}
     .bt-item.connected .bt-dot{background:var(--green);box-shadow:0 0 8px var(--green-glow)}
     .bt-job{font-size:12.5px;padding:9px 12px;border-radius:var(--r);margin-top:12px;border:1px solid var(--border);color:var(--text2);display:none}
-    .bt-job.running{display:block;border-color:rgba(91,154,255,.3);color:var(--brand2)}
+    .bt-job.running{display:block;border-color:rgba(251,146,60,.3);color:var(--brand2)}
     .bt-job.ok{display:block;border-color:rgba(52,211,153,.3);color:var(--green)}
     .bt-job.error{display:block;border-color:rgba(248,113,113,.3);color:#fca5a5}
     .bt-section-label{font-size:10.5px;color:var(--text2);font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin:16px 0 8px}
@@ -551,7 +570,7 @@ HTML_PAGE = """<!doctype html>
     .mic-dot.off{background:var(--red)}
     .mic-title{font-weight:800;font-size:15px}
     .mic-sub{font-size:12.5px;color:var(--text2);margin-top:2px;overflow-wrap:anywhere}
-    .mic-phase{margin-left:auto;font-size:12px;font-weight:700;padding:5px 12px;border-radius:99px;background:var(--brand-dim);color:var(--brand2);border:1px solid rgba(91,154,255,.25)}
+    .mic-phase{margin-left:auto;font-size:12px;font-weight:700;padding:5px 12px;border-radius:99px;background:var(--brand-dim);color:var(--brand2);border:1px solid rgba(251,146,60,.25)}
     .mic-meter-wrap{background:var(--glass);border:1px solid var(--border);border-radius:var(--rx);padding:14px 16px;margin-bottom:14px}
     .mic-meter{position:relative;height:14px;border-radius:99px;background:rgba(255,255,255,.06);overflow:hidden;margin:8px 0 6px}
     .mic-meter-fill{position:absolute;left:0;top:0;bottom:0;width:0;border-radius:99px;background:linear-gradient(90deg,#34d399,#fbbf24 70%,#f87171);transition:width .12s linear}
@@ -572,7 +591,7 @@ HTML_PAGE = """<!doctype html>
     .dv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin-bottom:8px}
     .dv-card{background:var(--glass);border:1px solid var(--border);border-radius:var(--rl);padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0}
     .dv-card.clickable{cursor:pointer;transition:all .15s}
-    .dv-card.clickable:hover{border-color:rgba(91,154,255,.35);transform:translateY(-2px)}
+    .dv-card.clickable:hover{border-color:rgba(251,146,60,.35);transform:translateY(-2px)}
     .dv-head{display:flex;align-items:center;gap:10px;min-width:0}
     .dv-icon{width:40px;height:40px;border-radius:12px;background:var(--brand-dim);color:var(--brand2);display:flex;align-items:center;justify-content:center;flex-shrink:0}
     .dv-icon svg{width:20px;height:20px}
@@ -596,7 +615,7 @@ HTML_PAGE = """<!doctype html>
     .rbtn.power-on{color:var(--green);border-color:rgba(52,211,153,.3)}
     .dpad{display:grid;grid-template-columns:repeat(3,64px);grid-template-rows:repeat(3,64px);gap:8px;justify-content:center}
     .dpad .rbtn{width:64px;height:64px;min-width:0;padding:0;border-radius:18px}
-    .dpad .ok{border-radius:50%;background:var(--brand-dim);color:var(--brand2);border-color:rgba(91,154,255,.35)}
+    .dpad .ok{border-radius:50%;background:var(--brand-dim);color:var(--brand2);border-color:rgba(251,146,60,.35)}
     .remote-label{font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.08em;text-align:center}
     .app-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
     .app-btn{height:52px;border-radius:12px;border:none;color:#fff;font-weight:800;font-size:13px;cursor:pointer;font-family:inherit;transition:transform .12s,filter .12s}
@@ -679,7 +698,7 @@ HTML_PAGE = """<!doctype html>
 <div class="mobile-overlay" id="mobileOverlay"></div>
 <aside class="mobile-sidebar" id="mobileSidebar">
   <div class="sb-top">
-    <div class="brand-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg></div>
+    <span class="brand-face" data-agent-face="personal-assistant" data-size="40"></span>
     <div><div class="brand-text">Cassandra</div><div class="brand-sub">Assistente pessoal</div></div>
   </div>
   <nav class="sb-nav" id="mobileNav"></nav>
@@ -688,7 +707,7 @@ HTML_PAGE = """<!doctype html>
 <div class="app">
   <aside class="sidebar" id="sidebar">
     <div class="sb-top">
-      <div class="brand-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg></div>
+      <span class="brand-face" data-agent-face="personal-assistant" data-size="40"></span>
       <div><div class="brand-text">Cassandra</div><div class="brand-sub">Assistente pessoal</div></div>
       <button class="collapse-btn" id="collapseBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
     </div>
@@ -721,11 +740,12 @@ HTML_PAGE = """<!doctype html>
       <!-- ══ DASHBOARD ══ -->
       <div class="tab-panel" id="tab-dashboard">
         <div class="dash-hero">
+          <div class="dash-face"><span class="brand-face" data-agent-face="personal-assistant" data-size="92"></span></div>
           <div class="dash-greeting" id="dashGreeting">Olá!</div>
           <div class="dash-date" id="dashDate"></div>
           <div class="dash-status-row">
             <span class="dash-status-badge"><svg width="7" height="7" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" fill="#34d399"/></svg>Cassandra ativa</span>
-            <span id="heroWebAgentBadge" style="display:none;align-items:center;gap:6px;padding:5px 13px;border-radius:99px;font-size:12px;font-weight:600;background:rgba(91,154,255,.08);border:1px solid rgba(91,154,255,.2);color:var(--brand2)"><svg width="7" height="7" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" fill="#5b9aff"/></svg>Maestro online</span>
+            <span id="heroWebAgentBadge" style="display:none;align-items:center;gap:6px;padding:5px 13px;border-radius:99px;font-size:12px;font-weight:600;background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.2);color:var(--brand2)"><svg width="7" height="7" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" fill="#fb923c"/></svg>Maestro online</span>
           </div>
         </div>
         <div class="stats-grid" id="statsGrid">
@@ -1690,15 +1710,29 @@ let currentSettings = {};
 
 // ── Utils ──
 const esc = t=>(t||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+function _apiError(message,status){
+  const err=new Error(message);
+  err.status=status||0;
+  return err;
+}
+function isGatewayTimeout(err){
+  const status=err&&err.status;
+  const msg=String(err&&err.message||"");
+  return status===502||status===503||status===504||/HTTP 50[234]/.test(msg)||/não respondeu a tempo/i.test(msg);
+}
+function alertUnlessTimeout(err){
+  if(isGatewayTimeout(err)) return;
+  alert(err&&err.message||String(err));
+}
 async function api(path,method="GET",body=null){
   let r;
   try{r=await fetch(path,{method,headers:{"Content-Type":"application/json"},body:body?JSON.stringify(body):null});}
-  catch(e){throw new Error("Sem conexão com a Cassandra. Tente de novo.");}
+  catch(e){throw _apiError("Sem conexão com a Cassandra. Tente de novo.",0);}
   const text=await r.text();
   let d;
   try{d=text?JSON.parse(text):{};}
-  catch(e){throw new Error(r.ok?"Resposta inválida da Cassandra.":`A Cassandra não respondeu a tempo (HTTP ${r.status}). Tente de novo.`);}
-  if(!r.ok) throw new Error(d.error||`Erro na API (HTTP ${r.status})`);
+  catch(e){throw _apiError(r.ok?"Resposta inválida da Cassandra.":`A Cassandra não respondeu a tempo (HTTP ${r.status}). Tente de novo.`,r.status);}
+  if(!r.ok) throw _apiError(d.error||`Erro na API (HTTP ${r.status})`,r.status);
   return d;
 }
 function enter(el,fn){el.addEventListener("keydown",e=>{if(e.key==="Enter")fn()});}
@@ -1751,7 +1785,7 @@ function gotoTab(tab){
 }
 
 // ── Gastos ──
-const COST_COLORS={llm:"#5b9aff",tts:"#f472b6",stt:"#34d399"};
+const COST_COLORS={llm:"#fb923c",tts:"#f472b6",stt:"#34d399"};
 function usd(v){if(v==null)return"—";return v<0.01&&v>0?"US$ "+v.toFixed(4):"US$ "+v.toFixed(2);}
 function fmtSecs(s){s=Math.round(s||0);return s>=3600?(s/3600).toFixed(1)+" h":s>=60?Math.round(s/60)+" min":s+" s";}
 function fmtNum(n){return (n||0).toLocaleString("pt-BR");}
@@ -1877,13 +1911,44 @@ function renderDashboard(data){
 }
 
 // ── Messages ──
-function showTyping(){const el=document.getElementById("messages");const d=document.createElement("div");d.className="typing";d.id="typingIndicator";d.innerHTML='<div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>';el.appendChild(d);el.scrollTop=el.scrollHeight;}
-function hideTyping(){document.getElementById("typingIndicator")?.remove();}
-function renderMessages(items){
+let _lastHistory=[];
+let _chatWaiting=false;
+function _assistantCount(items){
+  return (items||[]).filter(m=>(m.kind||"chat")==="chat"&&m.role==="assistant").length;
+}
+function showTyping(){
   const el=document.getElementById("messages");
-  if(!items.length){el.innerHTML='<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>Pergunte ou peça qualquer coisa à Cassandra</div>';return;}
-  el.innerHTML=items.map(m=>{const kind=m.kind||"chat";const cls=kind!=="chat"?"system":(m.role==="assistant"?"assistant":"user");return`<div class="msg ${cls}"><div class="bubble">${esc(m.content)}</div><div class="msg-meta">${fmtTime(m.timestamp)} · ${m.role}</div></div>`;}).join("");
+  if(!el||document.getElementById("typingIndicator")) return;
+  const d=document.createElement("div");d.className="typing";d.id="typingIndicator";d.innerHTML=AgentPersona.face("personal-assistant",{size:30,state:"is-working"})+'<div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>';el.appendChild(d);el.scrollTop=el.scrollHeight;
+  setCassWorking(true);
+}
+function hideTyping(){document.getElementById("typingIndicator")?.remove();setCassWorking(false);}
+// Enquanto ela pensa, o rosto da marca também trabalha (a estrelinha pisca rápido, olhos procuram).
+function setCassWorking(on){
+  document.querySelectorAll(".brand-face").forEach(f=>f.setAttribute("data-state",on?"is-working":""));
+  if(window.AgentPersona) AgentPersona.mount();
+}
+function renderMessages(items){
+  _lastHistory=items||[];
+  const el=document.getElementById("messages");
+  if(!items.length){el.innerHTML=`<div class="empty cass-empty"><div class="ce-face">${AgentPersona.face("personal-assistant",{size:84})}</div><b>Oi! Eu sou a Cassandra.</b><span>Pergunte ou peça qualquer coisa — pela voz ou por aqui.</span></div>`;if(_chatWaiting) showTyping();return;}
+  el.innerHTML=items.map(m=>{const kind=m.kind||"chat";const cls=kind!=="chat"?"system":(m.role==="assistant"?"assistant":"user");const body=`<div class="bubble">${esc(m.content)}</div><div class="msg-meta">${fmtTime(m.timestamp)} · ${m.role==="assistant"?"Cassandra":m.role}</div>`;return cls==="assistant"?`<div class="msg assistant">${AgentPersona.face("personal-assistant",{size:30})}<div class="msg-col">${body}</div></div>`:`<div class="msg ${cls}">${body}</div>`;}).join("");
+  if(_chatWaiting) showTyping();
   el.scrollTop=el.scrollHeight;
+}
+async function waitForChatReply(beforeAssistants,timeoutMs=180000){
+  const started=Date.now();
+  while(Date.now()-started<timeoutMs){
+    if(_assistantCount(_lastHistory)>beforeAssistants) return {history:_lastHistory};
+    await new Promise(r=>setTimeout(r,1500));
+    try{
+      const d=await api("/api/history");
+      if(_assistantCount(d.history)>beforeAssistants) return d;
+    }catch(e){
+      if(!isGatewayTimeout(e)) throw e;
+    }
+  }
+  return null;
 }
 
 // ── Shopping ──
@@ -2599,7 +2664,7 @@ async function deleteEvent(eventId){
   try{
     await api("/api/agenda/events/delete","POST",{event_id:eventId});
     await loadAgenda();
-  }catch(e){alert("Erro ao remover: "+e.message);}
+  }catch(e){if(!isGatewayTimeout(e)) alert("Erro ao remover: "+e.message);}
 }
 
 document.getElementById("evAdd").addEventListener("click",async()=>{
@@ -2614,7 +2679,7 @@ document.getElementById("evAdd").addEventListener("click",async()=>{
     document.getElementById("evTitle").value="";
     document.getElementById("evDesc").value="";
     await loadAgenda();
-  }catch(e){alert("Erro ao criar: "+e.message);}
+  }catch(e){if(!isGatewayTimeout(e)) alert("Erro ao criar: "+e.message);}
 });
 
 document.getElementById("agendaDays").addEventListener("change",loadAgenda);
@@ -2722,8 +2787,25 @@ async function sendMsg(){
   if(msgs.querySelector(".empty"))msgs.innerHTML="";
   msgs.appendChild(div);msgs.scrollTop=msgs.scrollHeight;
   showTyping();
-  try{const d=await api("/api/chat","POST",{message:t});hideTyping();renderMessages(d.history||[]);loadTimers();}
-  catch(e){hideTyping();alert(e.message);}
+  const beforeAssistants=_assistantCount(_lastHistory);
+  _chatWaiting=true;
+  try{
+    const d=await api("/api/chat","POST",{message:t});
+    _chatWaiting=false;hideTyping();renderMessages(d.history||[]);loadTimers();
+  }catch(e){
+    if(isGatewayTimeout(e)){
+      try{
+        const d=await waitForChatReply(beforeAssistants);
+        _chatWaiting=false;hideTyping();
+        if(d){renderMessages(d.history||[]);loadTimers();}
+      }catch(waitErr){
+        _chatWaiting=false;hideTyping();
+        alertUnlessTimeout(waitErr);
+      }
+      return;
+    }
+    _chatWaiting=false;hideTyping();alert(e.message);
+  }
 }
 document.getElementById("sendBtn").addEventListener("click",sendMsg);
 (function(){ // caixa de mensagem: cresce com o texto; Enter envia, Shift+Enter quebra a linha
@@ -2774,7 +2856,7 @@ document.getElementById("alarmAdd").addEventListener("click",async()=>{
     document.getElementById("alarmLabel").value="";
     startNewAlarm();
     await refresh();
-  }catch(e){alert(e.message||"Falha ao criar o alarme.");}
+  }catch(e){alertUnlessTimeout(e);}
 });
 document.getElementById("alarmStop").addEventListener("click",async()=>{await api("/api/alarms/stop","POST",{});renderAlarmToast([]);await refresh();});
 
@@ -2798,7 +2880,7 @@ async function checkWebAgentStatus(){
   const lbl=document.getElementById("web-agent-label");
   const badge=document.getElementById("web-agent-badge");
   const urlEl=document.getElementById("web-agent-url");
-  dot.style.background="#a78bfa"; lbl.textContent="Verificando…";
+  dot.style.background="#f472b6"; lbl.textContent="Verificando…";
   badge.style.borderColor="var(--border)";
   try{
     const d=await api("/api/maestro-status");
@@ -2847,7 +2929,7 @@ function renderVolume(d){
   }
 }
 async function loadAudio(){try{renderVolume(await api("/api/audio"));}catch(e){console.error("Audio:",e);}}
-async function sendVolume(body){try{renderVolume(await api("/api/audio/volume","POST",body));}catch(e){alert(e.message);}}
+async function sendVolume(body){try{renderVolume(await api("/api/audio/volume","POST",body));}catch(e){alertUnlessTimeout(e);}}
 document.getElementById("vol-range").addEventListener("input",e=>{
   volBusy=true; document.getElementById("vol-val").textContent=e.target.value+"%";
   clearTimeout(volTimer);
@@ -2858,7 +2940,7 @@ document.getElementById("vol-down").addEventListener("click",()=>sendVolume({del
 document.getElementById("vol-mute").addEventListener("click",e=>sendVolume({muted:!e.currentTarget.dataset.muted}));
 document.getElementById("audio-output").addEventListener("change",async e=>{
   if(!e.target.value) return;
-  try{renderVolume(await api("/api/audio/output","POST",{id:+e.target.value}));}catch(err){alert(err.message);loadAudio();}
+  try{renderVolume(await api("/api/audio/output","POST",{id:+e.target.value}));}catch(err){alertUnlessTimeout(err);loadAudio();}
 });
 
 // ── Bluetooth ──
@@ -2897,7 +2979,7 @@ function renderBluetooth(d){
   else if(btPoll){clearInterval(btPoll);btPoll=null;loadAudio();}
 }
 async function loadBluetooth(){try{renderBluetooth(await api("/api/bluetooth"));}catch(e){console.error("Bluetooth:",e);}}
-async function btAction(path,body){try{renderBluetooth(await api(path,"POST",body));}catch(e){alert(e.message);loadBluetooth();}}
+async function btAction(path,body){try{renderBluetooth(await api(path,"POST",body));}catch(e){alertUnlessTimeout(e);loadBluetooth();}}
 document.getElementById("bt-scan").addEventListener("click",()=>btAction("/api/bluetooth/scan",{}));
 document.getElementById("bt-power").addEventListener("change",e=>btAction("/api/bluetooth/power",{on:e.target.checked}));
 document.getElementById("bt-paired").parentElement.addEventListener("click",e=>{
@@ -2945,7 +3027,7 @@ document.getElementById("sp-connect").addEventListener("click",spLogin);
 document.getElementById("sp-renew").addEventListener("click",spLogin);
 document.getElementById("sp-disconnect").addEventListener("click",async()=>{
   if(!confirm("Desconectar a conta do Spotify da Cassandra?")) return;
-  try{renderSpotify(await api("/api/spotify/disconnect","POST",{}));spMsg("");}catch(e){alert(e.message);}
+  try{renderSpotify(await api("/api/spotify/disconnect","POST",{}));spMsg("");}catch(e){alertUnlessTimeout(e);}
 });
 document.getElementById("sp-player").addEventListener("click",async e=>{
   const b=e.target.closest("[data-sp]"); if(!b) return;
@@ -3199,7 +3281,7 @@ document.getElementById("tab-devices").addEventListener("click",async e=>{
   if(con){try{renderDevices(await api("/api/devices/connect","POST",{host:con.dataset.dvConnect}));}catch(err){dvSay(err.message,"error");}return;}
   const bto=e.target.closest("[data-bt-open]"); if(bto){openBtPanel(bto.dataset.btOpen,bto.dataset.name);return;}
   const bt=e.target.closest("[data-dv-bt]");
-  if(bt){bt.disabled=true;try{await api(`/api/bluetooth/${bt.dataset.dvBt}`,"POST",{mac:bt.dataset.mac});}catch(err){alert(err.message);}setTimeout(loadDeviceBt,bt.dataset.dvBt==="connect"?6000:800);return;}
+  if(bt){bt.disabled=true;try{await api(`/api/bluetooth/${bt.dataset.dvBt}`,"POST",{mac:bt.dataset.mac});}catch(err){alertUnlessTimeout(err);}setTimeout(loadDeviceBt,bt.dataset.dvBt==="connect"?6000:800);return;}
   const conf=e.target.closest("[data-rm-confirm]");
   if(conf){
     const what=conf.dataset.rmConfirm==="shutdown"?"Desligar":"Reiniciar";
@@ -3375,7 +3457,7 @@ function renderAgentsAccess(d){
   el.querySelectorAll("[data-ag-access]").forEach(cb=>cb.addEventListener("change",async()=>{
     cb.disabled=true;
     try{renderAgentsAccess(await api("/api/agents/access","POST",{name:cb.dataset.agAccess,allowed:cb.checked}));}
-    catch(e){cb.checked=!cb.checked;alert(e.message);}
+    catch(e){cb.checked=!cb.checked;alertUnlessTimeout(e);}
     finally{cb.disabled=false;}
   }));
 }
@@ -3462,6 +3544,16 @@ setInterval(()=>{loadAudio();if(!btPoll)loadBluetooth();loadSpotify();},15000);
 </script>
 </body>
 </html>"""
+
+# Rosto/cores da Cassandra: cópia do kit do maestro (orchestrator/static/persona.js, sincronizada por
+# orchestrator/plugin/sync_copies.py). Vai embutido na página: a mesma página é servida pelo túnel e pelo Netlify.
+_PERSONA_JS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cassandra", "web", "persona.js")
+try:
+    with open(_PERSONA_JS_PATH, encoding="utf-8") as _fh:
+        _PERSONA_JS = _fh.read().replace("</script", "<\\/script")
+except OSError:
+    _PERSONA_JS = "window.AgentPersona={face:function(){return ''},mount:function(){}};"
+HTML_PAGE = HTML_PAGE.replace("<!--PERSONA_JS-->", "<script>" + _PERSONA_JS + "</script>", 1)
 
 
 def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:

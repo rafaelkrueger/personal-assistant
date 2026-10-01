@@ -92,8 +92,9 @@ detectado, toca também o som de ativação.
 
 Tempo típico: 2–5 s com DeepSeek/OpenAI. Perguntas que caem na busca da
 internet dependem do maestro e do web-agent (dezenas de segundos) — pela URL pública, acima
-de ~26 s o Netlify devolve `504` (a Cassandra ainda responde e fala, mas o
-cliente perde o texto; use a URL da rede local para pedidos longos).
+de ~26 s o Netlify devolve `504` (a Cassandra ainda responde e fala). A UI
+não mostra alerta nesse caso: ela espera o histórico e coloca a resposta
+quando chegar. A URL da rede local evita o corte para pedidos longos.
 
 ### `POST /api/speak`
 **Body:** `{ "text": "O jantar está pronto!" }` (até 1000 caracteres)

@@ -125,6 +125,9 @@ class AlarmUiHtmlTests(unittest.TestCase):
             "shiftAlmCalYear",
             "date_ymd",
             "day_of_month",
+            "function isGatewayTimeout",
+            "function waitForChatReply",
+            "alertUnlessTimeout",
         ):
             self.assertIn(needle, html)
 
