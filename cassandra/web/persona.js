@@ -13,7 +13,7 @@
  *
  * state: "" (parado), "is-working" (trabalhando: brilha, balança, olha em volta),
  * "is-off" (desligado: cinza, olhos fechados) ou "is-sad" (erro).
- * A classe .ag-<face> (ag-maestro, ag-editor, ag-web, ag-ide, ag-home, ag-health)
+ * A classe .ag-<face> (ag-maestro, ag-editor, ag-web, ag-ide, ag-home, ag-health, ag-finance, ag-car)
  * define --c, --c2, --c-ink e --c-rgb para a página pintar o resto com a cor do agente.
  */
 (function () {
@@ -21,16 +21,25 @@
 
   const PERSONAS = {
     maestro: { title: "Maestro", role: "Líder da orquestra", face: "maestro", leader: true, c: "#9aaeff", c2: "#c4a1ff", ink: "#0d0a22", rgb: "154,174,255" },
-    editor: { title: "Frame", role: "Editor de vídeo", face: "editor", c: "#fb7185", c2: "#f472b6", ink: "#23070f", rgb: "251,113,133" },
-    "web-agent": { title: "Orbit", role: "Web agent", face: "web", c: "#5eead4", c2: "#22d3ee", ink: "#03282b", rgb: "94,234,212" },
-    ide: { title: "Kode", role: "IDE", face: "ide", c: "#c084fc", c2: "#8b5cf6", ink: "#1c0b33", rgb: "192,132,252" },
-    "personal-assistant": { title: "Cassandra", role: "Assistente pessoal", face: "home", c: "#fb923c", c2: "#f472b6", ink: "#4a1a06", rgb: "251,146,60" },
-    health: { title: "Pulse", role: "Saúde", face: "health", c: "#60a5fa", c2: "#34d399", ink: "#062a3a", rgb: "96,165,250" },
+    editor: { title: "Frame", role: "Editor de vídeo", group: "geral", face: "editor", c: "#fb7185", c2: "#f472b6", ink: "#23070f", rgb: "251,113,133" },
+    "web-agent": { title: "Orbit", role: "Web agent", group: "geral", face: "web", c: "#5eead4", c2: "#22d3ee", ink: "#03282b", rgb: "94,234,212" },
+    ide: { title: "Kode", role: "IDE", group: "geral", face: "ide", c: "#c084fc", c2: "#8b5cf6", ink: "#1c0b33", rgb: "192,132,252" },
+    "personal-assistant": { title: "Cassandra", role: "Assistente pessoal", group: "pessoal", face: "home", c: "#fb923c", c2: "#f472b6", ink: "#4a1a06", rgb: "251,146,60" },
+    health: { title: "Pulse", role: "Saúde", group: "pessoal", face: "health", c: "#60a5fa", c2: "#34d399", ink: "#062a3a", rgb: "96,165,250" },
+    finance: { title: "Cifra", role: "Finanças", group: "pessoal", face: "finance", c: "#f5c542", c2: "#b8860b", ink: "#0b0b0c", rgb: "245,197,66" },
+    car: { title: "Torque", role: "Carro", group: "pessoal", face: "car", c: "#ff5a4f", c2: "#ff9a5c", ink: "#190706", rgb: "255,90,79" },
   };
+
+  // Grupos da orquestra: agentes gerais (trabalho: web, vídeo, código) e pessoais (casa, saúde). A UI de cada
+  // lugar que lista agentes separa por isto, nesta ordem.
+  const GROUPS = [
+    { id: "geral", label: "Agentes gerais", short: "gerais", members: ["web-agent", "editor", "ide"] },
+    { id: "pessoal", label: "Agentes pessoais", short: "pessoais", members: ["health", "finance", "car", "personal-assistant"] },
+  ];
 
   // Rostos em SVG (viewBox 64×64). Classes f-* são animadas pelo CSS abaixo:
   // f-eye pisca, f-eyes olha em volta quando trabalha, e cada rosto tem o seu
-  // detalhe (halo e coroa, claquete, satélite, cursor, brilho, batimento).
+  // detalhe (halo e coroa, claquete, satélite, cursor, brilho, batimento, moeda, pistão com a biela).
   const FACES = {
     maestro: `
       <circle class="f-halo" cx="32" cy="35" r="29.5" fill="none" stroke="#fcd34d" stroke-width="1.4" stroke-dasharray="2 5" opacity=".8"/>
@@ -90,6 +99,33 @@
       </g>
       <path class="f-ecg" d="M14 36 H22.5 L25.5 31 L30 42 L33.5 34 L35.5 37 H50" pathLength="100" fill="none" stroke="#062a3a" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
       <g class="f-badge"><circle cx="51" cy="11" r="6" fill="#fff"/><path d="M51 7.8 V14.2 M47.8 11 H54.2" stroke="#ef4444" stroke-width="2.4" stroke-linecap="round"/></g>`,
+    finance: `
+      <ellipse cx="32" cy="59.6" rx="15" ry="2.4" fill="#000" opacity=".2"/>
+      <circle class="f-body" cx="32" cy="33" r="24" fill="url(#ap-skin-finance)"/>
+      <circle class="f-rim" cx="32" cy="33" r="21.5" fill="none" stroke="#7a5200" stroke-width="1.7" stroke-dasharray="1.2 2.55" opacity=".75"/>
+      <circle cx="32" cy="33" r="18.6" fill="#0b0b0c"/>
+      <circle cx="32" cy="33" r="18.6" fill="none" stroke="#ffe9a3" stroke-width=".9" opacity=".6"/>
+      <path d="M19.5 25.5 A14.5 14.5 0 0 1 30 18.8" fill="none" stroke="#fff3c4" stroke-width="1.6" stroke-linecap="round" opacity=".28"/>
+      <g class="f-eyes"><rect class="f-eye" x="23.2" y="26.4" width="5.4" height="7.6" rx="2.7" fill="#f5c542"/><rect class="f-eye" x="35.4" y="26.4" width="5.4" height="7.6" rx="2.7" fill="#f5c542"/></g>
+      <path d="M25.6 39.6 Q32 45.4 38.4 39.6" fill="none" stroke="#f5c542" stroke-width="2.4" stroke-linecap="round"/>
+      <path class="f-spark" fill="#fff3c4" d="M51.5 3.5 L53.1 7.9 L57.5 9.5 L53.1 11.1 L51.5 15.5 L49.9 11.1 L45.5 9.5 L49.9 7.9 Z"/>`,
+    car: `
+      <ellipse cx="32" cy="60.4" rx="13" ry="2.2" fill="#000" opacity=".22"/>
+      <path d="M27.6 40 L29.4 53 L34.6 53 L36.4 40 Z" fill="#7d8898"/>
+      <path d="M30.6 40 L31.2 53 L32.8 53 L33.4 40 Z" fill="#aab4c2"/>
+      <circle cx="32" cy="55" r="5.6" fill="#8d98a8"/><circle cx="32" cy="55" r="2.6" fill="#1a1e26"/>
+      <g class="f-piston">
+        <rect class="f-body" x="10" y="7" width="44" height="37" rx="7" fill="url(#ap-skin-car)"/>
+        <path d="M17 7 H47 A7 7 0 0 1 54 14 V15.2 H10 V14 A7 7 0 0 1 17 7 Z" fill="#fff" opacity=".45"/>
+        <rect x="10" y="15.2" width="44" height="2.6" fill="#ff5a4f"/>
+        <rect x="10" y="20" width="44" height="1.8" fill="#1a1e26" opacity=".8"/>
+        <rect x="10" y="23.8" width="44" height="1.8" fill="#1a1e26" opacity=".8"/>
+        <path d="M13.4 28 V40" stroke="#fff" stroke-width="1.6" stroke-linecap="round" opacity=".55"/>
+        <path d="M50.6 28 V40" stroke="#3b4350" stroke-width="1.6" stroke-linecap="round" opacity=".35"/>
+        <g class="f-eyes"><rect class="f-eye" x="22.6" y="28.4" width="5.4" height="7.6" rx="2.7" fill="#12151b"/><rect class="f-eye" x="36" y="28.4" width="5.4" height="7.6" rx="2.7" fill="#12151b"/></g>
+        <path d="M26.4 38.4 Q32 42.4 37.6 38.4" fill="none" stroke="#12151b" stroke-width="2.2" stroke-linecap="round"/>
+      </g>
+      <g class="f-spark" fill="#ffb340"><path d="M32 0.6 L33.2 3.6 L36.2 4.8 L33.2 6 L32 9 L30.8 6 L27.8 4.8 L30.8 3.6 Z"/></g>`,
     generic: `
       <circle class="f-body" cx="32" cy="33" r="22" fill="#5c6680"/>
       <g class="f-eyes"><circle class="f-eye" cx="25" cy="31" r="3.5" fill="#0b0e1a"/><circle class="f-eye" cx="39" cy="31" r="3.5" fill="#0b0e1a"/></g>
@@ -118,6 +154,12 @@
   <linearGradient id="ap-skin-health" x1="0" y1="0" x2="1" y2="1">
     <stop offset="0%" stop-color="#a7f3d0"/><stop offset="100%" stop-color="#3b9cf6"/>
   </linearGradient>
+  <linearGradient id="ap-skin-finance" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0%" stop-color="#fff1b0"/><stop offset="45%" stop-color="#f5c542"/><stop offset="100%" stop-color="#b97f00"/>
+  </linearGradient>
+  <linearGradient id="ap-skin-car" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0%" stop-color="#f6f8fb"/><stop offset="48%" stop-color="#c3ccd8"/><stop offset="100%" stop-color="#7c8898"/>
+  </linearGradient>
 </svg>`;
 
   const CSS = `  .ag-maestro { --c: #9aaeff; --c2: #c4a1ff; --c-ink: #0d0a22; --c-rgb: 154,174,255; }
@@ -126,6 +168,8 @@
   .ag-ide     { --c: #c084fc; --c2: #8b5cf6; --c-ink: #1c0b33; --c-rgb: 192,132,252; }
   .ag-home    { --c: #fb923c; --c2: #f472b6; --c-ink: #4a1a06; --c-rgb: 251,146,60; }
   .ag-health  { --c: #60a5fa; --c2: #34d399; --c-ink: #062a3a; --c-rgb: 96,165,250; }
+  .ag-finance { --c: #f5c542; --c2: #b8860b; --c-ink: #0b0b0c; --c-rgb: 245,197,66; }
+  .ag-car     { --c: #ff5a4f; --c2: #ff9a5c; --c-ink: #190706; --c-rgb: 255,90,79; }
   .ag-generic { --c: #8b95b2; --c2: #5c6680; --c-ink: #0b0e1a; --c-rgb: 139,149,178; }
   :root { --gold: #fcd34d; }
 
@@ -142,6 +186,8 @@
   .ap-face.ag-ide .f-eye { animation-delay: 2.4s; }
   .ap-face.ag-home .f-eye { animation-delay: 3.1s; animation-duration: 6s; }
   .ap-face.ag-health .f-eye { animation-delay: .4s; animation-duration: 4.8s; }
+  .ap-face.ag-finance .f-eye { animation-delay: 1.3s; animation-duration: 5.6s; }
+  .ap-face.ag-car .f-eye { animation-delay: 2.9s; animation-duration: 5.2s; }
   .ap-face .f-eyes { transition: transform .3s; }
 
   .ap-face .f-halo { transform-origin: 32px 35px; animation: faceSpin 24s linear infinite; }
@@ -154,6 +200,8 @@
   .ap-face .f-spark { transform-box: fill-box; transform-origin: center; animation: twinkle 2.8s ease-in-out infinite; }
   .ap-face .f-ecg { stroke-dasharray: 100 100; animation: ecg 2.6s linear infinite; }
   .ap-face.ag-health .f-body { transform-origin: 32px 33px; animation: heartBeat 2.6s ease-in-out infinite; }
+  .ap-face .f-rim { transform-origin: 32px 33px; animation: faceSpin 26s linear infinite; }
+  .ap-face.ag-car .f-spark { opacity: 0; animation: none; }
 
   /* Trabalhando: brilha, balança, olha em volta, e cada um tem seu tique. */
   .ap-face.is-working { animation: faceBob 1.1s ease-in-out infinite; filter: drop-shadow(0 0 12px rgba(var(--c-rgb), .8)); }
@@ -165,6 +213,13 @@
   .ap-face.is-working .f-cursor { animation-duration: .45s; }
   .ap-face.is-working .f-ecg, .ap-face.is-working.ag-health .f-body { animation-duration: 1s; }
   .ap-face.is-working .f-spark { animation-duration: 1s; }
+  .ap-face.is-working .f-rim { animation-duration: 3s; }
+  /* Torque trabalhando: o pistão sobe e desce na biela e a faísca acende no alto de cada curso. */
+  .ap-face.ag-car.is-working { animation: none; }
+  .ap-face.ag-car.is-working .f-piston { animation: pistonPump .5s ease-in-out infinite; }
+  .ap-face.ag-car.is-working .f-spark { animation: pistonSpark .5s ease-in-out infinite; }
+  @keyframes pistonPump { 0%, 100% { transform: translateY(2.2px); } 50% { transform: translateY(-2.6px); } }
+  @keyframes pistonSpark { 0%, 30%, 70%, 100% { opacity: 0; } 50% { opacity: 1; } }
   /* Desligado/offline: cinza, olhos fechados. Triste: olhos pra baixo. */
   .ap-face.is-off { filter: grayscale(.85) brightness(.9); opacity: .7; animation: none; }
   .ap-face.is-off .f-eye { animation: none; transform: scaleY(.15); }
@@ -242,5 +297,18 @@
     mount();
   }
 
-  window.AgentPersona = { PERSONAS, meta, skin, face, mount };
+  /** Agrupa uma lista (de nomes ou de objetos {name}) pelos grupos acima; quem não tem grupo vai para "outros". */
+  function groups(list) {
+    const items = (list || []).map((x) => (typeof x === "string" ? { name: x } : x)).filter((x) => x.name !== "maestro");
+    const out = GROUPS.map((g) => ({
+      ...g,
+      items: items.filter((x) => (PERSONAS[x.name] || {}).group === g.id)
+        .sort((a, b) => g.members.indexOf(a.name) - g.members.indexOf(b.name)),
+    }));
+    const rest = items.filter((x) => !GROUPS.some((g) => g.id === (PERSONAS[x.name] || {}).group));
+    if (rest.length) out.push({ id: "outros", label: "Outros agentes", short: "outros", members: [], items: rest });
+    return out.filter((g) => g.items.length);
+  }
+
+  window.AgentPersona = { PERSONAS, GROUPS, meta, skin, face, mount, groups };
 })();

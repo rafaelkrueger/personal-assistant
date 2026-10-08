@@ -22,7 +22,7 @@ _WEEKDAYS_PT = [
 
 # Quanto a conversa espera por cada agente antes de dizer "te aviso quando terminar" (o resto segue em segundo
 # plano e o resultado é falado quando chegar). Pesquisas e perguntas costumam voltar em menos de 1–2 min.
-_WAIT_SECONDS = {"web-agent": 100, "health": 60}
+_WAIT_SECONDS = {"web-agent": 100, "health": 60, "finance": 60, "car": 60}
 _WAIT_DEFAULT = 15
 
 _TOOL_NAME = "pedir_a_agente"
@@ -38,6 +38,17 @@ _EXAMPLES = {
     "health": (
         "- \"como esta meu colesterol?\", \"o que meus exames dizem?\", \"meu exame de sangue melhorou?\", duvidas de "
         "saude, dieta e metas -> health (ele ja tem os exames, o perfil e o historico de saude do usuario salvos)"
+    ),
+    "finance": (
+        "- \"gastei 45 no mercado\", \"anota 30 de uber\", \"quanto gastei esse mes?\", \"estourei algum orcamento?\", "
+        "\"quanto eu devo?\", \"paguei a parcela do carro\", \"qual meu patrimonio?\" -> finance (a Cifra: ela ja tem os "
+        "lancamentos, os fixos, os orcamentos, as dividas e os investimentos do usuario salvos, e anota o que ele contar)"
+    ),
+    "car": (
+        "- \"como esta meu carro?\", \"o que esta para vencer no carro?\", \"quando e a proxima troca de oleo?\", "
+        "\"o carro esta com 66 mil km\", \"abasteci 40 litros por 236 reais\", \"troquei o oleo ontem\", \"o IPVA vence "
+        "dia 15\", \"quanto meu carro faz por litro?\" -> car (o Torque: ele ja tem o carro do usuario, o plano de "
+        "manutencao, os abastecimentos e os prazos salvos, e anota o que ele contar)"
     ),
     "ide": "- \"crie um site\", \"faz um app\", \"programa X\", \"arruma o codigo do projeto Y\", \"publica o site\" -> ide",
     "editor": "- \"corta esse video\", \"faz cortes do video do YouTube X\", \"posta no TikTok\", \"gera um video\" -> editor",

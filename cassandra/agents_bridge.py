@@ -1,4 +1,4 @@
-"""Os outros agentes (web-agent, IDE, editor, Health...) para a Cassandra, sempre através do Maestro.
+"""Os outros agentes (web-agent, IDE, editor, Health, Cifra, Torque...) para a Cassandra, sempre através do Maestro.
 
 - snapshot(): agentes ligados e no ar agora, com o que cada um faz (o CAPABILITIES.md deles, lido pelo Maestro).
   Nunca bloqueia: devolve o último resultado e atualiza em segundo plano (o Maestro roda no PC, que nem sempre
@@ -34,6 +34,8 @@ SPOKEN_NAMES = {
     "ide": "o IDE",
     "editor": "o editor de vídeos",
     "health": "o Health",
+    "finance": "a Cifra",
+    "car": "o Torque",
 }
 
 
