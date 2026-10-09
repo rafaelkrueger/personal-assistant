@@ -253,6 +253,66 @@ HTML_PAGE = """<!doctype html>
     .sec-title{font-size:17px;font-weight:800;letter-spacing:-.03em}
     .count-badge{font-size:11.5px;color:var(--text2);background:rgba(255,255,255,.04);border:1px solid var(--border);padding:3px 11px;border-radius:99px;font-weight:600}
 
+    /* ═══ HÁBITOS ═══ a grade do ano (uma coluna por semana, de segunda a domingo) e o registro de hoje */
+    .hb-row{padding:14px 0;border-bottom:1px solid var(--border)}
+    .hb-row:last-child{border-bottom:none;padding-bottom:2px}
+    .hb-row:first-child{padding-top:2px}
+    .hb-head{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+    .hb-dot{flex:none;width:18px;height:18px;border-radius:50%;background:var(--hc);display:grid;place-items:center;color:#0b1220;font-size:11px;font-weight:900}
+    .hb-name{flex:1;min-width:0;font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .hb-name small{font-weight:500;color:var(--text2);font-size:12.5px}
+    .hb-pct{font-weight:800;font-size:15px;font-variant-numeric:tabular-nums;color:var(--hc)}
+    .hb-meta{font-size:11.5px;color:var(--text3);font-weight:600;white-space:nowrap}
+    .hb-edit{background:none;border:none;color:var(--text3);cursor:pointer;padding:4px 6px;border-radius:7px;font-size:13px}
+    .hb-edit:hover{background:rgba(255,255,255,.06);color:var(--text)}
+    .hb-grid{display:grid;grid-auto-flow:column;grid-template-rows:repeat(7,1fr);grid-auto-columns:minmax(0,1fr);gap:2px;max-width:960px}
+    .hb-cell{aspect-ratio:1;border-radius:22%;background:rgba(255,255,255,.055);min-width:0}
+    .hb-cell.on{background:var(--hc);cursor:pointer}
+    .hb-cell.l1{opacity:.3}.hb-cell.l2{opacity:.5}.hb-cell.l3{opacity:.72}
+    .hb-cell.open{cursor:pointer}.hb-cell.open:hover{background:rgba(255,255,255,.16)}
+    .hb-cell.skip{background:rgba(255,255,255,.022)}
+    .hb-cell.future{background:rgba(255,255,255,.022)}
+    .hb-cell.out{visibility:hidden}
+    .hb-cell.today{box-shadow:0 0 0 1.5px var(--text)}
+    .hb-months{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:2px;margin-top:5px;max-width:960px;font-size:9.5px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+    .hb-months span{white-space:nowrap;overflow:visible}
+    .hb-today{display:grid;grid-template-columns:38px 1fr auto;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)}
+    .hb-today:last-child{border-bottom:none}
+    .hb-check{width:38px;height:38px;border-radius:12px;border:2px solid var(--hc);background:transparent;color:var(--hc);cursor:pointer;font-size:17px;font-weight:900;display:grid;place-items:center;transition:all .15s;font-family:inherit}
+    .hb-check.done{background:var(--hc);color:#0b1220}
+    .hb-check:active{transform:scale(.92)}
+    .hb-today b{display:block;font-weight:700;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .hb-today small{display:block;font-size:12px;color:var(--text2)}
+    .hb-bar{height:5px;border-radius:99px;background:rgba(255,255,255,.07);margin-top:6px;overflow:hidden;max-width:260px}
+    .hb-bar i{display:block;height:100%;border-radius:99px;background:var(--hc);transition:width .3s}
+    .hb-step{display:flex;align-items:center;gap:6px}
+    .hb-step button{width:30px;height:30px;border-radius:9px;border:1px solid var(--border2);background:rgba(255,255,255,.04);color:var(--text);cursor:pointer;font-size:16px;font-weight:700;font-family:inherit}
+    .hb-step button:hover{border-color:var(--hc);color:var(--hc)}
+    .hb-streak{font-size:12px;font-weight:700;color:var(--text2);white-space:nowrap;min-width:44px;text-align:right}
+    .hb-bars{display:flex;align-items:flex-end;gap:8px;height:150px}
+    .hb-bars .c{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;min-width:0}
+    .hb-bars .c small{font-size:10.5px;font-weight:700;color:var(--text2);margin-bottom:4px}
+    .hb-bars .c i{width:68%;max-width:36px;min-height:2px;border-radius:6px 6px 2px 2px;background:linear-gradient(180deg,var(--brand2),var(--brand))}
+    .hb-bars .c.none i{background:rgba(255,255,255,.07)}
+    .hb-bars .c.best i{box-shadow:0 0 16px var(--brand-glow)}
+    .hb-bars-x{display:flex;gap:8px;margin-top:7px}
+    .hb-bars-x span{flex:1;text-align:center;font-size:10.5px;font-weight:600;color:var(--text3);min-width:0}
+    .hb-modal{position:fixed;inset:0;z-index:90;display:grid;place-items:center;padding:16px;background:rgba(2,5,12,.72);backdrop-filter:blur(6px)}
+    .hb-modal.hidden{display:none}
+    .hb-box{width:min(480px,100%);max-height:calc(100dvh - 32px);overflow-y:auto;background:var(--surface);border:1px solid var(--border2);border-radius:var(--rx);padding:22px;box-shadow:var(--shadow)}
+    .hb-box h3{font-size:17px;font-weight:800;letter-spacing:-.02em;margin-bottom:14px}
+    .hb-box label{display:block;font-size:12px;font-weight:600;color:var(--text2);margin:14px 0 6px}
+    .hb-box input,.hb-box select{width:100%}
+    .hb-two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .hb-sw{display:flex;gap:8px;flex-wrap:wrap}
+    .hb-sw button{width:30px;height:30px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0}
+    .hb-sw button.on{border-color:#fff;box-shadow:0 0 0 2px var(--bg)}
+    .hb-days{display:flex;gap:6px;flex-wrap:wrap}
+    .hb-days button{padding:7px 0;width:42px;border-radius:9px;border:1px solid var(--border2);background:rgba(255,255,255,.03);color:var(--text2);cursor:pointer;font-size:12px;font-weight:700;font-family:inherit}
+    .hb-days button.on{background:var(--brand-dim);border-color:var(--brand);color:var(--brand2)}
+    .hb-foot{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
+    .hb-foot .btn-danger{margin-right:auto}
+
     /* ═══ DASHBOARD ═══ */
     .dash-hero{
       background:linear-gradient(135deg,rgba(251,146,60,.09),rgba(244,114,182,.07),rgba(34,211,238,.04));
@@ -762,6 +822,10 @@ HTML_PAGE = """<!doctype html>
             <div class="stat-val" id="statAlarms">—</div><div class="stat-lbl">alarmes ativos</div>
           </div>
         </div>
+        <div class="dash-section" id="dashHabitsBox" style="margin-bottom:14px;display:none">
+          <div class="dash-section-title" style="display:flex;justify-content:space-between;align-items:center"><span>Hábitos de hoje</span><span id="dashHabitsCount" style="color:var(--brand2);cursor:pointer" data-goto="habits"></span></div>
+          <div id="dashHabits"></div>
+        </div>
         <div class="dash-cols">
           <div class="dash-section">
             <div class="dash-section-title">Últimas mensagens</div>
@@ -1086,6 +1150,68 @@ HTML_PAGE = """<!doctype html>
           <button class="btn btn-primary" id="todoAdd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Adicionar</button>
         </div>
         <div class="list" id="todoList"></div>
+      </div>
+
+      <!-- ══ HÁBITOS ══ -->
+      <div class="tab-panel hidden" id="tab-habits">
+        <div class="sec-hdr">
+          <span class="sec-title">Hábitos</span>
+          <span style="display:flex;gap:8px;align-items:center">
+            <select id="hbYear" class="settings-select"></select>
+            <button class="btn btn-primary" id="hbNew"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Novo hábito</button>
+          </span>
+        </div>
+        <div class="cost-grid">
+          <div class="stat-card"><div class="stat-val" id="hbStatToday">—</div><div class="stat-lbl">feitos hoje</div></div>
+          <div class="stat-card"><div class="stat-val" id="hbStatPct">—</div><div class="stat-lbl">consistência no ano</div></div>
+          <div class="stat-card"><div class="stat-val" id="hbStatStreak">—</div><div class="stat-lbl">maior sequência em curso</div></div>
+          <div class="stat-card"><div class="stat-val" id="hbStatBest">—</div><div class="stat-lbl">melhor sequência</div></div>
+        </div>
+        <div class="dash-section" style="margin-bottom:14px">
+          <div class="dash-section-title">Hoje</div>
+          <div id="hbTodayList"></div>
+        </div>
+        <div class="dash-section" style="margin-bottom:14px">
+          <div class="dash-section-title" id="hbYearTitle">O ano em revisão</div>
+          <div id="hbGrids"></div>
+          <div class="cost-note">Cada quadradinho é um dia (as colunas são as semanas, de segunda a domingo). Quanto mais cheio, mais perto da meta do dia. Toque num dia para marcar ou corrigir.</div>
+        </div>
+        <div class="dash-cols">
+          <div class="dash-section">
+            <div class="dash-section-title">Consistência por semana (últimas 12)</div>
+            <svg class="cost-chart" id="hbWeeks" viewBox="0 0 600 190" preserveAspectRatio="none"></svg>
+          </div>
+          <div class="dash-section">
+            <div class="dash-section-title">Em que dia da semana você cumpre mais</div>
+            <div id="hbWeekdays"></div>
+          </div>
+        </div>
+        <div class="dash-section">
+          <div class="dash-section-title">Mês a mês</div>
+          <div id="hbMonths"></div>
+        </div>
+      </div>
+
+      <!-- Hábito: criar ou editar -->
+      <div class="hb-modal hidden" id="hbModal">
+        <div class="hb-box" role="dialog" aria-modal="true" aria-labelledby="hbFormTitle">
+          <h3 id="hbFormTitle">Novo hábito</h3>
+          <div class="hb-two" style="grid-template-columns:1fr 84px">
+            <div><label style="margin-top:0">Nome</label><input id="hbName" type="text" maxlength="60" placeholder="Ex.: Beber água"/></div>
+            <div><label style="margin-top:0">Emoji</label><input id="hbEmoji" type="text" maxlength="8" placeholder="💧"/></div>
+          </div>
+          <label>Meta</label>
+          <div class="hb-two" style="grid-template-columns:90px 1fr 1fr">
+            <input id="hbTarget" type="text" inputmode="decimal" placeholder="1"/>
+            <input id="hbUnit" type="text" maxlength="20" placeholder="copos, páginas, min…"/>
+            <select id="hbPeriod"><option value="day">por dia</option><option value="week">por semana</option></select>
+          </div>
+          <div class="cost-note" style="margin-top:6px">Só marcar feito/não feito? Deixe a meta em 1.</div>
+          <div id="hbDaysWrap"><label>Em quais dias</label><div class="hb-days" id="hbDays"></div></div>
+          <label>Cor</label><div class="hb-sw" id="hbColors"></div>
+          <div class="cost-note" id="hbFormMsg" style="color:var(--red);min-height:18px"></div>
+          <div class="hb-foot"><button class="btn btn-danger" id="hbDelete">Excluir</button><button class="btn btn-ghost" id="hbCancel">Cancelar</button><button class="btn btn-primary" id="hbSave">Salvar</button></div>
+        </div>
       </div>
 
       <!-- ══ ALARMS ══ -->
@@ -1661,6 +1787,7 @@ const IC = {
   routines: `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>`,
   agenda:   `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`,
   settings: `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>`,
+  habits:   `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14.5 17.5l2.2 2.2 4-4.4"/></svg>`,
   costs:    `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>`,
   trash:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>`,
   check:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`,
@@ -1677,6 +1804,7 @@ const ALL_TABS = [
   {id:"devices",   label:"Aparelhos",  group:"Casa"},
   {id:"shopping",  label:"Compras",    group:"Organização"},
   {id:"todos",     label:"Tarefas",    group:"Organização"},
+  {id:"habits",    label:"Hábitos",    group:"Organização"},
   {id:"agenda",    label:"Agenda",     group:"Organização"},
   {id:"alarms",    label:"Alarmes",    group:"Automação"},
   {id:"routines",  label:"Rotinas",    group:"Automação"},
@@ -1687,7 +1815,7 @@ const ALL_TABS = [
 let currentTab = "dashboard";
 const PAGE_TITLES = {
   dashboard:"Dashboard",chat:"Chat",music:"Música",devices:"Aparelhos",mic:"Microfone",shopping:"Compras",
-  todos:"Tarefas",alarms:"Alarmes",routines:"Rotinas",agenda:"Agenda",settings:"Configurações",costs:"Gastos",
+  todos:"Tarefas",habits:"Hábitos",alarms:"Alarmes",routines:"Rotinas",agenda:"Agenda",settings:"Configurações",costs:"Gastos",
 };
 const DAY_NAMES = ["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"];
 const MONTHS_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
@@ -1782,7 +1910,165 @@ function gotoTab(tab){
   if(tab==="mic") micOpen(); else micClose();
   if(tab==="alarms") renderAlmCalendar();
   if(tab==="costs") loadCosts();
+  if(tab==="habits") loadHabits(true);
 }
+
+// ── Hábitos ── (as contas vêm prontas de /api/habits; aqui é só desenhar e registrar)
+let hbData=null,hbYearSel=null,hbLast="",hbEditing=null,hbColor="";
+const HB_MONTHS=["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
+const hbNum=v=>(+v||0).toLocaleString("pt-BR",{maximumFractionDigits:2});
+const hbIso=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+function hbGoal(h){
+  const what=h.target==1&&!h.unit?(h.period==="week"?"1 vez":""):hbNum(h.target)+(h.unit?" "+h.unit:(h.period==="week"?" vezes":""));
+  if(h.period==="week") return what+" por semana";
+  const days=h.weekdays||[];
+  const when=days.length===7?(what?"por dia":"todo dia"):days.map(d=>DAY_NAMES[d].toLowerCase()).join(", ");
+  return what?what+" "+(days.length===7?when:"· "+when):when;
+}
+function hbStep(h){return h.target>=100?10:h.target>=30?5:1;}
+function hbTodayRow(h){
+  const t=h.today,many=h.target>1||h.period==="week",pct=Math.min(100,Math.round(t.progress/h.target*100));
+  const sub=!t.scheduled?"hoje não é dia":many?hbNum(t.progress)+" / "+hbNum(h.target)+(h.unit?" "+esc(h.unit):"")+(h.period==="week"?" nesta semana":""):(t.done?"feito hoje":"ainda não");
+  const streak=h.streak?"🔥 "+h.streak+(h.period==="week"?" sem":h.streak===1?" dia":" dias"):"";
+  return `<div class="hb-today" style="--hc:${h.color};${t.scheduled?"":"opacity:.45"}">
+    <button class="hb-check${t.done?" done":""}" data-hb-tog="${h.id}" title="${t.done?"Desmarcar":"Marcar como feito"}">${t.done?"✓":(h.emoji?esc(h.emoji):"")}</button>
+    <div style="min-width:0"><b>${esc(h.name)}${h.emoji&&t.done?" "+esc(h.emoji):""}</b><small>${sub}</small>${many?`<div class="hb-bar"><i style="width:${pct}%"></i></div>`:""}</div>
+    <div class="hb-step">${many?`<button data-hb-add="${h.id}" data-d="-${hbStep(h)}" title="Tirar">−</button><button data-hb-add="${h.id}" data-d="${hbStep(h)}" title="Somar">+</button>`:""}<span class="hb-streak">${streak}</span></div>
+  </div>`;
+}
+function hbGridRow(h,year,today){
+  const jan1=new Date(year,0,1),dec31=new Date(year,11,31);
+  const start=new Date(jan1);start.setDate(start.getDate()-((jan1.getDay()+6)%7));  // a segunda da semana de 1º de janeiro
+  const days=new Set(h.weekdays||[0,1,2,3,4,5,6]);
+  let cells="",months=[];
+  for(const d=new Date(start);d<=dec31||(d.getDay()+6)%7!==0;d.setDate(d.getDate()+1)){
+    const iso=hbIso(d),wd=(d.getDay()+6)%7;
+    if(wd===0){const end=new Date(d);end.setDate(end.getDate()+6);  // rotula a coluna (semana) em que cai o dia 1º do mês
+      months.push(end.getDate()<=7&&end.getFullYear()===year?HB_MONTHS[end.getMonth()]:"");}
+    if(d<jan1||d>dec31){cells+='<i class="hb-cell out"></i>';continue;}
+    const r=h.cells[iso]||0,amount=h.amounts[iso]||0;
+    let cls=iso>today?"future":r>0?"on"+(r>=1?"":r>=.66?" l3":r>=.33?" l2":" l1"):(iso<h.start||!days.has(wd)?"skip open":"open");
+    if(iso===today) cls+=" today";
+    const label=String(d.getDate()).padStart(2,"0")+"/"+String(d.getMonth()+1).padStart(2,"0")+(amount?" · "+hbNum(amount)+(h.unit?" "+h.unit:""):"");
+    cells+=`<i class="hb-cell ${cls}" ${iso>today?"":`data-hb-day="${h.id}" data-date="${iso}"`} title="${esc(label)}"></i>`;
+  }
+  const done=h.period==="week"?h.done_count+" de "+h.total_count+" semanas":h.done_count+" de "+h.total_count+" dias";
+  return `<div class="hb-row" style="--hc:${h.color}">
+    <div class="hb-head"><span class="hb-dot">✓</span><span class="hb-name">${esc(h.name)}${h.emoji?" "+esc(h.emoji):""} <small>– ${esc(hbGoal(h))}</small></span>
+      <span class="hb-meta">${h.total_count?done:""}</span><span class="hb-pct">${h.pct==null?"—":h.pct+"%"}</span>
+      <button class="hb-edit" data-hb-edit="${h.id}" title="Editar">✎</button></div>
+    <div class="hb-grid">${cells}</div>
+    <div class="hb-months">${months.map(m=>`<span>${m}</span>`).join("")}</div>
+  </div>`;
+}
+function hbBars(values,labels){
+  const max=Math.max(...values.map(v=>v||0));
+  return `<div class="hb-bars">${values.map(v=>`<div class="c${v==null?" none":v===max&&max>0?" best":""}"><small>${v==null?"":v+"%"}</small><i style="height:${v==null?2:Math.max(2,v*.8)}%"></i></div>`).join("")}</div>
+    <div class="hb-bars-x">${labels.map(l=>`<span>${l}</span>`).join("")}</div>`;
+}
+function hbWeeksChart(weeks){
+  const svg=document.getElementById("hbWeeks"),W=600,H=190,P=26,n=weeks.length;
+  const x=i=>P+i*(W-2*P)/(n-1),y=v=>H-P-(v/100)*(H-2*P-6);
+  let out="";
+  [0,50,100].forEach(v=>{out+=`<line x1="${P}" y1="${y(v)}" x2="${W-P}" y2="${y(v)}" stroke="var(--border2)" stroke-dasharray="${v?"3 5":"0"}"/><text x="${P-5}" y="${y(v)+3}" font-size="10" text-anchor="end" fill="var(--text3)">${v}</text>`;});
+  const pts=weeks.map((w,i)=>w.pct==null?null:[x(i),y(w.pct)]).filter(Boolean);
+  if(pts.length>1){
+    out+=`<polygon fill="var(--brand)" opacity=".12" points="${pts[0][0]},${y(0)} ${pts.map(p=>p.join(",")).join(" ")} ${pts[pts.length-1][0]},${y(0)}"/>`;
+    out+=`<polyline fill="none" stroke="var(--brand)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke" points="${pts.map(p=>p.join(",")).join(" ")}"/>`;
+  }
+  weeks.forEach((w,i)=>{
+    if(w.pct!=null) out+=`<circle cx="${x(i)}" cy="${y(w.pct)}" r="${i===n-1?5:3.5}" fill="var(--brand2)" stroke="var(--surface)" stroke-width="2" vector-effect="non-scaling-stroke"><title>semana de ${w.start.slice(8,10)}/${w.start.slice(5,7)}: ${w.pct}%</title></circle>`;
+    if(i%3===2||i===n-1) out+=`<text x="${x(i)}" y="${H-6}" font-size="10" text-anchor="${i===n-1?"end":"middle"}" fill="var(--text3)">${w.start.slice(8,10)}/${w.start.slice(5,7)}</text>`;
+  });
+  if(!pts.length) out+=`<text x="${W/2}" y="${H/2}" font-size="12" text-anchor="middle" fill="var(--text3)">Aparece depois dos primeiros registros</text>`;
+  svg.innerHTML=out;
+}
+function renderHabits(d){
+  hbData=d;const s=d.summary,any=d.habits.length>0;
+  const none='<div class="empty" style="padding:22px 0">Nenhum hábito ainda. Crie o primeiro em “Novo hábito”.</div>';
+  // dashboard: só o registro de hoje
+  const box=document.getElementById("dashHabitsBox");box.style.display=any?"":"none";
+  document.getElementById("dashHabitsCount").textContent=any?s.today_done+" de "+s.today_total+" · ver tudo →":"";
+  document.getElementById("dashHabits").innerHTML=d.habits.filter(h=>h.today.scheduled).map(hbTodayRow).join("")||'<div class="cost-note" style="margin:0">Nenhum hábito previsto para hoje.</div>';
+  // aba
+  document.getElementById("hbStatToday").textContent=any?s.today_done+"/"+s.today_total:"—";
+  document.getElementById("hbStatPct").textContent=s.pct==null?"—":s.pct+"%";
+  document.getElementById("hbStatStreak").textContent=any?s.streak:"—";
+  document.getElementById("hbStatBest").textContent=any?s.best_streak:"—";
+  document.getElementById("hbTodayList").innerHTML=any?d.habits.map(hbTodayRow).join(""):none;
+  document.getElementById("hbYearTitle").textContent=d.year+" em revisão";
+  document.getElementById("hbGrids").innerHTML=any?[...d.habits].sort((a,b)=>(b.pct??-1)-(a.pct??-1)).map(h=>hbGridRow(h,d.year,d.today)).join(""):none;
+  hbWeeksChart(d.weeks);
+  document.getElementById("hbWeekdays").innerHTML=hbBars(d.weekdays,DAY_NAMES);
+  document.getElementById("hbMonths").innerHTML=hbBars(d.months,HB_MONTHS);
+  const sel=document.getElementById("hbYear"),thisYear=+d.today.slice(0,4);
+  let first=thisYear;d.habits.forEach(h=>{first=Math.min(first,+h.start.slice(0,4));});
+  let opts="";for(let y=thisYear;y>=first;y--) opts+=`<option${y===d.year?" selected":""}>${y}</option>`;
+  sel.innerHTML=opts;sel.style.display=first<thisYear?"":"none";
+}
+async function loadHabits(force){
+  if(!document.getElementById("hbModal").classList.contains("hidden")&&!force) return;
+  try{
+    const d=await api("/api/habits"+(hbYearSel?"?year="+hbYearSel:"")),json=JSON.stringify(d);
+    if(json===hbLast&&!force) return;  // nada mudou: não redesenha a grade inteira a cada atualização
+    hbLast=json;renderHabits(d);
+  }catch(e){console.error("Hábitos:",e);}
+}
+async function hbLog(body){
+  try{const d=await api("/api/habits/log","POST",{...body,year:hbYearSel});hbLast=JSON.stringify(d);renderHabits(d);}
+  catch(e){alertUnlessTimeout(e);}
+}
+function hbOpenForm(h){
+  hbEditing=h?h.id:null;hbColor=h?h.color:"";
+  document.getElementById("hbFormTitle").textContent=h?"Editar hábito":"Novo hábito";
+  document.getElementById("hbName").value=h?h.name:"";document.getElementById("hbEmoji").value=h?h.emoji:"";
+  document.getElementById("hbTarget").value=h?String(h.target).replace(".",","):"1";document.getElementById("hbUnit").value=h?h.unit:"";
+  document.getElementById("hbPeriod").value=h?h.period:"day";
+  const on=new Set(h?h.weekdays:[0,1,2,3,4,5,6]);
+  document.getElementById("hbDays").innerHTML=DAY_NAMES.map((n,i)=>`<button type="button" data-wd="${i}" class="${on.has(i)?"on":""}">${n}</button>`).join("");
+  const colors=(hbData&&hbData.colors)||[];if(!hbColor){const used=new Set(((hbData&&hbData.habits)||[]).map(x=>x.color));hbColor=colors.find(c=>!used.has(c))||colors[0]||"";}
+  document.getElementById("hbColors").innerHTML=colors.map(c=>`<button type="button" data-color="${c}" style="background:${c}" class="${c===hbColor?"on":""}" aria-label="cor"></button>`).join("");
+  document.getElementById("hbDaysWrap").style.display=document.getElementById("hbPeriod").value==="week"?"none":"";
+  document.getElementById("hbDelete").style.display=h?"":"none";document.getElementById("hbFormMsg").textContent="";
+  document.getElementById("hbModal").classList.remove("hidden");
+  if(!h) setTimeout(()=>document.getElementById("hbName").focus(),50);
+}
+function hbCloseForm(){document.getElementById("hbModal").classList.add("hidden");}
+document.getElementById("hbNew").addEventListener("click",()=>hbOpenForm(null));
+document.getElementById("hbCancel").addEventListener("click",hbCloseForm);
+document.getElementById("hbModal").addEventListener("click",e=>{
+  if(e.target.id==="hbModal") return hbCloseForm();
+  const wd=e.target.closest("[data-wd]");if(wd) wd.classList.toggle("on");
+  const c=e.target.closest("[data-color]");if(c){hbColor=c.dataset.color;document.querySelectorAll("#hbColors button").forEach(b=>b.classList.toggle("on",b===c));}
+});
+document.getElementById("hbPeriod").addEventListener("change",e=>{document.getElementById("hbDaysWrap").style.display=e.target.value==="week"?"none":"";});
+document.getElementById("hbSave").addEventListener("click",async()=>{
+  const body={id:hbEditing||undefined,name:document.getElementById("hbName").value,emoji:document.getElementById("hbEmoji").value,
+    target:document.getElementById("hbTarget").value,unit:document.getElementById("hbUnit").value,period:document.getElementById("hbPeriod").value,
+    color:hbColor,weekdays:[...document.querySelectorAll("#hbDays button.on")].map(b=>+b.dataset.wd),year:hbYearSel};
+  try{const d=await api("/api/habits/save","POST",body);hbCloseForm();hbLast=JSON.stringify(d);renderHabits(d);}
+  catch(e){document.getElementById("hbFormMsg").textContent=e.message;}
+});
+document.getElementById("hbDelete").addEventListener("click",async()=>{
+  if(!hbEditing||!confirm("Excluir este hábito e todo o histórico dele?")) return;
+  try{const d=await api("/api/habits/remove","POST",{id:hbEditing,year:hbYearSel});hbCloseForm();hbLast=JSON.stringify(d);renderHabits(d);}
+  catch(e){document.getElementById("hbFormMsg").textContent=e.message;}
+});
+document.getElementById("hbYear").addEventListener("change",e=>{hbYearSel=+e.target.value;loadHabits(true);});
+document.addEventListener("click",e=>{
+  const byId=id=>hbData&&hbData.habits.find(h=>h.id===id);
+  const tog=e.target.closest("[data-hb-tog]"),add=e.target.closest("[data-hb-add]"),day=e.target.closest("[data-hb-day]"),ed=e.target.closest("[data-hb-edit]");
+  if(tog){const h=byId(tog.dataset.hbTog);if(!h) return;
+    // hábito com quantidade: o botão completa a meta de hoje (ou zera, se já estava completa)
+    if(h.period==="week") hbLog({id:h.id,toggle:true});
+    else hbLog({id:h.id,amount:h.today.done?0:h.target});
+  }else if(add){hbLog({id:add.dataset.hbAdd,delta:+add.dataset.d});
+  }else if(day){const h=byId(day.dataset.hbDay);if(!h) return;const iso=day.dataset.date;
+    if(h.target==1&&h.period!=="week"){hbLog({id:h.id,date:iso,toggle:true});return;}
+    const now=h.amounts[iso]||0,v=prompt(`${h.name} em ${iso.slice(8,10)}/${iso.slice(5,7)}: quanto?${h.unit?" ("+h.unit+")":""} — meta ${hbNum(h.target)}${h.period==="week"?" por semana":" por dia"}`,String(now||(h.period==="week"?1:h.target)).replace(".",","));
+    if(v!==null) hbLog({id:h.id,date:iso,amount:v});
+  }else if(ed){const h=byId(ed.dataset.hbEdit);if(h) hbOpenForm(h);}
+});
 
 // ── Gastos ──
 const COST_COLORS={llm:"#fb923c",tts:"#f472b6",stt:"#34d399"};
@@ -1871,6 +2157,7 @@ function tickClock(){
 setInterval(tickClock,1000);tickClock();
 
 document.querySelectorAll(".stat-card[data-goto]").forEach(c=>c.addEventListener("click",()=>gotoTab(c.dataset.goto)));
+document.getElementById("dashHabitsCount").addEventListener("click",()=>gotoTab("habits"));
 
 // ── Tips ──
 const TIPS=[
@@ -2774,6 +3061,7 @@ async function refresh(){
     renderTimers(data.timers||[],data.now);
     loadRoutines();
     loadAgenda();
+    if(currentTab==="dashboard"||currentTab==="habits") loadHabits();
   }catch(e){console.error("Refresh:",e);}
 }
 
@@ -3775,6 +4063,15 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
             if parsed.path == "/api/llm":
                 self._send_json(llm_settings.get_public())
                 return
+            if parsed.path == "/api/habits":
+                from cassandra import habits  # noqa: PLC0415
+
+                try:
+                    year = int((parse_qs(parsed.query).get("year") or ["0"])[0])
+                except ValueError:
+                    year = 0
+                self._send_json(habits.overview(year or None))
+                return
             if parsed.path == "/api/usage":
                 from cassandra import usage_log  # noqa: PLC0415
 
@@ -4041,6 +4338,31 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                     self._send_json({"error": "text too long (max 1000 chars)"}, status=HTTPStatus.BAD_REQUEST)
                     return
                 self._send_json(assistant.announce(text))
+                return
+
+            if parsed.path in ("/api/habits/save", "/api/habits/remove", "/api/habits/log"):
+                from cassandra import habits  # noqa: PLC0415
+
+                data = self._read_json_body()
+                try:
+                    if parsed.path.endswith("/save"):
+                        habits.save(data)
+                    elif parsed.path.endswith("/remove"):
+                        habits.remove(str(data.get("id", "")))
+                    else:
+                        habits.log(str(data.get("id", "")), data.get("date"), amount=data.get("amount"),
+                                   delta=data.get("delta"), toggle=bool(data.get("toggle")))
+                except KeyError:
+                    self._send_json({"error": "Hábito não encontrado."}, status=HTTPStatus.NOT_FOUND)
+                    return
+                except ValueError as exc:
+                    self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                    return
+                try:
+                    year = int(data.get("year") or 0)
+                except (TypeError, ValueError):
+                    year = 0
+                self._send_json(habits.overview(year or None))
                 return
 
             if parsed.path == "/api/shopping/add":

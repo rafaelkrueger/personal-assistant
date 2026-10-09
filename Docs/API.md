@@ -472,6 +472,45 @@ Apps que dá para abrir nele: `{ "apps": [ { "id": "netflix", "label": "Netflix"
 
 ---
 
+## 10e. Hábitos (aba Hábitos)
+
+Hábitos com meta por dia ou por semana e o registro do que foi feito em cada dia (`cassandra/habits.py`, dados em
+`data/habits.json`). Só a interface usa: não há comando de voz nem ferramenta do chat para isto.
+
+### `GET /api/habits?year=2026`
+```json
+{ "year": 2026, "today": "2026-10-09", "colors": ["#8ec5ff", "…"],
+  "summary": { "count": 3, "today_done": 1, "today_total": 3, "pct": 61, "streak": 4, "best_streak": 14 },
+  "habits": [ { "id": "…", "name": "Beber água", "emoji": "💧", "color": "#8ec5ff", "period": "day", "target": 8,
+                "unit": "copos", "weekdays": [0,1,2,3,4,5,6], "created": "2026-01-22", "start": "2026-01-22",
+                "cells": { "2026-10-08": 0.5 }, "amounts": { "2026-10-08": 4 },
+                "pct": 42, "recent_pct": 50, "done_count": 108, "total_count": 260, "streak": 2, "best_streak": 9,
+                "today": { "amount": 3, "scheduled": true, "progress": 3, "done": false } } ],
+  "weeks": [ { "start": "2026-10-05", "pct": 70 } ],
+  "weekdays": [50, 52, 56, 47, 58, 47, 53], "months": [56, 57, 35, 49, 57, 56, 52, 60, 50, 46, null, null] }
+```
+- `period`: `day` (meta por dia; `weekdays` diz em quais dias vale, segunda = 0) ou `week` (meta somada de segunda
+  a domingo). `target: 1` sem unidade = só feito/não feito.
+- `cells`: quanto de cada dia foi preenchido (0–1), para a grade do ano; `amounts`: o valor registrado.
+- `pct`: dias (ou semanas) cumpridos ÷ os que já passaram desde o começo do hábito (a criação ou o primeiro
+  registro); o dia/semana em curso só entra se já foi cumprido. `streak`: sequência em curso (hoje em aberto não
+  quebra).
+- `weeks`: as últimas 12 semanas, média do quanto cada hábito cumpriu; `weekdays` (seg…dom) e `months` (jan…dez):
+  % de cumprimento; `null` = sem dados.
+
+### `POST /api/habits/save`
+**Body:** `{ "name": "Beber água", "emoji": "💧", "target": 8, "unit": "copos", "period": "day",
+"weekdays": [0,1,2,3,4], "color": "#8ec5ff" }` — só `name` é obrigatório. Com `id`, edita.
+
+### `POST /api/habits/log`
+**Body:** `{ "id": "…", "date": "2026-10-08", "amount": 6 }` — sem `date` vale hoje. Em vez de `amount`:
+`"delta": 1` soma (ou tira) e `"toggle": true` alterna entre nada e feito. Dia no futuro → `400`.
+
+### `POST /api/habits/remove` — **Body:** `{ "id": "…" }`: apaga o hábito e todo o histórico dele.
+
+Os três devolvem o mesmo objeto do `GET` já atualizado (mande `year` para manter o ano da tela). Hábito
+inexistente → `404`.
+
 ## 11. Página
 
 ### `GET /`

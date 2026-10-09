@@ -42,6 +42,9 @@ técnicos e exemplos de API estão em [`API.md`](./API.md) — este arquivo é s
   e fones, que não pedem PIN) pela interface/API (`/api/bluetooth`).
 - **Lista de compras**: adicionar, remover e listar itens (por voz ou pela API).
 - **Lista de tarefas (to-do)**: adicionar, marcar como feita, remover, listar.
+- **Hábitos** (só pela interface web, aba Hábitos — não por voz nem pelo chat): criar hábitos com meta por dia
+  ou por semana, marcar o que foi feito e ver a consistência — a grade do ano de cada hábito, as sequências e os
+  gráficos por semana, por dia da semana e por mês.
 - **Alarmes**: pontuais ou recorrentes (todo dia ou em dias da semana
   escolhidos), que tocam na casa.
 - **Timers** por voz/texto ("Cassandra, timer de 10 minutos").

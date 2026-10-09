@@ -23,3 +23,5 @@ data/tts_cache/
 data/eq.json
 data/agents_access.json
 data/usage_log.jsonl
+# hábitos e o registro de cada dia (aba Hábitos)
+data/habits.json
