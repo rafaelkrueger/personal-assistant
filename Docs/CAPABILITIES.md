@@ -57,9 +57,12 @@ técnicos e exemplos de API estão em [`API.md`](./API.md) — este arquivo é s
   busca geral) **pedindo ao maestro** (que despacha para o web-agent),
   mas só quando ele está ligado e respondendo. Se ele estiver desligado ou o
   pedido falhar, ela responde só com o próprio LLM.
-- **Pedir coisas a outros agentes, sempre através do maestro** (nunca
-  direto): ela é origem de pedidos em `POST /maestro/request`, pelo
-  plug-in `maestro_link`.
+- **Ser a ponte dos agentes pessoais** — Pulse (`health`, saúde), Cifra (`finance`, finanças) e Torque (`car`, o
+  carro): ela fala com eles **direto**, sem o maestro, e guarda a documentação de cada um (`Docs/agents/`). É a
+  única exceção à regra de que agente não chama agente. Funciona com o computador desligado para os que moram no
+  Raspberry Pi. Quem precisar de um agente pessoal também pode pedir a ela (`POST /api/personal-agents/ask`).
+- **Pedir coisas aos outros agentes (web-agent, IDE, editor), sempre através do maestro**: ela é origem de pedidos
+  em `POST /maestro/request`, pelo plug-in `maestro_link`.
 - **Ouvir pelo microfone** (quando houver um plugado): detecta o nome
   "Cassandra" no próprio aparelho, sem mandar nada para a internet, e só então
   transcreve o comando.

@@ -279,7 +279,7 @@ Campos parciais — só o que muda. Chave vazia/omitida **nunca apaga** a salva.
 
 ## 10. Maestro (a ponte para os outros agentes)
 
-A Cassandra nunca chama outro agente direto: pede ao maestro
+Fora os agentes pessoais (seção 10f), a Cassandra nunca chama outro agente direto: pede ao maestro
 (`POST /maestro/request` com `from_agent: "personal-assistant"`), pelo
 plug-in `cassandra/maestro_link.py` (cópia de
 `maestro/plugin/maestro_link.py`). Hoje: pesquisas na internet
@@ -510,6 +510,41 @@ Hábitos com meta por dia ou por semana e o registro do que foi feito em cada di
 
 Os três devolvem o mesmo objeto do `GET` já atualizado (mande `year` para manter o ano da tela). Hábito
 inexistente → `404`.
+
+## 10f. Agentes pessoais (a Cassandra é a ponte deles)
+
+Pulse (`health`), Cifra (`finance`) e Torque (`car`) são falados **direto** pela Cassandra, por HTTP, sem o
+maestro — a única exceção à regra de que agente não chama agente (`cassandra/personal_agents.py`). A documentação
+de cada um mora nela: `Docs/agents/<nome>/CAPABILITIES.md` e `API.md`, cópias mantidas por
+`orchestrator/plugin/sync_copies.py` (a canônica é a da pasta do agente).
+
+Onde cada um está: `HEALTH_AGENT_URL` (padrão `http://127.0.0.1:8012`), `FINANCE_AGENT_URL`
+(`http://127.0.0.1:8014`) e `CAR_AGENT_URL` (`http://127.0.0.1:8015`, depois o PC) — várias URLs separadas por
+vírgula são tentadas em ordem; vale a primeira que responder em `GET /api/health`.
+
+No chat e na voz ela escolhe o agente sozinha (ferramenta `pedir_a_agente`); os pessoais vão direto, os demais
+pelo maestro. `GET /api/agents` (Configurações) lista todos, com `"direct": true` nos pessoais — que aparecem
+mesmo com o maestro fora do ar.
+
+### `GET /api/personal-agents`
+`{ "agents": [ { "name": "car", "title": "Torque", "tagline": "O carro do usuário em dia…", "status": "online",
+"base_url": "http://192.168.100.52:8015", "enabled": true, "direct": true } ] }`
+
+### `GET /api/personal-agents/{name}/docs`
+`{ "name": "car", "capabilities": "# O que o Torque pode…", "api": "# Torque (car) — API…" }` — `404` se o nome
+não for de um agente pessoal.
+
+### `POST /api/personal-agents/ask`
+A ponte: outro agente pessoal, o maestro ou uma automação pedem aqui e a Cassandra repassa direto (não fala nada
+na casa).
+
+**Body:** `{ "target": "finance", "message": "gastei 45 no mercado", "parameters": { "action": "add" },
+"from_agent": "car" }` — `parameters` são os mesmos do CAPABILITIES.md do agente (`action`…); sem `action`, o
+pedido vira uma mensagem no chat dele. `from_agent` (opcional) identifica quem pediu no histórico do agente.
+
+→ `200 { "ok": true, "target": "finance", "result": "Lançado em …", "error": null }`
+→ `502 { "ok": false, "result": null, "error": "a Cifra está fora do ar" }` · `400` alvo que não é agente pessoal
+ou sem mensagem · `409` acesso a esse agente desligado em Configurações.
 
 ## 11. Página
 

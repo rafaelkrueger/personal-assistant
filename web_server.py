@@ -3744,10 +3744,11 @@ const AG_STATE={online:"no ar",offline:"desligado",cli:"sob demanda",degraded:"i
 function renderAgentsAccess(d){
   const el=document.getElementById("agAccessList"); if(!el) return;
   const msg=t=>`<div class="settings-row" style="border-bottom:none"><div class="settings-row-desc">${t}</div></div>`;
-  if(!d.connected){el.innerHTML=msg("O Maestro não está respondendo (o computador pode estar desligado). A lista aparece quando ele voltar.");return;}
-  if(!d.agents.length){el.innerHTML=msg("O Maestro não tem outros agentes.");return;}
-  el.innerHTML=d.agents.map((a,i)=>{
-    const st=a.enabled===false?"desligado no Maestro":(AG_STATE[a.status]||a.status);
+  if(!d.agents.length){el.innerHTML=msg(d.connected?"Nenhum outro agente.":"O Maestro não está respondendo (o computador pode estar desligado). A lista aparece quando ele voltar.");return;}
+  const off=d.connected?"":msg("O Maestro não está respondendo (o computador pode estar desligado): os agentes dele voltam quando ele voltar. Os pessoais seguem funcionando.");
+  el.innerHTML=off+d.agents.map((a,i)=>{
+    // Os agentes pessoais são falados direto pela Cassandra (sem o Maestro); os demais, pelo Maestro.
+    const st=(a.enabled===false?"desligado no Maestro":(AG_STATE[a.status]||a.status))+(a.direct?" · direto":" · pelo Maestro");
     const last=i===d.agents.length-1?' style="border-bottom:none"':"";
     return `<div class="settings-row ag-row${a.allowed?"":" ag-off"}"${last}>
       <div class="settings-row-info"><div class="settings-row-label"><span class="ag-dot ${a.enabled===false?"":esc(a.status)}"></span>${esc(a.name)} <span class="ag-state">${esc(st)}</span></div>
@@ -4188,6 +4189,21 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
             if parsed.path == "/api/bluetooth":
                 self._send_json(audio_devices.bluetooth.status())
                 return
+            if parsed.path == "/api/personal-agents":
+                from cassandra import personal_agents  # noqa: PLC0415
+
+                self._send_json({"agents": [{k: v for k, v in a.items() if k != "description"}
+                                            for a in personal_agents.catalog(fresh=True)]})
+                return
+            if parsed.path.startswith("/api/personal-agents/") and parsed.path.endswith("/docs"):
+                from cassandra import personal_agents  # noqa: PLC0415
+
+                name = parsed.path.split("/")[3]
+                if not personal_agents.is_personal(name):
+                    self._send_json({"error": "Agente pessoal desconhecido."}, status=HTTPStatus.NOT_FOUND)
+                    return
+                self._send_json({"name": name, **personal_agents.docs(name)})
+                return
             if parsed.path == "/api/agents":
                 from cassandra.agents_bridge import bridge  # noqa: PLC0415
 
@@ -4483,6 +4499,34 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                 data = self._read_json_body()
                 assistant.remove_alarm(str(data.get("id", "")).strip())
                 self._send_json({"alarms": assistant.list_alarms()})
+                return
+
+            if parsed.path == "/api/personal-agents/ask":
+                # A ponte dos agentes pessoais: quem precisar de um deles (outro agente pessoal, o Maestro, uma
+                # automação) pede aqui e a Cassandra repassa direto — sem falar nada na casa.
+                from cassandra import personal_agents  # noqa: PLC0415
+                from cassandra.agents_bridge import bridge  # noqa: PLC0415
+
+                data = self._read_json_body()
+                target = str(data.get("target") or "").strip()
+                message = str(data.get("message") or "").strip()
+                if not personal_agents.is_personal(target):
+                    self._send_json({"error": "target deve ser um agente pessoal: " + ", ".join(personal_agents.AGENTS)},
+                                    status=HTTPStatus.BAD_REQUEST)
+                    return
+                parameters = data.get("parameters") if isinstance(data.get("parameters"), dict) else None
+                if not message and not (parameters or {}).get("action"):
+                    self._send_json({"error": "message is required"}, status=HTTPStatus.BAD_REQUEST)
+                    return
+                if not bridge.allowed(target):
+                    self._send_json({"error": f"O acesso a {target} está desligado na Cassandra."},
+                                    status=HTTPStatus.CONFLICT)
+                    return
+                source = str(data.get("from_agent") or "").strip()[:40] or personal_agents.SOURCE
+                ok, text = personal_agents.ask(target, message, parameters, source=source)
+                self._send_json({"ok": ok, "target": target, "result": text if ok else None,
+                                 "error": None if ok else text},
+                                status=HTTPStatus.OK if ok else HTTPStatus.BAD_GATEWAY)
                 return
 
             if parsed.path == "/api/agents/access":

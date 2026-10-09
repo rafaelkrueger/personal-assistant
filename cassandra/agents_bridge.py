@@ -1,4 +1,9 @@
-"""Os outros agentes (web-agent, IDE, editor, Health, Cifra, Torque...) para a Cassandra, sempre através do Maestro.
+"""Os outros agentes para a Cassandra.
+
+Dois caminhos:
+- os AGENTES PESSOAIS (Pulse/health, Cifra/finance, Torque/car): a Cassandra fala DIRETO com eles — ela é a ponte
+  deles, sem o Maestro (ver personal_agents.py; a documentação de cada um mora em Docs/agents/);
+- os demais (web-agent, IDE, editor…): sempre através do Maestro.
 
 - snapshot(): agentes ligados e no ar agora, com o que cada um faz (o CAPABILITIES.md deles, lido pelo Maestro).
   Nunca bloqueia: devolve o último resultado e atualiza em segundo plano (o Maestro roda no PC, que nem sempre
@@ -21,7 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from cassandra import speech_state
+from cassandra import personal_agents, speech_state
 from skills.web_search.skill import _client as _maestro
 
 _REFRESH_EVERY = 60.0  # segundos entre atualizações da lista de agentes
@@ -33,9 +38,7 @@ SPOKEN_NAMES = {
     "web-agent": "o web-agent",
     "ide": "o IDE",
     "editor": "o editor de vídeos",
-    "health": "o Health",
-    "finance": "a Cifra",
-    "car": "o Torque",
+    **{name: spec["spoken"] for name, spec in personal_agents.AGENTS.items()},
 }
 
 
@@ -121,22 +124,35 @@ class AgentsBridge:
         """Todos os agentes do Maestro (menos a própria Cassandra), com o acesso de cada um — para a tela de
         Configurações. Busca agora (pode levar alguns segundos com o PC desligado)."""
         link = _maestro._link
-        if not link.available():
-            return {"connected": False, "agents": []}
+        connected = link.available()
+        # Os pessoais vêm da própria Cassandra (direto), com ou sem o Maestro; os demais, do Maestro.
         agents = [
-            {"name": a.get("name"), "tagline": a.get("tagline") or "", "status": a.get("status") or "offline",
-             "enabled": a.get("enabled", True), "allowed": self.allowed(a.get("name") or "")}
-            for a in link.agents(max_age=5) if a.get("name") and a.get("name") != link.agent_name
+            {"name": a["name"], "tagline": a["tagline"], "status": a["status"], "enabled": True,
+             "allowed": self.allowed(a["name"]), "direct": True}
+            for a in personal_agents.catalog(fresh=True)
         ]
-        return {"connected": True, "agents": agents}
+        if connected:
+            agents += [
+                {"name": a.get("name"), "tagline": a.get("tagline") or "", "status": a.get("status") or "offline",
+                 "enabled": a.get("enabled", True), "allowed": self.allowed(a.get("name") or ""), "direct": False}
+                for a in link.agents(max_age=5)
+                if a.get("name") and a.get("name") != link.agent_name and not personal_agents.is_personal(a["name"])
+            ]
+        return {"connected": connected, "agents": agents}
 
     # ── Quem está disponível ─────────────────────────────────────────────────
 
     def _refresh(self) -> None:
         try:
             agents = _maestro._link.usable_agents() if _maestro._link.available() else []
-        except Exception:  # noqa: BLE001 — sem o Maestro, fica sem agentes (e tenta de novo depois)
+        except Exception:  # noqa: BLE001 — sem o Maestro, ficam só os agentes pessoais (e tenta de novo depois)
             agents = []
+        # Os pessoais não dependem do Maestro: entram os que respondem agora, no lugar da versão que ele listaria.
+        agents = [a for a in agents if not personal_agents.is_personal(a.get("name") or "")]
+        try:
+            agents = personal_agents.online() + agents
+        except Exception:  # noqa: BLE001
+            pass
         with self._lock:
             self._agents = agents
             self._fetched_at = time.monotonic()
@@ -165,6 +181,8 @@ class AgentsBridge:
     def run(self, target: str, task: str, wait_seconds: float,
             on_late_result: Callable[[str, AgentReply], None] | None = None,
             parameters: dict | None = None) -> AgentReply:
+        if personal_agents.is_personal(target):
+            return self._run_direct(target, task, wait_seconds, on_late_result, parameters)
         link = _maestro._link
         base = link.base_url or link.refresh()
         if not base:
@@ -190,6 +208,38 @@ class AgentsBridge:
             gen = speech_state.task_generation()
             threading.Thread(target=self._follow, args=(link, base, request_id, record, target, on_late_result, gen),
                              daemon=True).start()
+        return AgentReply(False, pending=True)
+
+    def _run_direct(self, target: str, task: str, wait_seconds: float,
+                    on_late_result: Callable[[str, AgentReply], None] | None, parameters: dict | None) -> AgentReply:
+        """Agente pessoal: a Cassandra fala direto com ele. Se passar do tempo de espera, a conversa segue e o
+        resultado é falado quando chegar — como nos pedidos feitos pelo Maestro."""
+        done = threading.Event()
+        box: dict[str, AgentReply] = {}
+        late = {"on": False}
+        gen = speech_state.task_generation()
+
+        def work() -> None:
+            ok, text = personal_agents.ask(target, task, parameters)
+            box["reply"] = AgentReply(True, text=text) if ok else AgentReply(False, error=text)
+            done.set()
+            if late["on"] and on_late_result and not (gen is not None and speech_state.cancelled(gen)):
+                try:
+                    on_late_result(target, box["reply"])
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[AGENTES] falha ao avisar o resultado: {exc}", flush=True)
+
+        threading.Thread(target=work, daemon=True).start()
+        deadline = time.monotonic() + wait_seconds
+        while not done.is_set() and time.monotonic() < deadline and not speech_state.task_cancelled():
+            done.wait(0.5)
+        if done.is_set():
+            return box["reply"]
+        if speech_state.task_cancelled():
+            return AgentReply(False, error="interrompido")
+        late["on"] = True
+        if done.is_set():  # terminou bem na virada: devolve agora (o aviso tardio pode repetir, mas nada se perde)
+            return box["reply"]
         return AgentReply(False, pending=True)
 
     @staticmethod

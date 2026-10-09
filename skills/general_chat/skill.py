@@ -68,6 +68,8 @@ def _human_error(error: str) -> str:
         return "ele está desligado no Maestro"
     if "tempo esgotado" in e or "timeout" in e or "timed out" in e:
         return "ele demorou demais para responder"
+    if "fora do ar" in e:
+        return "ele está fora do ar agora"
     if "maestro" in e:
         return error
     return error[:160] or "deu um erro"
@@ -116,8 +118,9 @@ class GeneralChatSkill(Skill):
         examples = "\n".join(line for name, line in _EXAMPLES.items() if f"- {name} (" in agents_block)
         return prompt + (
             "\n\nAGENTES — MUITO IMPORTANTE: voce sozinha nao acessa internet, WhatsApp, e-mail, os exames do usuario "
-            "nem o computador dele, MAS voce faz parte de um sistema de agentes (coordenado pelo Maestro) que "
-            f"acessam. Voce os aciona com a ferramenta {_TOOL_NAME}. Agentes ligados agora:\n{agents_block}\n\n"
+            "nem o computador dele, MAS voce faz parte de um sistema de agentes que acessam: os agentes pessoais "
+            "(saude, financas, carro), com quem voce fala direto, e os demais, pelo Maestro. Voce os aciona com a "
+            f"ferramenta {_TOOL_NAME}. Agentes ligados agora:\n{agents_block}\n\n"
             "Quando o pedido (ou a pergunta \"voce consegue...?\") envolver algo que um agente faz, CHAME A "
             "FERRAMENTA em vez de responder. Nunca diga que nao tem acesso, que nao consegue, ou que o usuario "
             "precisa enviar algo que o agente ja tem. Exemplos:\n"
@@ -130,7 +133,7 @@ class GeneralChatSkill(Skill):
             "type": "function",
             "function": {
                 "name": _TOOL_NAME,
-                "description": "Pede uma tarefa a outro agente do sistema (via Maestro) e devolve o resultado.",
+                "description": "Pede uma tarefa a outro agente do sistema e devolve o resultado.",
                 "parameters": {
                     "type": "object",
                     "properties": {
