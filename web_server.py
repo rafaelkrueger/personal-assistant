@@ -102,6 +102,12 @@ HTML_PAGE = """<!doctype html>
     .brand-text{font-size:15px;font-weight:800;white-space:nowrap;letter-spacing:-.02em;background:linear-gradient(90deg,var(--brand2),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
     .brand-sub{font-size:10px;color:var(--text3);white-space:nowrap;margin-top:-1px;letter-spacing:.02em;-webkit-text-fill-color:var(--text3)}
     .collapsed .brand-text,.collapsed .brand-sub{display:none}
+    /* Recolhida (62px) não cabe o rosto e o botão lado a lado — o botão ficava cortado, sem como reabrir.
+       Fica só o rosto, centralizado, e ele é o botão de expandir. */
+    .sidebar.collapsed .sb-top{justify-content:center;padding-left:0;padding-right:0;gap:0}
+    .sidebar.collapsed .sb-top>div,.sidebar.collapsed .collapse-btn{display:none}
+    .sidebar.collapsed .sb-top .brand-face{cursor:pointer;border-radius:50%;transition:transform .15s}
+    .sidebar.collapsed .sb-top .brand-face:hover{transform:scale(1.08)}
     .collapse-btn{margin-left:auto;background:transparent;border:none;color:var(--text3);cursor:pointer;padding:5px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;transition:all .15s}
     .collapse-btn:hover{background:var(--surface);color:var(--text2)}
     .collapse-btn svg{width:16px;height:16px;transition:transform .25s}
@@ -2132,9 +2138,16 @@ setInterval(async()=>{
 // ── Sidebar ──
 const sidebar=document.getElementById("sidebar");
 if(localStorage.getItem("sbCollapsed")==="1") sidebar.classList.add("collapsed");
+const sbFace=sidebar.querySelector(".sb-top .brand-face");
+function sbSetCollapsed(on){
+  sidebar.classList.toggle("collapsed",on);
+  localStorage.setItem("sbCollapsed",on?"1":"0");
+  sbFace.title=on?"Expandir o menu":"";
+}
+sbSetCollapsed(sidebar.classList.contains("collapsed"));
+sbFace.addEventListener("click",()=>{if(sidebar.classList.contains("collapsed")) sbSetCollapsed(false);});
 document.getElementById("collapseBtn").addEventListener("click",()=>{
-  sidebar.classList.toggle("collapsed");
-  localStorage.setItem("sbCollapsed",sidebar.classList.contains("collapsed")?"1":"0");
+  sbSetCollapsed(!sidebar.classList.contains("collapsed"));
 });
 
 // ── Mobile ──
