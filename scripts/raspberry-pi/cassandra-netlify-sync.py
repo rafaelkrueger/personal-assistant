@@ -2,7 +2,7 @@
 """Mantém o site da Cassandra no Netlify apontando para o túnel atual do Pi.
 
 A URL do quick tunnel da Cloudflare muda a cada reinício (reboot, queda). Este script roda como serviço
-(cassandra-netlify-sync) e, a cada 30 s, confere a URL atual do túnel e a página (HTML_PAGE do web_server.py).
+(cassandra-netlify-sync) e, a cada 30 s, confere a URL atual do túnel e a página (HTML_PAGE do web_server.py, com o kit de personagens embutido).
 Se alguma mudou desde a última publicação, publica de novo pela API do Netlify: index.html + _redirects
 (/api/* -> túnel). Só a biblioteca padrão do Python; nada para instalar.
 
@@ -25,6 +25,7 @@ HOME = Path.home()
 CONFIG = HOME / ".config/cassandra/netlify.env"
 STATE = HOME / ".local/state/cassandra/netlify-sync.json"
 WEB_SERVER = HOME / "Desktop/personal-assistant/web_server.py"
+PERSONA_JS = HOME / "Desktop/personal-assistant/cassandra/web/persona.js"
 TUNNEL_LOG = Path("/tmp/cloudflared.log")
 TUNNEL_RE = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
 API = "https://api.netlify.com/api/v1"
@@ -52,11 +53,23 @@ def tunnel_url():
     return m.group(0) if m else None
 
 
+def persona_script():
+    """O kit de personagens (rosto e cores) que o web_server.py embute na página ao servir — a mesma troca daqui."""
+    try:
+        js = PERSONA_JS.read_text(encoding="utf-8").replace("</script", "<\\/script")
+    except OSError:
+        js = "window.AgentPersona={face:function(){return ''},mount:function(){}};"
+    return "<script>" + js + "</script>"
+
+
 def html_page():
     src = WEB_SERVER.read_text(encoding="utf-8")
     for node in ast.parse(src).body:
-        if isinstance(node, ast.Assign) and any(getattr(t, "id", None) == "HTML_PAGE" for t in node.targets):
-            return ast.literal_eval(node.value)
+        # A primeira atribuição é a página em si; a seguinte (HTML_PAGE = HTML_PAGE.replace(...)) embute o kit de
+        # personagens, e é refeita aqui — sem isso o site ia sem o rosto da Cassandra.
+        if (isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant)
+                and any(getattr(t, "id", None) == "HTML_PAGE" for t in node.targets)):
+            return ast.literal_eval(node.value).replace("<!--PERSONA_JS-->", persona_script(), 1)
     raise RuntimeError("HTML_PAGE não encontrado no web_server.py")
 
 
