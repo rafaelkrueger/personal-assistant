@@ -57,6 +57,24 @@ class AlarmManagerComputeTests(unittest.TestCase):
         self.assertEqual(got, datetime(2026, 9, 28, 7, 0))
 
 
+class AlarmRingTests(unittest.TestCase):
+    def test_rings_five_times_then_stops_by_itself(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mgr = AlarmManager(ring_sound_path="missing.wav", sound_player=FakeSound(), db_path=str(Path(tmp) / "a.json"))
+            mgr._running = False  # sem as threads: o teste conta os toques na mão
+            mgr._ringing_alarm_ids.add("a1")
+            self.assertEqual([mgr._count_ring() for _ in range(5)], [True, True, True, True, False])
+            self.assertFalse(mgr.is_ringing())
+            self.assertFalse(mgr._count_ring())  # parado não conta mais nada
+
+            # parar antes da hora continua valendo, e um alarme novo toca as cinco vezes dele
+            mgr._ringing_alarm_ids.add("a1")
+            mgr._rings_done = 0
+            mgr._count_ring()
+            self.assertTrue(mgr.stop_ringing())
+            self.assertFalse(mgr._count_ring())
+
+
 class AlarmManagerPersistTests(unittest.TestCase):
     def _manager(self, path: Path) -> AlarmManager:
         return AlarmManager(ring_sound_path="missing.wav", sound_player=FakeSound(), db_path=str(path))

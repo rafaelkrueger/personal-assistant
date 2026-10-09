@@ -1,8 +1,9 @@
-"""Persistent alarm manager with repeating ring playback and calendar dates."""
+"""Persistent alarm manager with ring playback (a few rings, then it stops by itself) and calendar dates."""
 from __future__ import annotations
 
 import calendar
 import json
+import os
 import threading
 import time
 from dataclasses import asdict, dataclass
@@ -26,6 +27,11 @@ class Alarm:
     day_of_month: int | None = None  # 1-31 — monthly
 
 
+# Quantas vezes o alarme toca antes de parar sozinho (ALARM_RING_TIMES; 0 = toca até alguém parar).
+RING_TIMES = max(0, int(os.getenv("ALARM_RING_TIMES", "5") or 5))
+RING_GAP_SECONDS = 0.4  # pausa entre um toque e o próximo
+
+
 class AlarmManager:
     def __init__(
         self,
@@ -42,6 +48,7 @@ class AlarmManager:
         self._lock = threading.Lock()
         self._alarms: list[Alarm] = self._load()
         self._ringing_alarm_ids: set[str] = set()
+        self._rings_done = 0  # toques já dados desde que o alarme começou (zera a cada alarme novo)
         self._running = True
         self._monitor = threading.Thread(target=self._run_monitor, daemon=True)
         self._ringer = threading.Thread(target=self._run_ringer, daemon=True)
@@ -130,6 +137,8 @@ class AlarmManager:
                     if trigger <= now:
                         just_fired = alarm.id not in self._ringing_alarm_ids
                         self._ringing_alarm_ids.add(alarm.id)
+                        if just_fired:
+                            self._rings_done = 0  # outro alarme disparou: toca as vezes dele
                         if just_fired and self._on_alarm_fire:
                             fired_id = alarm.id
                             threading.Thread(
@@ -160,12 +169,23 @@ class AlarmManager:
                     time.sleep(0.2)
                 if proc is not None and proc.poll() is None:
                     proc.terminate()
-                if proc is None:
-                    time.sleep(2.5)
-                elif self.is_ringing():
-                    time.sleep(0.4)
+                if not self._count_ring():
+                    continue  # já tocou as vezes combinadas (ou foi parado): fica em silêncio
+                # Sem som para tocar (arquivo/saída indisponível), espera o tempo de um toque.
+                time.sleep(2.5 if proc is None else RING_GAP_SECONDS)
             else:
                 time.sleep(0.4)
+
+    def _count_ring(self) -> bool:
+        """Conta um toque dado. Ao chegar em RING_TIMES o alarme para sozinho. -> ainda está tocando?"""
+        with self._lock:
+            if not self._ringing_alarm_ids:
+                return False
+            self._rings_done += 1
+            if RING_TIMES and self._rings_done >= RING_TIMES:
+                self._ringing_alarm_ids.clear()
+                return False
+            return True
 
     def _load(self) -> list[Alarm]:
         if not self.db_path.exists():

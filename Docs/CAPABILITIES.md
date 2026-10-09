@@ -45,7 +45,7 @@ técnicos e exemplos de API estão em [`API.md`](./API.md) — este arquivo é s
 - **Hábitos** (só pela interface web, aba Hábitos — não por voz nem pelo chat): criar hábitos com meta por dia
   ou por semana, marcar o que foi feito e ver a consistência — a grade do ano de cada hábito, as sequências e os
   gráficos por semana, por dia da semana e por mês.
-- **Alarmes**: pontuais ou recorrentes (todo dia ou em dias da semana
+- **Alarmes** (tocam 5 vezes e param sozinhos; dá para parar antes): pontuais ou recorrentes (todo dia ou em dias da semana
   escolhidos), que tocam na casa.
 - **Timers** por voz/texto ("Cassandra, timer de 10 minutos").
 - **Agenda** (Google Calendar, iCloud, etc. via CalDAV), quando configurada:
