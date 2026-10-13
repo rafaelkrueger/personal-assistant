@@ -3133,6 +3133,10 @@ async function refresh(){
 // a mensagem vai direto ao agente (/api/personal-agents/ask), sem a Cassandra falar nada na casa.
 const AG_HINT={health:"Pergunte ao Pulse sobre exames, checkup, peso e alimentação…",finance:"Conte um gasto ou pergunte à Cifra como está o mês…",car:"Fale com o Torque sobre o carro: km, abastecimento, revisão…"};
 let agData=[],agSel="",agBusy=false,agLoadedAt=0;
+// Onde abrir a tela do agente: o endereço que a Cassandra usa é o dela (no Pi é 127.0.0.1); para quem está na página
+// vale o mesmo computador da página. De fora de casa (Netlify) não há como chegar na tela do agente: sem link.
+const AG_LAN=!/netlify[.]app$/.test(location.hostname);
+const agUrl=a=>a.base_url.replace(/127[.]0[.]0[.]1|localhost/,location.hostname);
 const agFace=(name,size,state)=>window.AgentPersona?AgentPersona.face(name,{size,state:state||""}):"";
 const agHead=(a,size)=>`<div class="ag-head">${agFace(a.name,size)}<div><b>${esc(a.title)}</b><small>${a.status==="online"?esc(a.tagline):"fora do ar"}</small></div><span class="ag-dot"></span></div>`;
 const agKpis=(a,max)=>a.highlights.length?`<div class="ag-kpis">${a.highlights.slice(0,max).map(h=>`<div class="ag-kpi ${h.tone}"><small>${esc(h.label)}</small><b>${esc(h.value)}</b></div>`).join("")}</div>`:"";
@@ -3142,7 +3146,7 @@ function renderAgents(){
   grid.innerHTML=agData.length?agData.map(a=>`<div class="ag-card${a.status==="online"?"":" off"}${a.name===agSel?" sel":""}" data-agent="${a.name}">
       ${agHead(a,44)}${agKpis(a,6)}${agAlerts(a,3)}
       ${a.status==="online"?"":`<div class="ag-alert">Não consegui falar com ${esc(a.title)} agora.</div>`}
-      <div class="ag-acts"><button class="btn btn-primary btn-sm" data-talk="${a.name}"${a.status==="online"?"":" disabled"}>Conversar</button><a class="btn btn-ghost btn-sm" href="${esc(a.base_url)}" target="_blank" rel="noopener">Abrir</a></div>
+      <div class="ag-acts"><button class="btn btn-primary btn-sm" data-talk="${a.name}"${a.status==="online"?"":" disabled"}>Conversar</button>${AG_LAN?`<a class="btn btn-ghost btn-sm" href="${esc(agUrl(a))}" target="_blank" rel="noopener">Abrir</a>`:""}</div>
     </div>`).join(""):'<div class="empty" style="padding:16px 0">Nenhum agente pessoal ligado. Ligue em Config. → Agentes.</div>';
   // no dashboard: só o que mais importa de cada um (o que pede atenção primeiro, depois dois números)
   const on=agData.filter(a=>a.status==="online");
@@ -3166,7 +3170,7 @@ async function agSelect(name){
   agSel=name;renderAgents();
   document.getElementById("agChatBox").style.display="";
   document.getElementById("agChatTitle").textContent="Conversa com "+a.title;
-  document.getElementById("agOpen").href=a.base_url;
+  document.getElementById("agOpen").href=agUrl(a);document.getElementById("agOpen").style.display=AG_LAN?"":"none";
   document.getElementById("agInput").placeholder=AG_HINT[name]||"Escreva para "+a.title+"…";
   const el=document.getElementById("agMessages");
   el.innerHTML='<div class="empty" style="padding:16px 0">Abrindo a conversa…</div>';
