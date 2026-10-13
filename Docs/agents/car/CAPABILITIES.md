@@ -40,10 +40,18 @@ vencer) são feitas por ele, exatas; cada resposta leva em conta todo esse conte
   caso de oficina.
 - **Dar a situação exata do carro** (km, alertas, próximo vencimento, custo do mês) na hora, sem passar pelo
   modelo de IA.
+- **Dizer o que a central do carro informou na última leitura OBD**: com um adaptador OBD-II (ELM327 por
+  Bluetooth) na porta de diagnóstico, o usuário toca em **Sincronizar** na aba Diagnóstico e o Torque guarda uma
+  leitura: códigos de falha gravados e pendentes, luz de injeção, tensão da bateria, temperatura do motor, nível
+  do tanque, distância rodada. Cada leitura entra num histórico. "Tem alguma falha gravada no carro?", "como
+  está a bateria?", "quanto tem no tanque?". Falha gravada, bateria fraca e motor quente viram alertas, e, depois
+  que o usuário informa o km uma vez num dia de leitura, o hodômetro passa a ser atualizado a cada sincronização.
 
 ## Não pode / não faz
-- **Não é mecânico e não vê o carro**: não diagnostica defeito com certeza, não lê o painel nem a central (sem
-  OBD), não sabe onde o carro está nem o nível real do tanque. Só enxerga o que foi registrado nele.
+- **Não é mecânico e não vê o carro ao vivo**: não diagnostica defeito com certeza e não sabe onde o carro está.
+  Da central ele só conhece a última leitura OBD (com a data dela), e **não consegue sincronizar por um pedido de
+  texto**: a leitura é feita pelo botão Sincronizar, com o carro ao alcance do Bluetooth do computador onde ele
+  roda e a ignição ligada. Não apaga códigos de falha.
 - **Não consulta a internet por conta própria**: a única pesquisa que ele pede (ao web-agent, pelo maestro) é a
   do plano de fábrica e da ficha técnica do modelo. Multas, débitos de IPVA, tabela FIPE, recall, preço de peça ou
   de combustível, endereço de oficina ou posto — isso é pedido direto para o **web-agent**.

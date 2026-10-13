@@ -141,7 +141,28 @@ carro.
 
 ### `DELETE /api/services/{id}` — apaga o registro; a "última vez" no plano não volta sozinha.
 
-## 6. Prazos
+## 6. Diagnóstico (leitura OBD)
+
+A leitura do carro por um adaptador OBD-II ELM327 Bluetooth LE (`app/obd.py`). O computador onde o Torque roda
+precisa de Bluetooth e do pacote `bleak`; o adaptador é achado pelo nome (ou fixado em `CAR_OBD_ADDRESS`), aceita
+uma conexão por vez e só responde com a ignição ligada. As leituras ficam em `data/obd.json` (até 1.000).
+
+| Método | Rota | O que faz |
+|---|---|---|
+| GET | `/api/obd` | `state` (`status` idle \| running \| done \| error, `step`, `error`), `latest` (a última leitura), `history` (as 60 mais recentes), `count`, `fields` (rótulo, unidade e casas de cada campo de `values`), `adapter`, `odometer` (`km`, `calibrated`, `reason`), `alerts` |
+| POST | `/api/obd/sync` | Começa uma leitura em segundo plano (uns 30 s) e devolve o `state`. `409` se já há uma em andamento |
+| DELETE | `/api/obd/{id}` | Apaga uma leitura do histórico |
+
+Uma leitura: `{id, at, date, engine_running, mil, dtc_count, dtcs: [{code, kind: stored | pending | permanent}],
+values: {battery_voltage, coolant_temp, fuel_level, fuel_liters, rpm, distance_since_clear, …}, vin, protocol, elm,
+supported, odometer_km}`. Só entram em `values` os dados que a central daquele carro informa.
+
+O que a última leitura acusa (falha gravada ou pendente, luz de injeção, bateria fraca, motor quente) entra em
+`alerts` do `GET /api/status`, e a leitura com o histórico vai no contexto do chat. Hodômetro: se a central não o
+informa, ele sai da distância desde a limpeza das falhas — calibrada pelo km que a pessoa informar num dia em que
+houve leitura — e cada sincronização seguinte grava a leitura do hodômetro com `source: "OBD"`.
+
+## 7. Prazos
 
 ### `GET /api/reminders`
 `{ "reminders": [ { "id", "name", "kind", "due_date", "amount", "yearly", "notes", "days_left", "status",
@@ -158,7 +179,7 @@ Sem `kind`, sai do nome; sem `yearly`, IPVA, licenciamento e seguro são anuais.
 **Body (opcional):** `{ "amount": 1900, "date": "2026-10-08" }` — marca como pago (sem `amount` vale o previsto). O
 que é anual tem o vencimento empurrado um ano; o resto sai da lista. O valor entra nos custos (`documents`).
 
-## 7. Conversa (é o que o maestro usa)
+## 8. Conversa (é o que o maestro usa)
 
 ### `POST /api/chat`
 **Body:** `{ "message": "troquei o óleo ontem com 48 mil km e abasteci 40 litros por 236", "source": "maestro" }`
@@ -180,7 +201,7 @@ modelo). Devolve os mesmos campos de registros e `text` com a confirmação. `40
 
 ### `GET /api/chat` → `{ "messages": [ { "role", "content", "source", "ts" } ] }` · `DELETE /api/chat`
 
-## 8. LLM (mesmo formato dos outros agentes)
+## 9. LLM (mesmo formato dos outros agentes)
 
 ### `GET /api/llm`
 `{ "llm_provider": "openai", "providers": ["openai", "deepseek"], "openai_model", "openai_api_key_set",
