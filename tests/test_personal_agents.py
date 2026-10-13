@@ -183,3 +183,15 @@ def test_overview_shows_the_main_numbers_of_each_agent(net, monkeypatch):
     assert pa.history("health") == [{"role": "user", "content": "oi"}, {"role": "assistant", "content": "olá"}]
     assert pa.history("car") == []
 
+
+
+def test_personal_subjects_force_the_agent_and_empty_promises_are_caught():
+    from skills.general_chat.skill import _PROMISE, _plain, personal_topic
+    names = ["health", "finance", "car", "web-agent"]
+    assert personal_topic("Qual a voltagem da bateria do meu carro?", names) == "car"
+    assert personal_topic("Como está minha saúde", names) == "health"
+    assert personal_topic("quanto eu gastei esse mês?", names) == "finance"
+    assert personal_topic("Qual a voltagem da bateria do meu carro?", ["health"]) is None  # Torque desligado
+    assert personal_topic("me conta uma curiosidade", names) is None
+    assert _PROMISE.search(_plain("Vou verificar as informações sobre a sua saúde. Um momento, por favor."))
+    assert not _PROMISE.search(_plain("Dois mais dois é igual a quatro."))

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import re
+import unicodedata
 from collections.abc import Callable, Iterator
 from datetime import datetime
 
@@ -36,8 +38,10 @@ _EXAMPLES = {
         "(ele usa um navegador de verdade, ja logado no WhatsApp Web e nos sites do usuario)"
     ),
     "health": (
-        "- \"como esta meu colesterol?\", \"o que meus exames dizem?\", \"meu exame de sangue melhorou?\", duvidas de "
-        "saude, dieta e metas -> health (ele ja tem os exames, o perfil e o historico de saude do usuario salvos)"
+        "- \"como esta minha saude?\", \"como esta meu colesterol?\", \"o que meus exames dizem?\", \"meu exame de "
+        "sangue melhorou?\", \"que exames eu preciso fazer?\", \"qual especialista devo marcar?\", \"o que eu como "
+        "hoje?\", \"qual minha meta de calorias?\", \"quanto eu peso?\", duvidas de saude, dieta e metas -> health (o "
+        "Pulse: ele ja tem os exames, o checkup, o plano de peso, o perfil e o historico de saude do usuario salvos)"
     ),
     "finance": (
         "- \"gastei 45 no mercado\", \"anota 30 de uber\", \"quanto gastei esse mes?\", \"estourei algum orcamento?\", "
@@ -47,12 +51,44 @@ _EXAMPLES = {
     "car": (
         "- \"como esta meu carro?\", \"o que esta para vencer no carro?\", \"quando e a proxima troca de oleo?\", "
         "\"o carro esta com 66 mil km\", \"abasteci 40 litros por 236 reais\", \"troquei o oleo ontem\", \"o IPVA vence "
-        "dia 15\", \"quanto meu carro faz por litro?\" -> car (o Torque: ele ja tem o carro do usuario, o plano de "
-        "manutencao, os abastecimentos e os prazos salvos, e anota o que ele contar)"
+        "dia 15\", \"quanto meu carro faz por litro?\", \"qual a voltagem da bateria do carro?\", \"tem alguma falha "
+        "no carro?\", \"quanto tem no tanque?\", \"qual a temperatura do motor?\" -> car (o Torque: ele ja tem o carro "
+        "do usuario, o plano de manutencao, os abastecimentos, os prazos e a ultima leitura feita na central do carro "
+        "— bateria, falhas, tanque, temperatura — salvos, e anota o que ele contar)"
     ),
     "ide": "- \"crie um site\", \"faz um app\", \"programa X\", \"arruma o codigo do projeto Y\", \"publica o site\" -> ide",
     "editor": "- \"corta esse video\", \"faz cortes do video do YouTube X\", \"posta no TikTok\", \"gera um video\" -> editor",
 }
+
+# Assuntos que são sempre de um agente pessoal: quando a frase bate num destes (e o agente está ligado), a
+# ferramenta é obrigatória. O gpt-4o-mini às vezes respondia de cabeça ("a maioria dos carros usa 12 volts") ou só
+# prometia ("vou verificar, um momento") e não chamava ninguém.
+_PERSONAL_TOPICS = {
+    "car": r"\bmeu carro\b|\b(do|no|o) carro\b|\bmeu veiculo\b|troca de oleo|\bipva\b|licenciamento|abasteci|"
+           r"hodometro|\bno tanque\b|\bmanutencao\b",
+    "health": r"minha saude|meus? exames?|meu colesterol|minha glicose|minha glicemia|minha pressao|meu checkup|"
+              r"minha dieta|meu peso|minhas? calorias?|\bo que (eu )?(devo|posso|vou) comer\b",
+    "finance": r"meus gastos|\b(eu )?gastei\b|minhas? dividas?|meu orcamento|minhas? financas|meu patrimonio|"
+               r"meus investimentos|minha fatura|\bquanto (eu )?devo\b",
+}
+# Resposta que só promete ver alguma coisa — sem a ferramenta, a pessoa fica esperando para sempre.
+_PROMISE = re.compile(
+    r"\b(vou|irei|deixa eu|deixe-me|estou|ja estou|ja vou) (verificar|verificando|checar|checando|consultar|consultando|"
+    r"conferir|conferindo|buscar|buscando|pesquisar|pesquisando|olhar|olhando|ver|vendo|procurar|procurando)\b|"
+    r"\bum (momento|instante|segundo|minuto)\b|\baguarde\b|\bja te (digo|conto|falo|respondo)\b")
+
+
+def _plain(text: str) -> str:
+    """Minúsculas e sem acento, para comparar com as listas acima."""
+    t = unicodedata.normalize("NFKD", (text or "").lower())
+    return "".join(c for c in t if not unicodedata.combining(c))
+
+
+def personal_topic(text: str, names: list[str]) -> str | None:
+    """O agente pessoal (dos ligados em `names`) de quem a frase claramente fala, ou None."""
+    plain = _plain(text)
+    return next((name for name, pattern in _PERSONAL_TOPICS.items() if name in names and re.search(pattern, plain)), None)
+
 
 _VOICE_RULES = (
     "REGRA ABSOLUTA DE IDIOMA: escreva EXCLUSIVAMENTE em portugues do Brasil (pt-BR). "
@@ -123,7 +159,10 @@ class GeneralChatSkill(Skill):
             f"ferramenta {_TOOL_NAME}. Agentes ligados agora:\n{agents_block}\n\n"
             "Quando o pedido (ou a pergunta \"voce consegue...?\") envolver algo que um agente faz, CHAME A "
             "FERRAMENTA em vez de responder. Nunca diga que nao tem acesso, que nao consegue, ou que o usuario "
-            "precisa enviar algo que o agente ja tem. Exemplos:\n"
+            "precisa enviar algo que o agente ja tem. Tudo o que for sobre a saude, o dinheiro ou o carro DO USUARIO "
+            "(os dados dele: exames, peso, gastos, bateria do carro, manutencao) so o agente pessoal sabe: nunca "
+            "responda isso com conhecimento geral. E nunca responda apenas que vai verificar: ou chame a ferramenta, "
+            "ou responda de fato. Exemplos:\n"
             f"{examples}\n"
             "Conversa normal, contas, curiosidades e o que voce ja sabe: responda direto, sem a ferramenta."
         ) + now_line
@@ -170,39 +209,58 @@ class GeneralChatSkill(Skill):
 
         # Uma chamada só: se o LLM responder em texto, a voz já sai frase a frase como antes; se ele escolher um
         # agente, a ferramenta chega no mesmo streaming.
-        stream = self.llm.create_completion(messages, temperature=0.5, stream=True, tools=self._tools(names))
-        call_name, call_args = None, ""
+        forced = {"type": "function", "function": {"name": _TOOL_NAME}}
+        topic = personal_topic(text, names)  # assunto de agente pessoal: a ferramenta é obrigatória
+        stream = self.llm.create_completion(messages, temperature=0.5, stream=True, tools=self._tools(names),
+                                            **({"tool_choice": forced} if topic else {}))
+        call_name, call_args, said = None, "", ""
         for chunk in stream:
             if not chunk.choices:
                 continue
             delta = chunk.choices[0].delta
             if delta.content:
+                said += delta.content
                 yield delta.content
             for tc in delta.tool_calls or []:
                 if tc.function and tc.function.name:
                     call_name = tc.function.name
                 if tc.function and tc.function.arguments:
                     call_args += tc.function.arguments
+        if call_name != _TOOL_NAME and _PROMISE.search(_plain(said)):
+            # Prometeu ver e não chamou ninguém: pede de novo, agora obrigando a ferramenta. O que ela já disse
+            # ("vou verificar…") serviu de aviso, então o agente é acionado sem repetir a frase.
+            print(f"[AGENTES] promessa sem ferramenta ({said[:80]!r}): forçando", flush=True)
+            retry = self.llm.create_completion(messages, temperature=0, tools=self._tools(names), tool_choice=forced)
+            calls = retry.choices[0].message.tool_calls or []
+            if calls:
+                call_name, call_args = calls[0].function.name, calls[0].function.arguments or ""
+                yield " "
+                yield from self._delegate(text, call_args, names, default_target=topic, announce_notice=False)
+                return
         if call_name == _TOOL_NAME:
-            yield from self._delegate(text, call_args, names)
+            yield from self._delegate(text, call_args, names, default_target=topic)
 
     # ── Pedir a outro agente ────────────────────────────────────────────────────
 
-    def _delegate(self, user_text: str, raw_args: str, names: list[str]) -> Iterator[str]:
+    def _delegate(self, user_text: str, raw_args: str, names: list[str], default_target: str | None = None,
+                  announce_notice: bool = True) -> Iterator[str]:
         try:
             args = json.loads(raw_args or "{}")
         except json.JSONDecodeError:
             args = {}
         target = str(args.get("agente") or "").strip()
+        if target not in names and default_target in names:
+            target = default_target  # a frase já dizia de quem era o assunto
         task = str(args.get("tarefa") or "").strip() or user_text
         if target not in names:
             yield "Não consegui decidir qual agente faz isso. Pode pedir de outro jeito?"
             return
-        notice = str(args.get("aviso") or "").strip() or (
-            notices.searching() if target == "web-agent" else notices.working())
-        if notice[-1] not in ".!?":
-            notice += "."
-        yield notices.Notice(notice + " ")  # mensagem própria, dita antes de começar (ver assistant._notices)
+        if announce_notice:
+            notice = str(args.get("aviso") or "").strip() or (
+                notices.searching() if target == "web-agent" else notices.working())
+            if notice[-1] not in ".!?":
+                notice += "."
+            yield notices.Notice(notice + " ")  # mensagem própria, dita antes de começar (ver assistant._notices)
         print(f"[AGENTES] {target} ← {task[:160]}", flush=True)
 
         with sounds.waiting():  # som baixinho de "trabalhando" enquanto o agente faz a tarefa
