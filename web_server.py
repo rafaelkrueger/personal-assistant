@@ -350,6 +350,35 @@ HTML_PAGE = """<!doctype html>
     .dash-cols{display:grid;grid-template-columns:1fr;gap:14px;margin-bottom:20px}
     @media(min-width:900px){.dash-cols{grid-template-columns:1fr 1fr}}
     .dash-section{background:var(--glass);border:1px solid var(--border);border-radius:var(--rl);padding:18px;backdrop-filter:blur(12px)}
+    /* Agentes pessoais (Pulse, Cifra, Torque): o cartão de cada um, com os números do momento e o que pede atenção.
+       O mesmo cartão, menor, aparece no dashboard. */
+    .ag-grid{display:grid;grid-template-columns:1fr;gap:14px;margin-bottom:16px}
+    @media(min-width:900px){.ag-grid{grid-template-columns:repeat(3,1fr)}}
+    .ag-card{display:flex;flex-direction:column;gap:12px;min-width:0;padding:16px;background:var(--glass);border:1px solid var(--border);border-radius:var(--rl);backdrop-filter:blur(12px);cursor:pointer;transition:border-color .15s,box-shadow .15s}
+    .ag-card:hover{border-color:var(--border2)}
+    .ag-card.sel{border-color:rgba(251,146,60,.5);box-shadow:0 0 0 3px rgba(251,146,60,.08)}
+    .ag-card.off{opacity:.6}
+    .ag-head{display:flex;align-items:center;gap:12px;min-width:0}
+    .ag-head>div{min-width:0}
+    .ag-head b{display:block;font-size:15px}
+    .ag-head small{display:block;color:var(--text3);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .ag-dot{flex:none;width:8px;height:8px;margin-left:auto;border-radius:50%;background:#34d399}
+    .ag-card.off .ag-dot{background:var(--text3)}
+    .ag-kpis{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .ag-kpi{min-width:0;padding:9px 11px;border-radius:12px;background:var(--glass2);border:1px solid var(--border)}
+    .ag-kpi small{display:block;font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .ag-kpi b{display:block;font-size:13.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .ag-kpi.ok b{color:#34d399}.ag-kpi.warn b{color:#fbbf24}.ag-kpi.bad b{color:#f87171}
+    .ag-alert{display:flex;gap:8px;align-items:baseline;font-size:12.5px;color:var(--text2)}
+    .ag-alert::before{content:"";flex:none;width:7px;height:7px;border-radius:50%;background:#fbbf24}
+    .ag-alert.bad::before{background:#f87171}
+    .ag-acts{display:flex;gap:8px;margin-top:auto}
+    .ag-acts .btn{flex:1;justify-content:center;text-decoration:none}
+    .ag-dash{display:grid;grid-template-columns:1fr;gap:10px}
+    @media(min-width:900px){.ag-dash{grid-template-columns:repeat(3,1fr)}}
+    .ag-mini{display:flex;flex-direction:column;gap:9px;min-width:0;padding:12px;border-radius:14px;background:var(--glass2);border:1px solid var(--border);cursor:pointer}
+    .ag-mini:hover{border-color:var(--border2)}
+    .ag-chat .messages{flex:none;height:44vh;min-height:200px;margin-top:12px}
     .dash-section-title{font-size:10.5px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.09em;margin-bottom:14px}
     .mini-msg{padding:9px 0;border-bottom:1px solid var(--border);font-size:13px}
     .mini-msg:last-child{border-bottom:none}
@@ -832,6 +861,10 @@ HTML_PAGE = """<!doctype html>
           <div class="dash-section-title" style="display:flex;justify-content:space-between;align-items:center"><span>Hábitos de hoje</span><span id="dashHabitsCount" style="color:var(--brand2);cursor:pointer" data-goto="habits"></span></div>
           <div id="dashHabits"></div>
         </div>
+        <div class="dash-section" id="dashAgentsBox" style="margin-bottom:14px;display:none">
+          <div class="dash-section-title" style="display:flex;justify-content:space-between;align-items:center"><span>Seus agentes</span><span id="dashAgentsAll" style="color:var(--brand2);cursor:pointer">ver e conversar →</span></div>
+          <div class="ag-dash" id="dashAgents"></div>
+        </div>
         <div class="dash-cols">
           <div class="dash-section">
             <div class="dash-section-title">Últimas mensagens</div>
@@ -893,6 +926,19 @@ HTML_PAGE = """<!doctype html>
           <div class="chat-bar">
             <textarea id="msgInput" rows="1" placeholder="Fale com a Cassandra…" enterkeyhint="send" autocomplete="off"></textarea>
             <button class="chat-send" id="sendBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ AGENTES ══ -->
+      <div class="tab-panel hidden" id="tab-agents">
+        <div class="ag-grid" id="agGrid"><div class="empty" style="padding:16px 0">Procurando os seus agentes…</div></div>
+        <div class="dash-section ag-chat" id="agChatBox" style="display:none">
+          <div class="dash-section-title" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><span id="agChatTitle"></span><a id="agOpen" target="_blank" rel="noopener" style="color:var(--brand2);text-decoration:none;white-space:nowrap">abrir a tela ↗</a></div>
+          <div class="messages" id="agMessages"></div>
+          <div class="chat-bar">
+            <textarea id="agInput" rows="1" enterkeyhint="send" autocomplete="off"></textarea>
+            <button class="chat-send" id="agSend" aria-label="Enviar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
           </div>
         </div>
       </div>
@@ -1795,6 +1841,7 @@ const IC = {
   settings: `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>`,
   habits:   `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14.5 17.5l2.2 2.2 4-4.4"/></svg>`,
   costs:    `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>`,
+  agents:   `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0113 0"/><circle cx="17.5" cy="9" r="2.5"/><path d="M17 14.5a5 5 0 014.5 5"/></svg>`,
   trash:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>`,
   check:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`,
   undo:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 00-4-4H4"/></svg>`,
@@ -1806,6 +1853,7 @@ const IC = {
 const ALL_TABS = [
   {id:"dashboard", label:"Dashboard",  group:""},
   {id:"chat",      label:"Chat",       group:""},
+  {id:"agents",    label:"Agentes",    group:""},
   {id:"music",     label:"Música",     group:"Casa"},
   {id:"devices",   label:"Aparelhos",  group:"Casa"},
   {id:"shopping",  label:"Compras",    group:"Organização"},
@@ -1820,7 +1868,7 @@ const ALL_TABS = [
 ];
 let currentTab = "dashboard";
 const PAGE_TITLES = {
-  dashboard:"Dashboard",chat:"Chat",music:"Música",devices:"Aparelhos",mic:"Microfone",shopping:"Compras",
+  dashboard:"Dashboard",chat:"Chat",agents:"Agentes",music:"Música",devices:"Aparelhos",mic:"Microfone",shopping:"Compras",
   todos:"Tarefas",habits:"Hábitos",alarms:"Alarmes",routines:"Rotinas",agenda:"Agenda",settings:"Configurações",costs:"Gastos",
 };
 const DAY_NAMES = ["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"];
@@ -1917,6 +1965,7 @@ function gotoTab(tab){
   if(tab==="alarms") renderAlmCalendar();
   if(tab==="costs") loadCosts();
   if(tab==="habits") loadHabits(true);
+  if(tab==="agents") agOpen();
 }
 
 // ── Hábitos ── (as contas vêm prontas de /api/habits; aqui é só desenhar e registrar)
@@ -3075,8 +3124,90 @@ async function refresh(){
     loadRoutines();
     loadAgenda();
     if(currentTab==="dashboard"||currentTab==="habits") loadHabits();
+    if((currentTab==="dashboard"||currentTab==="agents")&&Date.now()-agLoadedAt>60000) loadAgents();
   }catch(e){console.error("Refresh:",e);}
 }
+
+// ── Agentes pessoais (Pulse, Cifra, Torque) ──
+// A Cassandra lê o principal de cada um (/api/personal-agents/overview) e deixa conversar com eles daqui mesmo:
+// a mensagem vai direto ao agente (/api/personal-agents/ask), sem a Cassandra falar nada na casa.
+const AG_HINT={health:"Pergunte ao Pulse sobre exames, checkup, peso e alimentação…",finance:"Conte um gasto ou pergunte à Cifra como está o mês…",car:"Fale com o Torque sobre o carro: km, abastecimento, revisão…"};
+let agData=[],agSel="",agBusy=false,agLoadedAt=0;
+const agFace=(name,size,state)=>window.AgentPersona?AgentPersona.face(name,{size,state:state||""}):"";
+const agHead=(a,size)=>`<div class="ag-head">${agFace(a.name,size)}<div><b>${esc(a.title)}</b><small>${a.status==="online"?esc(a.tagline):"fora do ar"}</small></div><span class="ag-dot"></span></div>`;
+const agKpis=(a,max)=>a.highlights.length?`<div class="ag-kpis">${a.highlights.slice(0,max).map(h=>`<div class="ag-kpi ${h.tone}"><small>${esc(h.label)}</small><b>${esc(h.value)}</b></div>`).join("")}</div>`:"";
+const agAlerts=(a,max)=>a.alerts.slice(0,max).map(x=>`<div class="ag-alert ${x.tone}">${esc(x.text)}</div>`).join("");
+function renderAgents(){
+  const grid=document.getElementById("agGrid");
+  grid.innerHTML=agData.length?agData.map(a=>`<div class="ag-card${a.status==="online"?"":" off"}${a.name===agSel?" sel":""}" data-agent="${a.name}">
+      ${agHead(a,44)}${agKpis(a,6)}${agAlerts(a,3)}
+      ${a.status==="online"?"":`<div class="ag-alert">Não consegui falar com ${esc(a.title)} agora.</div>`}
+      <div class="ag-acts"><button class="btn btn-primary btn-sm" data-talk="${a.name}"${a.status==="online"?"":" disabled"}>Conversar</button><a class="btn btn-ghost btn-sm" href="${esc(a.base_url)}" target="_blank" rel="noopener">Abrir</a></div>
+    </div>`).join(""):'<div class="empty" style="padding:16px 0">Nenhum agente pessoal ligado. Ligue em Config. → Agentes.</div>';
+  // no dashboard: só o que mais importa de cada um (o que pede atenção primeiro, depois dois números)
+  const on=agData.filter(a=>a.status==="online");
+  document.getElementById("dashAgentsBox").style.display=on.length?"":"none";
+  document.getElementById("dashAgents").innerHTML=on.map(a=>`<div class="ag-mini" data-agent="${a.name}">${agHead(a,34)}${agAlerts(a,2)}${agKpis(a,2)}</div>`).join("");
+  if(window.AgentPersona) AgentPersona.mount();
+}
+async function loadAgents(fresh){
+  try{
+    const d=await api("/api/personal-agents/overview"+(fresh?"?fresh=1":""));
+    agData=d.agents||[];agLoadedAt=Date.now();renderAgents();
+  }catch(e){console.error("Agentes:",e);}
+}
+function agBubble(role,text,name){
+  const body=`<div class="bubble">${esc(text)}</div>`;
+  return role==="assistant"?`<div class="msg assistant">${agFace(name,30)}<div class="msg-col">${body}</div></div>`:`<div class="msg ${role}">${body}</div>`;
+}
+function agScroll(){const el=document.getElementById("agMessages");el.scrollTop=el.scrollHeight;}
+async function agSelect(name){
+  const a=agData.find(x=>x.name===name);if(!a) return;
+  agSel=name;renderAgents();
+  document.getElementById("agChatBox").style.display="";
+  document.getElementById("agChatTitle").textContent="Conversa com "+a.title;
+  document.getElementById("agOpen").href=a.base_url;
+  document.getElementById("agInput").placeholder=AG_HINT[name]||"Escreva para "+a.title+"…";
+  const el=document.getElementById("agMessages");
+  el.innerHTML='<div class="empty" style="padding:16px 0">Abrindo a conversa…</div>';
+  try{
+    const d=await api("/api/personal-agents/"+name+"/chat");
+    if(agSel!==name) return;
+    el.innerHTML=d.messages.length?d.messages.map(m=>agBubble(m.role,m.content,name)).join(""):`<div class="empty" style="padding:16px 0">Nenhuma conversa com ${esc(a.title)} ainda. Escreva abaixo.</div>`;
+  }catch(e){el.innerHTML=agBubble("system",e.message,name);}
+  agScroll();
+}
+async function agOpen(){
+  await loadAgents(true);
+  if(!agSel){const first=agData.find(a=>a.status==="online");if(first) agSelect(first.name);}
+}
+async function agSend(){
+  const input=document.getElementById("agInput"),text=input.value.trim(),name=agSel;
+  if(!text||!name||agBusy) return;
+  input.value="";agBusy=true;
+  const el=document.getElementById("agMessages");
+  if(el.querySelector(".empty")) el.innerHTML="";
+  el.insertAdjacentHTML("beforeend",agBubble("user",text,name)+`<div class="msg assistant" id="agTyping">${agFace(name,30,"is-working")}<div class="msg-col"><div class="bubble">…</div></div></div>`);
+  agScroll();
+  let reply="",failed=false;
+  try{reply=(await api("/api/personal-agents/ask","POST",{target:name,message:text})).result||"";}
+  catch(e){failed=true;reply=isGatewayTimeout(e)?"A resposta demorou mais do que a conexão de fora de casa aguenta. Ela deve aparecer na conversa em instantes: toque no agente de novo para recarregar.":e.message;}
+  document.getElementById("agTyping")?.remove();
+  if(agSel===name){el.insertAdjacentHTML("beforeend",agBubble(failed?"system":"assistant",reply||"(sem resposta)",name));agScroll();}
+  agBusy=false;
+  loadAgents(true);  // a conversa pode ter mudado os números do agente
+}
+document.getElementById("agGrid").addEventListener("click",e=>{
+  if(e.target.closest("a")) return;
+  const card=e.target.closest("[data-agent]");if(card) agSelect(card.dataset.agent);
+});
+document.getElementById("dashAgents").addEventListener("click",e=>{
+  const card=e.target.closest("[data-agent]");if(!card) return;
+  gotoTab("agents");agSelect(card.dataset.agent);
+});
+document.getElementById("dashAgentsAll").addEventListener("click",()=>gotoTab("agents"));
+document.getElementById("agSend").addEventListener("click",agSend);
+document.getElementById("agInput").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();agSend();}});
 
 // ── Chat actions ──
 async function sendMsg(){
@@ -4194,6 +4325,24 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
 
                 self._send_json({"agents": [{k: v for k, v in a.items() if k != "description"}
                                             for a in personal_agents.catalog(fresh=True)]})
+                return
+            if parsed.path == "/api/personal-agents/overview":
+                # O principal de cada agente pessoal (números do momento e o que pede atenção), para a aba Agentes
+                # e para o dashboard. Só os agentes com o acesso ligado.
+                from cassandra import personal_agents  # noqa: PLC0415
+                from cassandra.agents_bridge import bridge  # noqa: PLC0415
+
+                fresh = parse_qs(parsed.query).get("fresh", [""])[0] == "1"
+                self._send_json({"agents": [a for a in personal_agents.overview(fresh) if bridge.allowed(a["name"])]})
+                return
+            if parsed.path.startswith("/api/personal-agents/") and parsed.path.endswith("/chat"):
+                from cassandra import personal_agents  # noqa: PLC0415
+
+                name = parsed.path.split("/")[3]
+                if not personal_agents.is_personal(name):
+                    self._send_json({"error": "Agente pessoal desconhecido."}, status=HTTPStatus.NOT_FOUND)
+                    return
+                self._send_json({"name": name, "messages": personal_agents.history(name)})
                 return
             if parsed.path.startswith("/api/personal-agents/") and parsed.path.endswith("/docs"):
                 from cassandra import personal_agents  # noqa: PLC0415

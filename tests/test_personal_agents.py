@@ -144,3 +144,42 @@ def test_slow_personal_agent_answers_later_instead_of_blocking_the_talk(net, mon
             break
         time.sleep(0.05)
     assert late == [("health", True, "resultado demorado")]
+
+
+def test_overview_shows_the_main_numbers_of_each_agent(net, monkeypatch):
+    """Os destaques que a aba Agentes e o dashboard mostram, lidos das rotas de leitura de cada agente."""
+    monkeypatch.setattr(pa, "_overview", None)
+    net["up"].discard("http://pc:8015")  # o Torque está fora do ar
+    net["reply"].update({
+        "/api/checkup": (200, {"counts": {"overdue": 1, "soon": 0}, "progress": {"done": 8, "total": 14},
+                               "suggestions": {"items": [{"name": "Consulta com hematologista"}]},
+                               "items": [{"name": "Dentista", "status": "overdue"}],
+                               "next": {"name": "Hemograma completo", "due_date": "2027-09-29"}}),
+        "/api/weight": (200, {"ready": True, "calories": 2830, "today": {"kcal": 2500, "hit": True},
+                              "streak": {"current": 3}}),
+        "/api/summary": (200, {"label": "outubro/2026", "balance": -120.5, "income": 5000, "expenses": 5120.5}),
+        "/api/debts": (200, {"summary": {"count": 1, "total": 3200, "monthly": 400}}),
+        "/api/chat": (200, {"messages": [{"role": "user", "content": "oi"}, {"role": "assistant", "content": "olá"},
+                                         {"role": "assistant", "content": " "}]}),
+    })
+    health, finance, car = pa.overview()
+    values = {h["label"]: (h["value"], h["tone"]) for h in health["highlights"]}
+    assert values["Para fazer agora"] == ("2", "warn") and values["Checkup em dia"] == ("8 de 14", "")
+    assert values["Próximo exame"][0] == "Hemograma completo · 29/09/2027"
+    assert values["Calorias hoje"] == ("2500 de 2830 kcal", "ok") and values["Sequência"][0] == "3 dia(s)"
+    assert [a["text"] for a in health["alerts"]] == ["Consulta com hematologista", "Dentista (atrasado)"]
+    money = {h["label"]: (h["value"], h["tone"]) for h in finance["highlights"]}
+    assert money["Saldo de outubro/2026"] == ("R$ -120,50", "bad") and money["Dívidas"] == ("R$ 3.200,00", "warn")
+    assert finance["alerts"] == [{"text": "O mês está no vermelho", "tone": "bad"}]
+    assert car["status"] == "offline" and car["highlights"] == [] and car["title"] == "Torque"
+
+    # a leitura fica guardada por um tempo; falar com um agente joga fora (os números podem ter mudado)
+    before = len(net["calls"])
+    pa.overview()
+    assert len(net["calls"]) == before
+    pa.ask("finance", "gastei 50 no mercado")
+    pa.overview()
+    assert len(net["calls"]) > before + 1
+    assert pa.history("health") == [{"role": "user", "content": "oi"}, {"role": "assistant", "content": "olá"}]
+    assert pa.history("car") == []
+

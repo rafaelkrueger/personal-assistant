@@ -8,6 +8,9 @@ moram no Raspberry Pi) e a conversa não depende de dois saltos.
 
 Os outros agentes (web-agent, IDE, editor) continuam sendo pedidos ao Maestro — ver agents_bridge.py.
 
+Além de conversar, a Cassandra mostra na interface dela o principal de cada um ("destaques": o que pede atenção e
+os números do momento), lido das rotas de leitura do próprio agente — ver overview().
+
 Onde cada um está (variáveis de ambiente; várias URLs separadas por vírgula são tentadas em ordem):
   HEALTH_AGENT_URL    padrão http://127.0.0.1:8012  (Pulse, no mesmo Pi)
   FINANCE_AGENT_URL   padrão http://127.0.0.1:8014  (Cifra, no mesmo Pi)
@@ -50,10 +53,13 @@ AGENTS: dict[str, dict[str, Any]] = {
 SOURCE = "cassandra"   # como a Cassandra se identifica nos agentes (aparece no histórico deles)
 PROBE_TIMEOUT = 2.5
 PROBE_TTL = 20.0       # segundos em que a URL que respondeu continua valendo sem conferir de novo
+READ_TIMEOUT = 6.0     # leitura dos destaques: curta, para um agente lento não segurar a tela da Cassandra
+OVERVIEW_TTL = 30.0    # segundos em que os destaques já lidos servem de novo (o painel pede a cada atualização)
 TIMEOUT = float(os.getenv("PERSONAL_AGENT_TIMEOUT", "180"))
 
 _lock = threading.Lock()
 _alive: dict[str, tuple[float, str | None]] = {}  # name -> (quando conferiu, URL que respondeu ou None)
+_overview: tuple[float, list[dict[str, Any]]] | None = None  # (quando leu, os destaques de todos)
 
 
 def is_personal(name: str) -> bool:
@@ -161,4 +167,143 @@ def ask(name: str, task: str, parameters: dict | None = None, source: str = SOUR
     if status != 200:
         detail = (data.get("detail") or data.get("error")) if isinstance(data, dict) else None
         return False, str(detail or f"HTTP {status}")[:300]
+    global _overview
+    with _lock:
+        _overview = None  # a conversa pode ter mudado os números do agente: os destaques são lidos de novo
     return True, str((data.get(field) if isinstance(data, dict) else "") or "").strip()
+
+
+# ── destaques: o principal de cada agente, para a tela da Cassandra ───────────
+
+def _brl(value: Any) -> str:
+    try:
+        text = f"{float(value or 0):,.2f}"
+    except (TypeError, ValueError):
+        return "—"
+    return "R$ " + text.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _day(iso: Any) -> str:
+    text = str(iso or "")
+    return f"{text[8:10]}/{text[5:7]}/{text[:4]}" if re.fullmatch(r"\d{4}-\d{2}-\d{2}.*", text) else text
+
+
+def _get(url: str, path: str) -> dict[str, Any]:
+    status, data = _http("GET", url + path, timeout=READ_TIMEOUT)
+    return data if status == 200 and isinstance(data, dict) else {}
+
+
+def _item(label: str, value: Any, tone: str = "") -> dict[str, str]:
+    """Um número do agente. tone: "" (neutro), "ok", "warn" ou "bad" — a cor com que a Cassandra mostra."""
+    return {"label": label, "value": str(value), "tone": tone}
+
+
+def _health_highlights(url: str) -> tuple[list[dict], list[dict]]:
+    checkup, weight = _get(url, "/api/checkup"), _get(url, "/api/weight")
+    items, alerts = [], []
+    if checkup:
+        counts, tips = checkup.get("counts") or {}, (checkup.get("suggestions") or {}).get("items") or []
+        todo = len(tips) + (counts.get("overdue") or 0) + (counts.get("soon") or 0)
+        progress = checkup.get("progress") or {}
+        items.append(_item("Para fazer agora", todo, "warn" if todo else "ok"))
+        items.append(_item("Checkup em dia", f"{progress.get('done', 0)} de {progress.get('total', 0)}"))
+        alerts += [{"text": tip.get("name") or "", "tone": "warn"} for tip in tips[:2]]
+        alerts += [{"text": i["name"] + " (atrasado)", "tone": "bad"}
+                   for i in checkup.get("items") or [] if i.get("status") == "overdue"][:2]
+        upcoming = checkup.get("next")
+        if upcoming:
+            items.append(_item("Próximo exame", f"{upcoming.get('name')} · {_day(upcoming.get('due_date'))}"))
+    if weight.get("ready"):
+        today, streak = weight.get("today") or {}, weight.get("streak") or {}
+        items.append(_item("Calorias hoje", f"{today.get('kcal', 0)} de {weight.get('calories')} kcal",
+                           "ok" if today.get("hit") else ""))
+        if streak.get("current"):
+            items.append(_item("Sequência", f"{streak['current']} dia(s)", "ok"))
+    return items, alerts
+
+
+def _finance_highlights(url: str) -> tuple[list[dict], list[dict]]:
+    summary, debts = _get(url, "/api/summary"), (_get(url, "/api/debts").get("summary") or {})
+    items, alerts = [], []
+    if summary:
+        balance = summary.get("balance") or 0
+        items.append(_item(f"Saldo de {summary.get('label') or 'este mês'}", _brl(balance), "bad" if balance < 0 else "ok"))
+        items.append(_item("Entrou", _brl(summary.get("income"))))
+        items.append(_item("Saiu", _brl(summary.get("expenses"))))
+        if balance < 0:
+            alerts.append({"text": "O mês está no vermelho", "tone": "bad"})
+    if debts.get("count"):
+        items.append(_item("Dívidas", _brl(debts.get("total")), "warn"))
+        if debts.get("monthly"):
+            items.append(_item("Parcelas por mês", _brl(debts.get("monthly"))))
+    return items, alerts
+
+
+def _car_highlights(url: str) -> tuple[list[dict], list[dict]]:
+    status = _get(url, "/api/status")
+    items, alerts = [], []
+    if status:
+        miles, counts = status.get("mileage") or {}, status.get("plan_counts") or {}
+        urgent = [a for a in status.get("alerts") or [] if a.get("level") in ("overdue", "soon")]
+        late = any(a.get("level") == "overdue" for a in urgent)
+        if miles.get("km") is not None:
+            items.append(_item("Hodômetro", f"{int(miles.get('estimated_km') or miles['km']):,} km".replace(",", ".")))
+        items.append(_item("Pede atenção", len(urgent), "bad" if late else "warn" if urgent else "ok"))
+        items.append(_item("Manutenção em dia", f"{counts.get('ok', 0)} de {sum(counts.values()) if counts else 0}"))
+        month = ((status.get("costs") or {}).get("this_month") or {}).get("total")
+        if month:
+            items.append(_item("Gasto neste mês", _brl(month)))
+        alerts += [{"text": a.get("title") or "", "tone": "bad" if a.get("level") == "overdue" else "warn"} for a in urgent[:3]]
+    return items, alerts
+
+
+_HIGHLIGHTS = {"health": _health_highlights, "finance": _finance_highlights, "car": _car_highlights}
+
+
+def highlights(name: str) -> dict[str, Any]:
+    """O agente como a tela da Cassandra o mostra: se está no ar, onde abrir, os números do momento e o que pede
+    atenção. Nunca levanta: agente fora do ar ou resposta estranha vira lista vazia."""
+    capabilities = docs(name)["capabilities"]
+    url = base_url(name)
+    out = {"name": name, "title": AGENTS[name]["title"], "tagline": tagline(capabilities),
+           "status": "online" if url else "offline", "base_url": url or urls(name)[0], "highlights": [], "alerts": []}
+    if url:
+        try:
+            items, alerts = _HIGHLIGHTS[name](url)
+            out["highlights"], out["alerts"] = items, [a for a in alerts if a.get("text")]
+        except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError) as exc:
+            out["error"] = str(exc)[:200]
+    return out
+
+
+def overview(fresh: bool = False) -> list[dict[str, Any]]:
+    """Os destaques de todos os agentes pessoais, lidos em paralelo (e guardados por OVERVIEW_TTL)."""
+    global _overview
+    with _lock:
+        cached = _overview
+    if cached and not fresh and time.monotonic() - cached[0] < OVERVIEW_TTL:
+        return cached[1]
+    results: dict[str, dict[str, Any]] = {}
+    threads = [threading.Thread(target=lambda n=name: results.__setitem__(n, highlights(n)), daemon=True) for name in AGENTS]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(READ_TIMEOUT * 3)
+    data = [results.get(name) or {"name": name, "title": AGENTS[name]["title"], "tagline": "", "status": "offline",
+                                  "base_url": urls(name)[0], "highlights": [], "alerts": []} for name in AGENTS]
+    with _lock:
+        _overview = (time.monotonic(), data)
+    return data
+
+
+def history(name: str, limit: int = 40) -> list[dict[str, str]]:
+    """As últimas mensagens da conversa do próprio agente (a mesma que aparece na tela dele)."""
+    url = base_url(name)
+    if not url:
+        return []
+    try:
+        messages = _get(url, "/api/chat").get("messages") or []
+    except (urllib.error.URLError, OSError, ValueError):
+        return []
+    return [{"role": "assistant" if m.get("role") == "assistant" else "user", "content": str(m.get("content") or "")}
+            for m in messages[-limit:] if isinstance(m, dict) and str(m.get("content") or "").strip()]
