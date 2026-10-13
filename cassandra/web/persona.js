@@ -10,6 +10,7 @@
  *   AgentPersona.face("web-agent", { size: 40, state: "is-working" })  -> HTML
  *   AgentPersona.meta("ide")  -> { title: "Kode", role: "IDE", face, c, c2, ink, rgb }
  *   AgentPersona.mount(root)  -> (re)monta os [data-agent-face] dentro de root
+ *   <html data-agent="health">  -> o favicon da aba vira o rosto desse agente
  *
  * state: "" (parado), "is-working" (trabalhando: brilha, balança, olha em volta),
  * "is-off" (desligado: cinza, olhos fechados) ou "is-sad" (erro).
@@ -92,23 +93,39 @@
       <ellipse cx="18.5" cy="41.5" rx="3.6" ry="2.2" fill="#ff5d7a" opacity=".45"/><ellipse cx="45.5" cy="41.5" rx="3.6" ry="2.2" fill="#ff5d7a" opacity=".45"/>
       <path d="M28.5 44 Q32 47.8 35.5 44" fill="none" stroke="#4a1a06" stroke-width="2.2" stroke-linecap="round"/>`,
     health: `
-      <path class="f-body" fill="url(#ap-skin-health)" d="M32 57 C15 45 7 35.5 7 25 C7 15.5 13.8 9 22 9 C26.6 9 30 11.4 32 14.5 C34 11.4 37.4 9 42 9 C50.2 9 57 15.5 57 25 C57 35.5 49 45 32 57 Z"/>
-      <g class="f-eyes">
-        <g class="f-eye"><circle cx="23" cy="26" r="3.7" fill="#062a3a"/><circle cx="24.2" cy="24.8" r="1.2" fill="#fff"/></g>
-        <g class="f-eye"><circle cx="41" cy="26" r="3.7" fill="#062a3a"/><circle cx="42.2" cy="24.8" r="1.2" fill="#fff"/></g>
+      <ellipse cx="32" cy="60.6" rx="12" ry="2" fill="#000" opacity=".22"/>
+      <path d="M22.4 3.6 H41.6 L43.8 16 H20.2 Z" fill="#2f7fe0"/>
+      <path d="M24.2 6.4 H39.8" stroke="#bfe0ff" stroke-width="1.3" stroke-linecap="round" opacity=".7"/>
+      <path d="M20.2 48 H43.8 L41.6 60.4 H22.4 Z" fill="#17a67c"/>
+      <circle cx="32" cy="55.6" r="1.3" fill="#0b3b2d" opacity=".7"/>
+      <g class="f-watch">
+        <rect x="52.4" y="26.6" width="4.2" height="8.8" rx="2.1" fill="#d6ecff"/>
+        <rect class="f-body" x="10.4" y="12.6" width="43.2" height="38.8" rx="12.5" fill="url(#ap-skin-health)"/>
+        <path d="M22.9 12.6 H41.1 A12.5 12.5 0 0 1 52.4 19.6 H11.6 A12.5 12.5 0 0 1 22.9 12.6 Z" fill="#fff" opacity=".38"/>
+        <rect x="14.6" y="16.8" width="34.8" height="30.4" rx="9" fill="#06121f"/>
+        <rect x="14.6" y="16.8" width="34.8" height="30.4" rx="9" fill="none" stroke="#bfe6ff" stroke-width=".9" opacity=".55"/>
+        <path d="M18.6 24.4 A7 7 0 0 1 24.4 19.6" fill="none" stroke="#fff" stroke-width="1.4" stroke-linecap="round" opacity=".28"/>
+        <g class="f-eyes"><rect class="f-eye" x="22.6" y="22.4" width="5.4" height="7.6" rx="2.7" fill="#8ff0d0"/><rect class="f-eye" x="36" y="22.4" width="5.4" height="7.6" rx="2.7" fill="#8ff0d0"/></g>
+        <path class="f-ecg" d="M18.6 38.6 H24.6 L27.2 34.4 L31 43 L34.2 36 L36.2 38.6 H45.4" pathLength="100" fill="none" stroke="#5eead4" stroke-width="2.3" stroke-linejoin="round" stroke-linecap="round"/>
       </g>
-      <path class="f-ecg" d="M14 36 H22.5 L25.5 31 L30 42 L33.5 34 L35.5 37 H50" pathLength="100" fill="none" stroke="#062a3a" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
-      <g class="f-badge"><circle cx="51" cy="11" r="6" fill="#fff"/><path d="M51 7.8 V14.2 M47.8 11 H54.2" stroke="#ef4444" stroke-width="2.4" stroke-linecap="round"/></g>`,
+      <g class="f-spark"><circle cx="53" cy="9" r="5.4" fill="#fff"/><path d="M53 6.2 V11.8 M50.2 9 H55.8" stroke="#ff5d6c" stroke-width="2.3" stroke-linecap="round"/></g>`,
     finance: `
-      <ellipse cx="32" cy="59.6" rx="15" ry="2.4" fill="#000" opacity=".2"/>
-      <circle class="f-body" cx="32" cy="33" r="24" fill="url(#ap-skin-finance)"/>
-      <circle class="f-rim" cx="32" cy="33" r="21.5" fill="none" stroke="#7a5200" stroke-width="1.7" stroke-dasharray="1.2 2.55" opacity=".75"/>
-      <circle cx="32" cy="33" r="18.6" fill="#0b0b0c"/>
-      <circle cx="32" cy="33" r="18.6" fill="none" stroke="#ffe9a3" stroke-width=".9" opacity=".6"/>
-      <path d="M19.5 25.5 A14.5 14.5 0 0 1 30 18.8" fill="none" stroke="#fff3c4" stroke-width="1.6" stroke-linecap="round" opacity=".28"/>
-      <g class="f-eyes"><rect class="f-eye" x="23.2" y="26.4" width="5.4" height="7.6" rx="2.7" fill="#f5c542"/><rect class="f-eye" x="35.4" y="26.4" width="5.4" height="7.6" rx="2.7" fill="#f5c542"/></g>
-      <path d="M25.6 39.6 Q32 45.4 38.4 39.6" fill="none" stroke="#f5c542" stroke-width="2.4" stroke-linecap="round"/>
-      <path class="f-spark" fill="#fff3c4" d="M51.5 3.5 L53.1 7.9 L57.5 9.5 L53.1 11.1 L51.5 15.5 L49.9 11.1 L45.5 9.5 L49.9 7.9 Z"/>`,
+      <ellipse cx="32" cy="60.2" rx="15.5" ry="2.3" fill="#000" opacity=".22"/>
+      <g class="f-bag">
+        <path d="M21.6 10 Q23.6 4.6 27 8.6 Q29.4 3.6 32 8 Q34.6 3.6 37 8.6 Q40.4 4.6 42.4 10 L40 17.4 H24 Z" fill="url(#ap-skin-finance)"/>
+        <path d="M27 8.6 L27.8 15 M32 8 V15 M37 8.6 L36.2 15" stroke="#8a5d00" stroke-width="1" stroke-linecap="round" opacity=".55"/>
+        <path class="f-body" d="M24.2 16.6 C13.6 22.4 8 32.2 8 42 C8 52.6 17 58.4 32 58.4 C47 58.4 56 52.6 56 42 C56 32.2 50.4 22.4 39.8 16.6 Z" fill="url(#ap-skin-finance)"/>
+        <path d="M15.4 31.4 C17 26.4 20.2 22.8 24.2 20.6" fill="none" stroke="#fffbe6" stroke-width="2.4" stroke-linecap="round" opacity=".6"/>
+        <path d="M50.4 44 C50 49 46.6 52.8 41 54.6" fill="none" stroke="#7a5200" stroke-width="2" stroke-linecap="round" opacity=".3"/>
+        <rect x="22" y="14.4" width="20" height="4.6" rx="2.3" fill="#0b0b0c"/>
+        <path d="M24.4 16 H39.6" stroke="#f5c542" stroke-width=".9" stroke-linecap="round" opacity=".7"/>
+        <g class="f-eyes"><rect class="f-eye" x="22.6" y="26.6" width="5.4" height="7.6" rx="2.7" fill="#0b0b0c"/><rect class="f-eye" x="36" y="26.6" width="5.4" height="7.6" rx="2.7" fill="#0b0b0c"/></g>
+        <path d="M26.4 37.2 Q32 41.4 37.6 37.2" fill="none" stroke="#0b0b0c" stroke-width="2.3" stroke-linecap="round"/>
+        <circle cx="32" cy="49.4" r="6" fill="#0b0b0c"/>
+        <circle cx="32" cy="49.4" r="6" fill="none" stroke="#ffe9a3" stroke-width=".8" opacity=".7"/>
+        <path d="M34.4 47 Q32 45.4 30 46.9 Q28.4 48.6 32 49.4 Q35.6 50.2 34 52 Q32 53.4 29.6 51.9 M32 44.8 V54" fill="none" stroke="#f5c542" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+      <g class="f-spark"><circle cx="51.6" cy="9" r="5.2" fill="#ffe08a" stroke="#b8860b" stroke-width="1.1"/><circle cx="51.6" cy="9" r="2.6" fill="none" stroke="#b8860b" stroke-width=".9" opacity=".8"/></g>`,
     car: `
       <ellipse cx="32" cy="60.4" rx="13" ry="2.2" fill="#000" opacity=".22"/>
       <path d="M27.6 40 L29.4 53 L34.6 53 L36.4 40 Z" fill="#7d8898"/>
@@ -152,7 +169,7 @@
     <stop offset="0%" stop-color="#ffd3a8"/><stop offset="100%" stop-color="#fb7d3c"/>
   </linearGradient>
   <linearGradient id="ap-skin-health" x1="0" y1="0" x2="1" y2="1">
-    <stop offset="0%" stop-color="#a7f3d0"/><stop offset="100%" stop-color="#3b9cf6"/>
+    <stop offset="0%" stop-color="#9ad4ff"/><stop offset="50%" stop-color="#4aa3f5"/><stop offset="100%" stop-color="#2fd0a0"/>
   </linearGradient>
   <linearGradient id="ap-skin-finance" x1="0" y1="0" x2="1" y2="1">
     <stop offset="0%" stop-color="#fff1b0"/><stop offset="45%" stop-color="#f5c542"/><stop offset="100%" stop-color="#b97f00"/>
@@ -199,7 +216,7 @@
   .ap-face .f-cursor { animation: cursorBlink 1.05s steps(1) infinite; }
   .ap-face .f-spark { transform-box: fill-box; transform-origin: center; animation: twinkle 2.8s ease-in-out infinite; }
   .ap-face .f-ecg { stroke-dasharray: 100 100; animation: ecg 2.6s linear infinite; }
-  .ap-face.ag-health .f-body { transform-origin: 32px 33px; animation: heartBeat 2.6s ease-in-out infinite; }
+  .ap-face.ag-health .f-watch { transform-origin: 32px 32px; animation: heartBeat 2.6s ease-in-out infinite; }
   .ap-face .f-rim { transform-origin: 32px 33px; animation: faceSpin 26s linear infinite; }
   .ap-face.ag-car .f-spark { opacity: 0; animation: none; }
 
@@ -211,10 +228,14 @@
   .ap-face.is-working .f-sat { animation-duration: 1.8s; }
   .ap-face.is-working .f-orbit { animation: faceSpin 6s linear infinite; }
   .ap-face.is-working .f-cursor { animation-duration: .45s; }
-  .ap-face.is-working .f-ecg, .ap-face.is-working.ag-health .f-body { animation-duration: 1s; }
+  .ap-face.is-working .f-ecg, .ap-face.is-working.ag-health .f-watch { animation-duration: 1s; }
   .ap-face.is-working .f-spark { animation-duration: 1s; }
   .ap-face.is-working .f-rim { animation-duration: 3s; }
   /* Torque trabalhando: o pistão sobe e desce na biela e a faísca acende no alto de cada curso. */
+  .ap-face.ag-finance.is-working .f-bag { transform-origin: 32px 58px; animation: bagShake .6s ease-in-out infinite; }
+  .ap-face.ag-finance.is-working .f-spark { animation: coinHop .6s ease-in-out infinite; }
+  @keyframes bagShake { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
+  @keyframes coinHop { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px) scale(1.12); } }
   .ap-face.ag-car.is-working { animation: none; }
   .ap-face.ag-car.is-working .f-piston { animation: pistonPump .5s ease-in-out infinite; }
   .ap-face.ag-car.is-working .f-spark { animation: pistonSpark .5s ease-in-out infinite; }
@@ -276,6 +297,35 @@
       });
       if (el._apHtml !== html) { el.innerHTML = html; el._apHtml = html; }
     });
+    try { applyPageFavicon(); } catch (e) {}
+  }
+
+  // Ícone da aba: o mesmo SVG do rosto, com os degradês embutidos (o favicon não vê o <defs> da página).
+  function favicon(name) {
+    const m = meta(name);
+    const kind = FACES[m.face] ? m.face : "generic";
+    const grads = DEFS.replace(/<\/?svg[^>]*>/g, "");
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="${m.ink}"/><defs>${grads}</defs>${FACES[kind]}</svg>`;
+    const href = "data:image/svg+xml;base64," + btoa(svg);
+    let link = document.querySelector('link[rel="icon"]');
+    if (!link) {
+      link = document.createElement("link");
+      link.rel = "icon";
+      (document.head || document.documentElement).appendChild(link);
+    }
+    link.type = "image/svg+xml";
+    link.href = href;
+    return href;
+  }
+
+  function applyPageFavicon() {
+    const marked = document.documentElement && document.documentElement.getAttribute("data-agent");
+    if (marked) { favicon(marked); return; }
+    const names = [...document.querySelectorAll("[data-agent-face]")]
+      .map((el) => el.getAttribute("data-agent-face"))
+      .filter((n) => PERSONAS[n]);
+    const uniq = [...new Set(names)];
+    if (uniq.length === 1) favicon(uniq[0]);
   }
 
   function install() {
@@ -291,6 +341,7 @@
   }
 
   install();
+  try { applyPageFavicon(); } catch (e) {}
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => { install(); mount(); });
   } else {
@@ -310,5 +361,5 @@
     return out.filter((g) => g.items.length);
   }
 
-  window.AgentPersona = { PERSONAS, GROUPS, meta, skin, face, mount, groups };
+  window.AgentPersona = { PERSONAS, GROUPS, meta, skin, face, mount, favicon, groups };
 })();
