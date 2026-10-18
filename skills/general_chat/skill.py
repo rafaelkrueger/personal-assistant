@@ -24,7 +24,7 @@ _WEEKDAYS_PT = [
 
 # Quanto a conversa espera por cada agente antes de dizer "te aviso quando terminar" (o resto segue em segundo
 # plano e o resultado é falado quando chegar). Pesquisas e perguntas costumam voltar em menos de 1–2 min.
-_WAIT_SECONDS = {"web-agent": 100, "health": 60, "finance": 60, "car": 60}
+_WAIT_SECONDS = {"web-agent": 100, "health": 60, "finance": 60, "car": 60, "learning": 60}
 _WAIT_DEFAULT = 15
 
 _TOOL_NAME = "pedir_a_agente"
@@ -56,6 +56,13 @@ _EXAMPLES = {
         "do usuario, o plano de manutencao, os abastecimentos, os prazos e a ultima leitura feita na central do carro "
         "— bateria, falhas, tanque, temperatura — salvos, e anota o que ele contar)"
     ),
+    "learning": (
+        "- \"estudei 40 minutos de calculo\", \"o que eu estudo hoje?\", \"como estao meus estudos?\", \"qual meu "
+        "nivel no Lume?\", \"quantos cards tenho para revisar?\", \"quero aprender ingles, monta um plano\", \"me "
+        "explica derivadas\", \"me faz umas perguntas de SQL\", \"terminei o modulo de listas ligadas\" -> learning (o "
+        "Lume: ele ja tem as materias e o mapa de estudos de cada uma, as sessoes, os flashcards, as provacoes, o nivel "
+        "e o XP do usuario salvos, anota o que ele contar e ensina como tutor)"
+    ),
     "ide": "- \"crie um site\", \"faz um app\", \"programa X\", \"arruma o codigo do projeto Y\", \"publica o site\" -> ide",
     "editor": "- \"corta esse video\", \"faz cortes do video do YouTube X\", \"posta no TikTok\", \"gera um video\" -> editor",
 }
@@ -70,6 +77,9 @@ _PERSONAL_TOPICS = {
               r"minha dieta|meu peso|minhas? calorias?|\bo que (eu )?(devo|posso|vou) comer\b",
     "finance": r"meus gastos|\b(eu )?gastei\b|minhas? dividas?|meu orcamento|minhas? financas|meu patrimonio|"
                r"meus investimentos|minha fatura|\bquanto (eu )?devo\b",
+    "learning": r"meus estudos|\b(eu )?estudei\b|o que (eu )?(estudo|devo estudar|vou estudar)\b|meu plano de estudos?|"
+                r"minhas? materias?|meus flashcards|\bflashcards?\b|cards? para revisar|minha provacao|\bno lume\b|"
+                r"meu nivel\b",
 }
 # Resposta que só promete ver alguma coisa — sem a ferramenta, a pessoa fica esperando para sempre.
 _PROMISE = re.compile(

@@ -10,7 +10,8 @@ from cassandra import agents_bridge, personal_agents as pa
 @pytest.fixture()
 def net(monkeypatch):
     """Rede simulada: quem está no ar e o que cada rota responde. Guarda as chamadas feitas."""
-    state = {"up": {"http://127.0.0.1:8012", "http://127.0.0.1:8014", "http://pc:8015"}, "calls": [], "reply": {}}
+    state = {"up": {"http://127.0.0.1:8012", "http://127.0.0.1:8014", "http://pc:8015", "http://127.0.0.1:8016"},
+             "calls": [], "reply": {}}
 
     def fake_http(method, url, body=None, timeout=15.0):
         base, _, path = url.partition("/api/")
@@ -29,7 +30,7 @@ def net(monkeypatch):
 
 
 def test_docs_of_every_personal_agent_live_inside_cassandra():
-    for name, word in (("health", "Health"), ("finance", "Cifra"), ("car", "Torque")):
+    for name, word in (("health", "Health"), ("finance", "Cifra"), ("car", "Torque"), ("learning", "Lume")):
         d = pa.docs(name)
         assert word in d["capabilities"] and "/api/chat" in d["api"], name
         assert pa.tagline(d["capabilities"]), name
@@ -40,12 +41,12 @@ def test_finds_where_each_agent_is_answering(net):
     assert pa.base_url("health") == "http://127.0.0.1:8012"
     assert pa.base_url("car") == "http://pc:8015"  # não está no Pi: cai na segunda URL
     cat = {a["name"]: a for a in pa.catalog()}
-    assert [a["status"] for a in cat.values()] == ["online", "online", "online"]
+    assert [a["status"] for a in cat.values()] == ["online", "online", "online", "online"]
     assert cat["car"]["direct"] is True and cat["finance"]["tagline"].startswith("Finanças pessoais")
     net["up"].discard("http://127.0.0.1:8014")
     assert pa.base_url("finance") == "http://127.0.0.1:8014"  # ainda vale a conferência recente
     assert pa.base_url("finance", fresh=True) is None
-    assert [a["name"] for a in pa.online()] == ["health", "car"]
+    assert [a["name"] for a in pa.online()] == ["health", "car", "learning"]
 
 
 def test_ask_goes_straight_to_the_agent_with_the_same_actions_as_the_maestro(net):
@@ -54,12 +55,14 @@ def test_ask_goes_straight_to_the_agent_with_the_same_actions_as_the_maestro(net
     assert pa.ask("finance", "", {"action": "Summary", "month": "2026-09"}) == (True, "texto pronto")
     assert pa.ask("car", "", {"action": "status"}, source="finance") == (True, "texto pronto")
     assert pa.ask("health", "como está meu colesterol?", {"action": "overview"}) == (True, "texto pronto")
+    assert pa.ask("learning", "estudei 40 min de cálculo", {"action": "add"}) == (True, "texto pronto")
     assert net["calls"] == [
         ("POST", "http://127.0.0.1:8014", "/api/chat", {"message": "gastei 45 no mercado", "source": "cassandra"}),
         ("POST", "http://127.0.0.1:8014", "/api/transactions/quick", {"text": "gastei 45 no mercado", "source": "cassandra"}),
         ("GET", "http://127.0.0.1:8014", "/api/summary?month=2026-09", None),
         ("GET", "http://pc:8015", "/api/status", None),
         ("POST", "http://127.0.0.1:8012", "/api/overview", {}),
+        ("POST", "http://127.0.0.1:8016", "/api/quick", {"text": "estudei 40 min de cálculo", "source": "cassandra"}),
     ]
 
 
@@ -102,18 +105,19 @@ def _bridge(monkeypatch, tmp_path, link):
 
 def test_personal_agents_work_with_the_maestro_off(net, monkeypatch, tmp_path):
     b = _bridge(monkeypatch, tmp_path, _Link(up=False))
-    assert b.names() == ["health", "finance", "car"]
+    assert b.names() == ["health", "finance", "car", "learning"]
     assert "- car (o Torque): O carro do usuário em dia" in b.prompt_block()
+    assert "- learning (o Lume): Os estudos do usuário em dia" in b.prompt_block()
     cat = b.catalog()
     assert cat["connected"] is False and [(a["name"], a["direct"], a["status"]) for a in cat["agents"]] == [
-        ("health", True, "online"), ("finance", True, "online"), ("car", True, "online")]
+        ("health", True, "online"), ("finance", True, "online"), ("car", True, "online"), ("learning", True, "online")]
     reply = b.run("car", "como está o carro?", 5, parameters={"action": "status"})
     assert (reply.ok, reply.text) == (True, "texto pronto")
     assert net["calls"] == [("GET", "http://pc:8015", "/api/status", None)]  # nada passou pelo Maestro
     assert b.run("web-agent", "pesquise x", 1).error.startswith("o Maestro está desligado")
     b.set_allowed("finance", False)
     b._refresh()
-    assert b.names() == ["health", "car"]
+    assert b.names() == ["health", "car", "learning"]
 
 
 def test_with_the_maestro_on_personal_ones_are_still_direct(net, monkeypatch, tmp_path):
@@ -121,9 +125,9 @@ def test_with_the_maestro_on_personal_ones_are_still_direct(net, monkeypatch, tm
               {"name": "finance", "status": "offline", "tagline": "versão do Maestro", "description": ""},
               {"name": "personal-assistant", "status": "online", "tagline": "", "description": ""}]
     b = _bridge(monkeypatch, tmp_path, _Link(up=True, agents=listed))
-    assert b.names() == ["health", "finance", "car", "web-agent"]  # a Cifra vem direto, não a listada pelo Maestro
+    assert b.names() == ["health", "finance", "car", "learning", "web-agent"]  # a Cifra vem direto, não a listada pelo Maestro
     cat = {a["name"]: a for a in b.catalog()["agents"]}
-    assert set(cat) == {"health", "finance", "car", "web-agent"} and cat["web-agent"]["direct"] is False
+    assert set(cat) == {"health", "finance", "car", "learning", "web-agent"} and cat["web-agent"]["direct"] is False
     assert cat["finance"]["tagline"].startswith("Finanças pessoais")
 
 
@@ -162,7 +166,16 @@ def test_overview_shows_the_main_numbers_of_each_agent(net, monkeypatch):
         "/api/chat": (200, {"messages": [{"role": "user", "content": "oi"}, {"role": "assistant", "content": "olá"},
                                          {"role": "assistant", "content": " "}]}),
     })
-    health, finance, car = pa.overview()
+    net["reply"]["/api/status"] = (200, {
+        "hero": {"level": 3, "rank": "Iniciado"}, "cards_due": 4,
+        "stats": {"today": 25, "daily_goal": 40, "streak": {"current": 5}},
+        "alerts": [{"level": "soon", "kind": "boss", "text": "Cálculo I: o chefe Zeno espera por você."},
+                   {"level": "soon", "kind": "cards", "text": "4 flashcard(s) para revisar hoje."}]})
+    health, finance, car, learning = pa.overview()
+    study = {h["label"]: (h["value"], h["tone"]) for h in learning["highlights"]}
+    assert study == {"Nível": ("3 · Iniciado", ""), "Estudado hoje": ("25 min de 40 min", ""),
+                     "Sequência": ("5 dia(s)", "ok"), "Cards para revisar": ("4", "warn")}
+    assert learning["alerts"] == [{"text": "Cálculo I: o chefe Zeno espera por você.", "tone": "warn"}]
     values = {h["label"]: (h["value"], h["tone"]) for h in health["highlights"]}
     assert values["Para fazer agora"] == ("2", "warn") and values["Checkup em dia"] == ("8 de 14", "")
     assert values["Próximo exame"][0] == "Hemograma completo · 29/09/2027"
@@ -187,10 +200,12 @@ def test_overview_shows_the_main_numbers_of_each_agent(net, monkeypatch):
 
 def test_personal_subjects_force_the_agent_and_empty_promises_are_caught():
     from skills.general_chat.skill import _PROMISE, _plain, personal_topic
-    names = ["health", "finance", "car", "web-agent"]
+    names = ["health", "finance", "car", "learning", "web-agent"]
     assert personal_topic("Qual a voltagem da bateria do meu carro?", names) == "car"
     assert personal_topic("Como está minha saúde", names) == "health"
     assert personal_topic("quanto eu gastei esse mês?", names) == "finance"
+    assert personal_topic("Estudei 40 minutos de cálculo hoje", names) == "learning"
+    assert personal_topic("o que eu estudo hoje?", names) == "learning"
     assert personal_topic("Qual a voltagem da bateria do meu carro?", ["health"]) is None  # Torque desligado
     assert personal_topic("me conta uma curiosidade", names) is None
     assert _PROMISE.search(_plain("Vou verificar as informações sobre a sua saúde. Um momento, por favor."))

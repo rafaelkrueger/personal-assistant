@@ -1,4 +1,5 @@
-"""Os agentes pessoais — Pulse (saúde), Cifra (finanças), Torque (carro) — falados DIRETO pela Cassandra.
+"""Os agentes pessoais — Pulse (saúde), Cifra (finanças), Torque (carro), Lume (estudos) — falados DIRETO pela
+Cassandra.
 
 A regra do sistema é que nenhum agente chama outro: a ponte é o Maestro. A Cassandra é a exceção, e só para os
 agentes pessoais: ela é a "maestra" deles. Guarda aqui a documentação de cada um (Docs/agents/<nome>/, cópia do
@@ -15,6 +16,7 @@ Onde cada um está (variáveis de ambiente; várias URLs separadas por vírgula 
   HEALTH_AGENT_URL    padrão http://127.0.0.1:8012  (Pulse, no mesmo Pi)
   FINANCE_AGENT_URL   padrão http://127.0.0.1:8014  (Cifra, no mesmo Pi)
   CAR_AGENT_URL       padrão http://127.0.0.1:8015, depois o PC (Torque — pode estar no Pi ou no PC)
+  LEARNING_AGENT_URL  padrão http://127.0.0.1:8016  (Lume, no mesmo Pi)
 """
 from __future__ import annotations
 
@@ -47,6 +49,10 @@ AGENTS: dict[str, dict[str, Any]] = {
     "car": {
         "title": "Torque", "spoken": "o Torque", "env": "CAR_AGENT_URL",
         "default": "http://127.0.0.1:8015," + _PC.format(port=8015),
+        "actions": {"add": ("POST", "/api/quick", "text", "text"), "status": ("GET", "/api/status", None, "text")},
+    },
+    "learning": {
+        "title": "Lume", "spoken": "o Lume", "env": "LEARNING_AGENT_URL", "default": "http://127.0.0.1:8016",
         "actions": {"add": ("POST", "/api/quick", "text", "text"), "status": ("GET", "/api/status", None, "text")},
     },
 }
@@ -257,7 +263,35 @@ def _car_highlights(url: str) -> tuple[list[dict], list[dict]]:
     return items, alerts
 
 
-_HIGHLIGHTS = {"health": _health_highlights, "finance": _finance_highlights, "car": _car_highlights}
+def _mins(value: Any) -> str:
+    m = round(float(value or 0))
+    if m < 60:
+        return f"{m} min"
+    h, rest = divmod(m, 60)
+    return f"{h} h {rest:02d}" if rest else f"{h} h"
+
+
+def _learning_highlights(url: str) -> tuple[list[dict], list[dict]]:
+    status = _get(url, "/api/status")
+    items, alerts = [], []
+    if status:
+        hero, st = status.get("hero") or {}, status.get("stats") or {}
+        streak = (st.get("streak") or {}).get("current") or 0
+        if hero:
+            items.append(_item("Nível", f"{hero.get('level')} · {hero.get('rank')}"))
+        goal, today = st.get("daily_goal") or 0, st.get("today") or 0
+        items.append(_item("Estudado hoje", f"{_mins(today)} de {_mins(goal)}" if goal else _mins(today),
+                           "ok" if goal and today >= goal else ""))
+        items.append(_item("Sequência", f"{streak} dia(s)", "ok" if streak else ""))
+        due = status.get("cards_due") or 0
+        items.append(_item("Cards para revisar", due, "warn" if due else "ok"))
+        alerts += [{"text": a.get("text") or "", "tone": "bad" if a.get("level") == "overdue" else "warn"}
+                   for a in status.get("alerts") or [] if a.get("kind") in ("deadline", "boss", "idle")][:3]
+    return items, alerts
+
+
+_HIGHLIGHTS = {"health": _health_highlights, "finance": _finance_highlights, "car": _car_highlights,
+               "learning": _learning_highlights}
 
 
 def highlights(name: str) -> dict[str, Any]:

@@ -14,7 +14,7 @@
  *
  * state: "" (parado), "is-working" (trabalhando: brilha, balança, olha em volta),
  * "is-off" (desligado: cinza, olhos fechados) ou "is-sad" (erro).
- * A classe .ag-<face> (ag-maestro, ag-editor, ag-web, ag-ide, ag-home, ag-health, ag-finance, ag-car)
+ * A classe .ag-<face> (ag-maestro, ag-editor, ag-web, ag-ide, ag-home, ag-health, ag-finance, ag-car, ag-learning)
  * define --c, --c2, --c-ink e --c-rgb para a página pintar o resto com a cor do agente.
  */
 (function () {
@@ -29,13 +29,14 @@
     health: { title: "Pulse", role: "Saúde", group: "pessoal", face: "health", c: "#60a5fa", c2: "#34d399", ink: "#062a3a", rgb: "96,165,250" },
     finance: { title: "Cifra", role: "Finanças", group: "pessoal", face: "finance", c: "#f5c542", c2: "#b8860b", ink: "#0b0b0c", rgb: "245,197,66" },
     car: { title: "Torque", role: "Carro", group: "pessoal", face: "car", c: "#ff5a4f", c2: "#ff9a5c", ink: "#190706", rgb: "255,90,79" },
+    learning: { title: "Lume", role: "Estudos", group: "pessoal", face: "learning", c: "#a3e635", c2: "#4ade80", ink: "#122404", rgb: "163,230,53" },
   };
 
   // Grupos da orquestra: agentes gerais (trabalho: web, vídeo, código) e pessoais (casa, saúde). A UI de cada
   // lugar que lista agentes separa por isto, nesta ordem.
   const GROUPS = [
     { id: "geral", label: "Agentes gerais", short: "gerais", members: ["web-agent", "editor", "ide"] },
-    { id: "pessoal", label: "Agentes pessoais", short: "pessoais", members: ["health", "finance", "car", "personal-assistant"] },
+    { id: "pessoal", label: "Agentes pessoais", short: "pessoais", members: ["health", "finance", "car", "learning", "personal-assistant"] },
   ];
 
   // Rostos em SVG (viewBox 64×64). Classes f-* são animadas pelo CSS abaixo:
@@ -143,6 +144,24 @@
         <path d="M26.4 38.4 Q32 42.4 37.6 38.4" fill="none" stroke="#12151b" stroke-width="2.2" stroke-linecap="round"/>
       </g>
       <g class="f-spark" fill="#ffb340"><path d="M32 0.6 L33.2 3.6 L36.2 4.8 L33.2 6 L32 9 L30.8 6 L27.8 4.8 L30.8 3.6 Z"/></g>`,
+    learning: `
+      <ellipse cx="32" cy="60.8" rx="10" ry="1.9" fill="#000" opacity=".22"/>
+      <circle class="f-glow" cx="32" cy="27" r="25" fill="#d9f99d" opacity=".16"/>
+      <rect x="23.4" y="46.6" width="17.2" height="4.2" rx="2.1" fill="#8a9a63"/>
+      <rect x="24.4" y="51.4" width="15.2" height="3.8" rx="1.9" fill="#66744a"/>
+      <path d="M28 55.6 H36 L34.2 58.8 H29.8 Z" fill="#3a4426"/>
+      <path class="f-body" fill="url(#ap-skin-learning)" d="M32 9 C44.2 9 52.4 17.6 52.4 28.4 C52.4 35.4 48.8 39.6 45.4 42.8 C43.6 44.5 42.6 45.6 42.6 47.4 H21.4 C21.4 45.6 20.4 44.5 18.6 42.8 C15.2 39.6 11.6 35.4 11.6 28.4 C11.6 17.6 19.8 9 32 9 Z"/>
+      <path d="M17.6 25 C18.6 19.6 22.4 15.6 27.6 14.2" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" opacity=".6"/>
+      <g class="f-eyes"><rect class="f-eye" x="22.6" y="25" width="5.4" height="7.6" rx="2.7" fill="#122404"/><rect class="f-eye" x="36" y="25" width="5.4" height="7.6" rx="2.7" fill="#122404"/></g>
+      <path d="M26.4 36 Q32 40.2 37.6 36" fill="none" stroke="#122404" stroke-width="2.3" stroke-linecap="round"/>
+      <g class="f-cap">
+        <path d="M32 1.4 L48 7.6 L32 13.8 L16 7.6 Z" fill="#1c2b0e"/>
+        <path d="M22.6 10.2 V14.4 Q32 18.4 41.4 14.4 V10.2 L32 13.8 Z" fill="#26390f"/>
+        <path d="M32 1.4 L48 7.6" stroke="#a3e635" stroke-width=".9" opacity=".55"/>
+        <path class="f-tassel" d="M46 8.4 V15.4" stroke="#fde047" stroke-width="1.3" stroke-linecap="round"/>
+        <circle cx="46" cy="16.4" r="1.6" fill="#fde047"/>
+      </g>
+      <g class="f-spark" fill="#fef08a"><path d="M55.4 18 L56.6 21 L59.6 22.2 L56.6 23.4 L55.4 26.4 L54.2 23.4 L51.2 22.2 L54.2 21 Z"/></g>`,
     generic: `
       <circle class="f-body" cx="32" cy="33" r="22" fill="#5c6680"/>
       <g class="f-eyes"><circle class="f-eye" cx="25" cy="31" r="3.5" fill="#0b0e1a"/><circle class="f-eye" cx="39" cy="31" r="3.5" fill="#0b0e1a"/></g>
@@ -177,6 +196,9 @@
   <linearGradient id="ap-skin-car" x1="0" y1="0" x2="1" y2="1">
     <stop offset="0%" stop-color="#f6f8fb"/><stop offset="48%" stop-color="#c3ccd8"/><stop offset="100%" stop-color="#7c8898"/>
   </linearGradient>
+  <linearGradient id="ap-skin-learning" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0%" stop-color="#f7fee7"/><stop offset="45%" stop-color="#c6f34f"/><stop offset="100%" stop-color="#4ade80"/>
+  </linearGradient>
 </svg>`;
 
   const CSS = `  .ag-maestro { --c: #9aaeff; --c2: #c4a1ff; --c-ink: #0d0a22; --c-rgb: 154,174,255; }
@@ -187,6 +209,7 @@
   .ag-health  { --c: #60a5fa; --c2: #34d399; --c-ink: #062a3a; --c-rgb: 96,165,250; }
   .ag-finance { --c: #f5c542; --c2: #b8860b; --c-ink: #0b0b0c; --c-rgb: 245,197,66; }
   .ag-car     { --c: #ff5a4f; --c2: #ff9a5c; --c-ink: #190706; --c-rgb: 255,90,79; }
+  .ag-learning { --c: #a3e635; --c2: #4ade80; --c-ink: #122404; --c-rgb: 163,230,53; }
   .ag-generic { --c: #8b95b2; --c2: #5c6680; --c-ink: #0b0e1a; --c-rgb: 139,149,178; }
   :root { --gold: #fcd34d; }
 
@@ -205,6 +228,9 @@
   .ap-face.ag-health .f-eye { animation-delay: .4s; animation-duration: 4.8s; }
   .ap-face.ag-finance .f-eye { animation-delay: 1.3s; animation-duration: 5.6s; }
   .ap-face.ag-car .f-eye { animation-delay: 2.9s; animation-duration: 5.2s; }
+  .ap-face.ag-learning .f-eye { animation-delay: 1.9s; animation-duration: 5s; }
+  .ap-face.ag-learning .f-glow { transform-box: fill-box; transform-origin: center; animation: bulbGlow 4s ease-in-out infinite; }
+  .ap-face.ag-learning .f-tassel { transform-origin: 46px 8.4px; animation: tasselSway 3.6s ease-in-out infinite; }
   .ap-face .f-eyes { transition: transform .3s; }
 
   .ap-face .f-halo { transform-origin: 32px 35px; animation: faceSpin 24s linear infinite; }
@@ -241,6 +267,11 @@
   .ap-face.ag-car.is-working .f-spark { animation: pistonSpark .5s ease-in-out infinite; }
   @keyframes pistonPump { 0%, 100% { transform: translateY(2.2px); } 50% { transform: translateY(-2.6px); } }
   @keyframes pistonSpark { 0%, 30%, 70%, 100% { opacity: 0; } 50% { opacity: 1; } }
+  /* Lume trabalhando: a lâmpada acende forte e a borla do capelo balança. */
+  .ap-face.ag-learning.is-working .f-glow { animation-duration: .9s; }
+  .ap-face.ag-learning.is-working .f-tassel { animation-duration: .7s; }
+  @keyframes bulbGlow { 0%, 100% { transform: scale(.94); opacity: .1; } 50% { transform: scale(1.06); opacity: .32; } }
+  @keyframes tasselSway { 0%, 100% { transform: rotate(-8deg); } 50% { transform: rotate(10deg); } }
   /* Desligado/offline: cinza, olhos fechados. Triste: olhos pra baixo. */
   .ap-face.is-off { filter: grayscale(.85) brightness(.9); opacity: .7; animation: none; }
   .ap-face.is-off .f-eye { animation: none; transform: scaleY(.15); }

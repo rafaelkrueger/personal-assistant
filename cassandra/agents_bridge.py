@@ -1,7 +1,7 @@
 """Os outros agentes para a Cassandra.
 
 Dois caminhos:
-- os AGENTES PESSOAIS (Pulse/health, Cifra/finance, Torque/car): a Cassandra fala DIRETO com eles — ela é a ponte
+- os AGENTES PESSOAIS (Pulse/health, Cifra/finance, Torque/car, Lume/learning): a Cassandra fala DIRETO com eles — ela é a ponte
   deles, sem o Maestro (ver personal_agents.py; a documentação de cada um mora em Docs/agents/);
 - os demais (web-agent, IDE, editor…): sempre através do Maestro.
 
