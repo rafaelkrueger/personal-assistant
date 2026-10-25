@@ -34,6 +34,9 @@ e todos os exames já enviados, com os marcadores extraídos. Cada resposta leva
   bateu a meta — é o que mantém a sequência de dias e as conquistas.
 - **Gerar um panorama da saúde**: como está, o que melhorou/piorou, prioridades e o que conversar com o médico.
 - **Ler exames novos** (PDF, foto ou texto) — pela UI ou pela API (`POST /api/exams`).
+- **Avisar sozinho, pela Cassandra**: a cada 30 min confere o checkup e manda à Cassandra (que fala na casa) o
+  exame ou a consulta de rotina atrasado (de novo a cada 2 semanas) ou vencendo no próximo mês (`app/cassandra_alerts.py`;
+  `CASSANDRA_ALERTS=0` desliga).
 
 ## Não pode / não faz
 - **Não substitui médico**: não dá diagnóstico definitivo, não prescreve e **nunca manda começar, parar ou mudar

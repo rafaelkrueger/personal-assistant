@@ -46,6 +46,10 @@ vencer) são feitas por ele, exatas; cada resposta leva em conta todo esse conte
   do tanque, distância rodada. Cada leitura entra num histórico. "Tem alguma falha gravada no carro?", "como
   está a bateria?", "quanto tem no tanque?". Falha gravada, bateria fraca e motor quente viram alertas, e, depois
   que o usuário informa o km uma vez num dia de leitura, o hodômetro passa a ser atualizado a cada sincronização.
+- **Avisar sozinho, pela Cassandra**: a cada 30 min confere o carro e manda à Cassandra (que fala na casa) a
+  manutenção vencida ou vencendo ("hora da revisão"), os lembretes (IPVA, seguro, licenciamento) e o que o OBD
+  acusou. Vencido volta a cada 3 dias; vencendo, a cada semana (`app/cassandra_alerts.py`; `CASSANDRA_ALERTS=0`
+  desliga).
 
 ## Não pode / não faz
 - **Não é mecânico e não vê o carro ao vivo**: não diagnostica defeito com certeza e não sabe onde o carro está.

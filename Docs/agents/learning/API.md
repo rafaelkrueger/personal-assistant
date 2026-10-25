@@ -69,7 +69,7 @@ e um chefe (`boss`). Uma região abre quando o chefe da anterior é derrotado; o
 `{ "subjects": [...], "levels": ["iniciante", "básico", "intermediário", "avançado"], "resource_kinds": [...] }` —
 as ativas primeiro (a estudada mais recentemente antes). Cada matéria:
 ```json
-{ "id", "name", "realm", "goal", "level", "target_date", "weekly_minutes", "status": "active | paused | done", "notes",
+{ "id", "name", "goal", "level", "target_date", "weekly_minutes", "status": "active | paused | done", "notes",
   "units": [ { "id", "title", "description", "topics": [], "index", "boss": { "name", "epithet", "lore",
                "kind": "dragao | lich | golem | espectro | aranha | minotauro | hidra | cavaleiro" },
                "modules_done", "modules_total", "minutes_total", "unlocked", "conquered", "boss_ready",
@@ -104,6 +104,18 @@ dá o andamento: `{ "status": "idle | running | done | error", "step", "units_do
 "units", "modules", "source": "ia | web", "error" }`. Os módulos feitos ou em andamento ficam (pelo título); os
 feitos que somem do mapa novo vão para a região "Saber já conquistado"; uma região com o mesmo nome continua
 conquistada. Materiais novos se somam aos existentes.
+
+### `GET /api/daily` · `POST /api/daily` · `POST /api/daily/{item_id}/add`
+Os **estudos rápidos do dia**: doze coisas úteis que se aprendem em 1 a 3 dias, escolhidas pela IA para a pessoa
+(quatro ligadas aos estudos dela, quatro habilidades profissionais, quatro de vida prática). Dá para escolher quantas
+quiser. O `GET` → `{ "date", "ready", "items": [{ "id", "title", "category", "why", "goal", "days", "minutes",
+"level", "topics", "subject_id", "chosen" }] }`; `ready` falso quando as de hoje ainda não foram geradas (a tela só
+pede quando a pessoa abre o cartão). O `POST` (`{ "force": false }`) gera as de hoje pela IA — ou devolve as que já
+existem; com `force: true` troca por outras, mantendo as já escolhidas. Nada se repete: os títulos já sugeridos
+(`data/daily.json`) vão para o modelo. O `.../add` escolhe a sugestão: ela vira uma matéria com `"quick": true`
+(na tela, na lista "Estudos rápidos", separada de "Seus estudos"), prazo em `days` dias, e já começa a traçar um
+mapa pequeno (1 ou 2 regiões, de 2 a 5 módulos curtos). Apagar o estudo libera a sugestão de novo. 404 se não é
+uma sugestão de hoje.
 
 ### `POST /api/subjects/{id}/modules` · `PATCH .../modules/{mid}` · `DELETE .../modules/{mid}`
 `{ "title", "description", "objectives": [], "lessons": [], "practice", "est_minutes", "status": "todo | doing",

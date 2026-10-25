@@ -11,7 +11,7 @@ from threading import Thread
 from typing import Type
 from urllib.parse import parse_qs, urlencode, urlparse
 
-from cassandra import audio_devices, llm_settings
+from cassandra import agent_alerts, audio_devices, llm_settings
 from cassandra import spotify as spotify_api
 from cassandra import network_devices
 from cassandra.mic_monitor import monitor as mic_monitor
@@ -4185,6 +4185,9 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
             if parsed.path == "/api/history":
                 self._send_json({"history": assistant.get_conversation_history()})
                 return
+            if parsed.path == "/api/agent-alerts":
+                self._send_json({"alerts": agent_alerts.recent(), "quiet": agent_alerts.quiet()})
+                return
             if parsed.path == "/api/alarms/ringing":
                 self._send_json({"ringing": assistant.alarm_manager.ringing()})
                 return
@@ -4510,6 +4513,18 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                 Thread(target=_restart, daemon=True).start()
                 return
 
+            if parsed.path == "/api/agent-alerts":
+                # Avisos espontâneos dos agentes pessoais (cassandra/agent_alerts.py): só da rede de casa.
+                if not agent_alerts.from_home(self.headers, self.client_address[0]):
+                    self._send_json({"error": "só da rede local"}, status=HTTPStatus.FORBIDDEN)
+                    return
+                data = self._read_json_body()
+                try:
+                    self._send_json(agent_alerts.receive(str(data.get("agent", "")), data.get("items")))
+                except ValueError as exc:
+                    self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+
             if parsed.path == "/api/speak":
                 # Aviso falado na casa: o texto exato, sem passar pelo LLM (ex.: o maestro avisando algo).
                 text = str(self._read_json_body().get("text", "")).strip()
@@ -4798,6 +4813,7 @@ def start_web_server(assistant: CassandraAssistant) -> ThreadingHTTPServer:
     handler = make_handler(assistant)
     server = ThreadingHTTPServer((host, port), handler)
     Thread(target=server.serve_forever, daemon=True).start()
+    agent_alerts.start(assistant)  # fala os avisos que os agentes pessoais mandarem
     bt_audio.start()  # religa o equalizador da caixa Bluetooth (se estava ligado) e vigia a conexão
     print(f"Web chat running at http://{host}:{port}")
     return server

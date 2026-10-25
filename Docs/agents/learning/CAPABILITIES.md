@@ -15,6 +15,9 @@ resposta leva em conta todo esse contexto.
   módulos (objetivos, lições, prática, tempo) e um chefe no fim; e sugerir materiais. "Monta um plano para eu
   aprender SQL", "refaz meu plano de inglês focando em conversação". Refazer mantém o que já foi vencido. Leva de 1
   a 3 minutos, em segundo plano.
+- **Sugerir estudos rápidos todo dia**: na Jornada, a cada dia, doze coisas úteis para aprender em um ou poucos dias
+  (ligadas aos estudos da pessoa, habilidades profissionais e de vida prática), sem repetir as de antes. A pessoa
+  escolhe quantas quiser; cada uma vira um estudo rápido, com um mapa pequeno, provações e chefe como os outros.
 - **Escrever o pergaminho (a lição completa) de cada módulo**: explicação de cada lição com exemplos, erros comuns,
   resumo dos objetivos e exercícios com gabarito.
 - **Montar e corrigir as provações e os chefes**, difíceis de propósito (como Dark Souls) e corrigidos com rigor:
@@ -44,6 +47,10 @@ resposta leva em conta todo esse contexto.
   matemática e código, sugerir o próximo passo concreto.
 - **Dar a situação exata dos estudos** (sequência, tempo, planos, cards, avisos) na hora, sem passar pelo modelo de
   IA.
+- **Avisar sozinho, pela Cassandra**: a cada 30 min confere os estudos e manda à Cassandra (que fala na casa) o
+  que merece aviso: num dia de estudo, a partir das 17h, que ainda falta estudar hoje (e a sequência em jogo); 10 ou
+  mais flashcards para hoje; prazo perto com o plano atrasado; matéria parada há mais de uma semana. Sem repetir o
+  mesmo aviso cedo demais (`app/cassandra_alerts.py`; `CASSANDRA_ALERTS=0` desliga).
 
 ## Não pode / não faz
 - **Não pesquisa na internet por conta própria**: os materiais do plano saem do que o modelo de IA conhece (com links

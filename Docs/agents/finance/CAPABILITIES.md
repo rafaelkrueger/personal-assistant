@@ -41,6 +41,10 @@ ela, exatas; cada resposta leva em conta todo esse contexto.
   sem passar pelo modelo de IA.
 - **Ler extratos e faturas** (CSV, OFX, PDF, foto ou texto colado) e lançar cada movimentação — pela UI ou pela API
   (`POST /api/statements`). Reimportar o mesmo extrato não duplica.
+- **Avisar sozinha, pela Cassandra**: a cada 30 min confere o mês e manda à Cassandra (que fala na casa) o que
+  merece aviso: orçamento de categoria estourado ou passando de 85%, gasto do mês acima da renda e gastos do dia a
+  dia acima do ritmo da renda. Sem repetir o mesmo aviso cedo demais (`app/cassandra_alerts.py`; `CASSANDRA_ALERTS=0`
+  desliga).
 
 ## Não pode / não faz
 - **Não é consultoria de investimentos nem contabilidade**: explica princípios (reserva, diversificação, juros,

@@ -104,6 +104,20 @@ do som de atenção, e registra no histórico (`kind: "announcement"`). Responde
 na hora — a fala sai em segundo plano. `{ "ok": true, "spoken": true }`;
 `spoken: false` quando a voz está desligada nas configurações. `400` sem `text`.
 
+### `POST /api/agent-alerts` · `GET /api/agent-alerts`
+Avisos **espontâneos** dos agentes pessoais (Pulse, Cifra, Torque, Lume): cada um confere sozinho, a cada 30 min, o
+que merece aviso e manda para cá (`app/cassandra_alerts.py` em cada agente).
+**Body:** `{ "agent": "finance", "items": [{ "key": "over-Mercado-2026-10", "text": "você passou do orçamento de
+Mercado…", "title": "Mercado", "level": "overdue | soon | info", "expires": "ISO (opcional)" }] }`
+→ `{ "ok": true, "accepted": 1, "skipped": 0 }`. O mesmo `agent` + `key` dentro de 20 h é ignorado.
+A Cassandra guarda (`data/agent_alerts.json`) e fala na casa, entrando também no histórico como
+`announcement`: junta o que chegar em seguida num aviso só ("A Cifra avisa: … O Torque avisa: …", o mais urgente
+antes), nunca no horário de silêncio (`AGENT_ALERTS_QUIET`, padrão `22-8` — o que chegar espera), nem no meio de
+uma conversa ou de um pedido. Aviso que perde a validade antes (padrão 18 h) não é falado.
+**Só da rede de casa:** pedidos que chegam pelo túnel público (cabeçalhos da Cloudflare/Netlify) ou de fora da rede
+local recebem `403`. `400` com agente desconhecido ou sem `items`. `AGENT_ALERTS_ENABLED=0` desliga a fala
+(continua recebendo). O `GET` dá os últimos avisos e se está no silêncio: `{ "alerts": [...], "quiet": false }`.
+
 ### `POST /api/reset`
 Limpa a memória e o histórico da conversa e encerra a sessão. `{ "ok": true }`.
 
