@@ -8,7 +8,7 @@ e scripts de apoio.
 | `cassandra-assistant.service` | `~/.config/systemd/user/` | A Cassandra. Sobe no boot, reinicia sozinha se cair. Log: `/tmp/personal-assistant.log` |
 | `cassandra-tunnel.service` | `~/.config/systemd/user/` | Túnel público da Cloudflare (quick tunnel → `localhost:8080`), usado pelo site. URL em `/tmp/cloudflared.log` |
 | `cassandra-netlify-sync.service` | `~/.config/systemd/user/` | Republica o site no Netlify quando a URL do túnel (ou a página) muda — ex.: depois de um reboot |
-| `cassandra-netlify-sync.py` | `~/.local/bin/` | O sincronizador (só biblioteca padrão do Python) |
+| `cassandra-netlify-sync.py` | `~/.local/bin/` | O sincronizador e o vigia (só biblioteca padrão do Python): reinicia o túnel se ele morrer e a Cassandra se ela travar. Log: `/tmp/netlify-sync.log` |
 | `cassandra-spotify.service` | `~/.config/systemd/user/` | Spotify Connect: o Pi vira o dispositivo "Cassandra" no Spotify (librespot → PipeWire). Log: `/tmp/cassandra-spotify.log` |
 | `cassandra-spotify.sh` | `~/.local/bin/` | Sobe o librespot; sem credencial ainda, em modo de pareamento (código no log) |
 | `51-cassandra-no-suspend.conf` | `~/.config/wireplumber/wireplumber.conf.d/` | Não deixa a saída Bluetooth entrar em repouso (senão o bip de ativação e sons curtos se perdem) |
@@ -47,6 +47,13 @@ Sem o `netlify.env` o serviço de sincronização simplesmente não inicia (a Ca
   ciclo e, no boot, o systemd descarta o túnel para quebrá-lo (só aparece num reboot de verdade).
 - Os logs do túnel usam `truncate:` (e não `file:`): o arquivo é zerado a cada início, senão a URL antiga
   continua no começo dele.
+- **O quick tunnel da Cloudflare não tem garantia de ficar no ar**: às vezes a Cloudflare o apaga e o
+  `cloudflared` não sai — fica tentando para sempre (`Tunnel not found` no log), então o `Restart=always` não ajuda.
+  Quem cuida disso é o vigia no `cassandra-netlify-sync.py`: a cada 30 s ele lê o log do túnel e testa o endereço
+  público; se o túnel morreu (ou o público falha ~2 min com a Cassandra ok em `localhost:8080`), reinicia o
+  `cassandra-tunnel` (no máximo um a cada 5 min) e o site é republicado com a URL nova. Se a própria Cassandra
+  parar de responder em `localhost:8080` por ~5 min (travada; queda o systemd já cobre), reinicia o
+  `cassandra-assistant` (no máximo um a cada 15 min). Tudo aparece em `/tmp/netlify-sync.log`.
 - Áudio: os players usam `pw-play` (PipeWire). Para o microfone plugado depois ser adotado sozinho, instale
   `sudo apt install pipewire-alsa`.
 
