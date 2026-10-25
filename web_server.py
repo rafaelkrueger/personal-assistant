@@ -912,6 +912,55 @@ HTML_PAGE = """<!doctype html>
     .ux-toast{position:fixed;left:50%;bottom:calc(98px + env(safe-area-inset-bottom));z-index:120;transform:translate(-50%,12px);opacity:0;pointer-events:none;padding:10px 16px;border-radius:99px;background:#0f1a14;border:1px solid rgba(74,222,128,.35);color:#bbf7d0;font-size:13px;font-weight:600;box-shadow:0 10px 30px rgba(0,0,0,.5);transition:opacity .2s,transform .2s;max-width:calc(100vw - 32px);text-align:center}
     .ux-toast.show{opacity:1;transform:translate(-50%,0)}
     .ux-toast.err{background:#1c0d0f;border-color:rgba(248,113,113,.4);color:#fecaca}
+    /* Painel: cabeçalho compacto (o rosto grande empurrava o que importa para baixo) */
+    .dash-hero{display:flex;align-items:center;gap:14px;padding:14px 18px;margin-bottom:12px}
+    .dash-face,.dash-hero .dash-face{float:none;margin:0;flex-shrink:0}
+    .dash-face .brand-face{width:56px;height:56px}
+    .dh-text{flex:1;min-width:0}
+    .dash-greeting{font-size:22px;margin-bottom:2px}
+    .dash-hero .dash-status-row{margin-top:0;flex-direction:column;align-items:flex-end}
+    @media(max-width:520px){.dash-hero .dash-status-row{display:none}.dash-face .brand-face{width:48px;height:48px}}
+    /* Von Restorff: o único cartão colorido da tela é o que pede ação agora */
+    .dash-focus{display:flex;align-items:center;gap:14px;padding:16px 18px;border-radius:var(--rl);margin-bottom:12px;background:linear-gradient(135deg,rgba(251,146,60,.2),rgba(251,146,60,.06));border:1px solid rgba(251,146,60,.5);box-shadow:0 8px 28px rgba(251,146,60,.1)}
+    .df-ic{width:46px;height:46px;border-radius:13px;background:var(--brand);color:#1a0d02;display:grid;place-items:center;flex-shrink:0}
+    .df-ic svg{width:22px;height:22px}
+    .df-body{flex:1;min-width:0}
+    .df-k{font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--brand2)}
+    .df-t{font-size:18px;font-weight:800;letter-spacing:-.02em;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .df-s{font-size:12.5px;color:var(--text2);margin-top:2px}
+    .df-go{flex-shrink:0}
+    @media(max-width:520px){.dash-focus{padding:14px}.df-ic{width:40px;height:40px}.df-t{white-space:normal;font-size:16px;line-height:1.25}}
+    .dash-focus.calm{background:var(--glass);border-color:var(--border);box-shadow:none}
+    .dash-focus.calm .df-ic{background:rgba(52,211,153,.12);color:var(--green)}
+    .dash-focus.calm .df-k{color:var(--green)}
+    /* Anotar rápido, direto do painel */
+    .dash-quick{display:flex;gap:8px;margin-bottom:20px}
+    .dash-quick input[type=text]{flex:1;min-width:0;height:48px;font-size:15px}
+    .dq-btns{display:flex;gap:8px}
+    .dq-btns .btn{height:48px;padding:0 16px}
+    @media(max-width:520px){.dash-quick{flex-wrap:wrap}.dash-quick input[type=text]{flex-basis:100%}.dq-btns{flex:1}.dq-btns .btn{flex:1}}
+    /* Hick: os exemplos ficam guardados até alguém pedir */
+    .tips-box>summary{list-style:none;cursor:pointer;display:flex;justify-content:space-between;align-items:center;padding:12px 2px}
+    .tips-box>summary::-webkit-details-marker{display:none}
+    .tips-more{font-size:12px;font-weight:600;color:var(--brand2)}
+    .tips-box[open] .tips-more{display:none}
+    /* Jakob e Fitts: no celular, as seções principais numa barra embaixo, ao alcance do polegar */
+    .bnav{display:none}
+    @media(max-width:767px){
+      .bnav{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:85;height:calc(64px + env(safe-area-inset-bottom));padding:0 4px env(safe-area-inset-bottom);background:rgba(7,9,18,.95);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-top:1px solid var(--border2)}
+      .bnav button{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:none;border:none;color:var(--text3);font:inherit;font-size:11px;font-weight:600;cursor:pointer;position:relative;padding:0}
+      .bnav button svg{width:22px;height:22px;opacity:1}
+      .bnav button.active{color:var(--brand2)}
+      .bnav button.active::before{content:"";position:absolute;top:0;left:28%;right:28%;height:3px;border-radius:0 0 3px 3px;background:var(--brand)}
+      .bnav .bn-badge{position:absolute;top:8px;left:calc(50% + 6px);min-width:17px;height:17px;padding:0 4px;border-radius:99px;background:var(--brand);color:#1a0d02;font-size:10px;font-weight:800;display:grid;place-items:center}
+      .bnav .bn-badge[hidden]{display:none}
+      .mobile-menu-btn{display:none}
+      .body{padding-bottom:calc(170px + env(safe-area-inset-bottom))}
+      .cass-fab{bottom:calc(78px + env(safe-area-inset-bottom))}
+      .ux-toast{bottom:calc(150px + env(safe-area-inset-bottom))}
+      .alarm-toast{bottom:calc(80px + env(safe-area-inset-bottom));transform:translate(-50%,calc(100% + 120px))}
+      .alarm-toast.show{transform:translate(-50%,0)}
+    }
   </style>
 </head>
 <body>
@@ -961,12 +1010,27 @@ HTML_PAGE = """<!doctype html>
       <!-- ══ DASHBOARD ══ -->
       <div class="tab-panel" id="tab-dashboard">
         <div class="dash-hero">
-          <div class="dash-face"><span class="brand-face" data-agent-face="personal-assistant" data-size="92"></span></div>
+          <div class="dash-face"><span class="brand-face" data-agent-face="personal-assistant" data-size="56"></span></div>
+          <div class="dh-text">
           <div class="dash-greeting" id="dashGreeting">Olá!</div>
           <div class="dash-date" id="dashDate"></div>
+          </div>
           <div class="dash-status-row">
             <span class="dash-status-badge"><svg width="7" height="7" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" fill="#34d399"/></svg>Cassandra ativa</span>
             <span id="heroWebAgentBadge" style="display:none;align-items:center;gap:6px;padding:5px 13px;border-radius:99px;font-size:12px;font-weight:600;background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.2);color:var(--brand2)"><svg width="7" height="7" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" fill="#fb923c"/></svg>Maestro online</span>
+          </div>
+        </div>
+        <!-- Von Restorff e posição serial: uma coisa só em destaque, a mais importante de agora, logo no topo -->
+        <div class="dash-focus calm" id="dashFocus">
+          <div class="df-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="df-body"><div class="df-k">Agora</div><div class="df-t">Carregando…</div><div class="df-s"></div></div>
+        </div>
+        <!-- Tesler e Postel: anotar sem sair do painel; "leite, pão e café" vira três itens -->
+        <div class="dash-quick">
+          <input id="dqInput" type="text" placeholder="Anotar algo… ex.: leite, pão e café" autocomplete="off"/>
+          <div class="dq-btns">
+            <button type="button" class="btn btn-primary" id="dqShop">+ Compras</button>
+            <button type="button" class="btn btn-ghost" id="dqTodo">+ Tarefa</button>
           </div>
         </div>
         <div class="dash-section dash-alerts" id="dashAlertsBox" style="display:none">
@@ -1005,10 +1069,10 @@ HTML_PAGE = """<!doctype html>
             <div id="upcomingAlarms"><div class="empty" style="padding:16px 0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>Nenhum alarme ativo</div></div>
           </div>
         </div>
-        <div>
-          <div class="sec-hdr"><span class="sec-title">O que posso fazer</span></div>
+        <details class="tips-box">
+          <summary class="sec-hdr"><span class="sec-title">O que posso fazer</span><span class="tips-more">ver exemplos</span></summary>
           <div class="tips-grid" id="tipsGrid"></div>
-        </div>
+        </details>
       </div>
 
       <!-- ══ GASTOS ══ -->
@@ -1971,6 +2035,7 @@ HTML_PAGE = """<!doctype html>
 
 <div class="alarm-toast" id="alarmToast" role="alertdialog" aria-live="assertive"><div class="at-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg></div><div class="at-text"><div class="at-title">Alarme tocando</div><div class="at-sub" id="alarmToastSub"></div></div><button class="at-stop" id="alarmToastStop">Parar alarme</button></div>
 <div class="restart-overlay" id="restartOverlay"><div class="restart-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg><div id="restartTitle">Reiniciando a Cassandra…</div><p id="restartText">Leva uns 20 segundos. A página volta sozinha.</p></div></div>
+<nav class="bnav" id="bottomNav" aria-label="Seções principais"></nav>
 <button type="button" class="cass-fab" id="cassFab" aria-label="Falar com a Cassandra por texto" aria-expanded="false"><span class="brand-face" data-agent-face="personal-assistant" data-size="52"></span></button>
 <aside class="cass-dock" id="cassDock" hidden aria-label="Chat com a Cassandra">
   <div class="cass-dock-bar">
@@ -2128,6 +2193,24 @@ function rebuildNavs(){
   const vis=getVisibleTabs();
   buildNav(document.getElementById("desktopNav"),vis);
   buildNav(document.getElementById("mobileNav"),vis);
+  buildBottomNav(vis);
+}
+
+// Barra de baixo no celular: as seções do dia a dia + "Mais" (abre o menu com o resto).
+const BNAV=[["dashboard","Início"],["todos","Tarefas"],["shopping","Compras"],["alarms","Alarmes"]];
+function buildBottomNav(vis){
+  const el=document.getElementById("bottomNav");
+  if(!el) return;
+  const ok=new Set(vis.map(t=>t.id));
+  el.innerHTML=BNAV.filter(([id])=>ok.has(id)).map(([id,label])=>`<button type="button" data-tab="${id}" class="${id===currentTab?"active":""}">${IC[id]}<span>${label}</span><b class="bn-badge" data-bn="${id}" hidden></b></button>`).join("")
+    +`<button type="button" id="bnMore"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg><span>Mais</span></button>`;
+  el.querySelectorAll("[data-tab]").forEach(b=>b.addEventListener("click",()=>gotoTab(b.dataset.tab)));
+  el.querySelector("#bnMore").addEventListener("click",()=>{mobileOverlay.classList.add("open");mobileSidebar.classList.add("open");});
+}
+function setBnBadge(id,n){
+  const b=document.querySelector(`.bn-badge[data-bn="${id}"]`);
+  if(!b) return;
+  b.hidden=!n;b.textContent=n>9?"9+":String(n);
 }
 
 // ── Tab switching ──
@@ -2484,6 +2567,8 @@ function renderDashboard(data){
   document.getElementById("statShopping").textContent=shop;
   document.getElementById("statAlarms").textContent=alms;
   document.getElementById("statTodos").closest(".stat-card").classList.toggle("attn",todos>0);
+  setBnBadge("todos",todos);setBnBadge("shopping",shop);
+  renderFocus(data);
   loadAgentAlerts();
   const msgs=(data.history||[]).filter(m=>m.kind==="chat").slice(-4);
   const rcEl=document.getElementById("recentChat");
@@ -2497,6 +2582,51 @@ function renderDashboard(data){
     return `<div class="alarm-row-mini"><span class="alarm-time-lg">${esc(a.time_hhmm)}</span><div style="flex:1;min-width:0"><div style="font-size:12px;color:var(--text2);font-weight:500">${esc(a.label||"Alarme")}</div><div style="margin-top:4px">${dayHtml}</div></div></div>`;
   }).join("");
 }
+
+// "Agora": a coisa mais importante do momento, numa frase e com o botão para resolver.
+// Ordem: alarme nas próximas 3 horas, tarefa pendente, alarme de hoje/amanhã, lista de compras; senão, tudo em dia.
+const FOCUS_IC={
+  alarms:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>`,
+  todos:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>`,
+  shopping:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg>`,
+  ok:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="20 6 9 17 4 12"/></svg>`,
+};
+function renderFocus(data){
+  const el=document.getElementById("dashFocus");
+  if(!el) return;
+  const now=Date.now(),H=3600000;
+  const pend=(data.todos||[]).filter(t=>!t.completed);
+  const shop=data.shopping||[];
+  const next=(data.alarms||[]).filter(a=>a.enabled&&a.next_trigger_at).map(a=>({a,t:new Date(a.next_trigger_at).getTime()})).filter(x=>x.t>now).sort((x,y)=>x.t-y.t)[0];
+  const inH=next?Math.max(0,Math.round((next.t-now)/60000)):0;
+  const when=m=>m<60?`em ${m} min`:m<180?`em ${Math.floor(m/60)}h${String(m%60).padStart(2,"0")}`:new Date(now+m*60000).toDateString()===new Date().toDateString()?"hoje":"amanhã";
+  let f;
+  if(next&&next.t-now<3*H) f={k:"Próximo alarme",t:`${next.a.time_hhmm} · ${next.a.label||"Alarme"}`,s:when(inH),tab:"alarms",go:"Ver alarmes"};
+  else if(pend.length) f={k:pend.length===1?"1 tarefa pendente":`${pend.length} tarefas pendentes`,t:pend[0].title||"Tarefa",s:pend.length>1?`e mais ${pend.length-1}`:"é a única que falta",tab:"todos",go:"Resolver"};
+  else if(next&&next.t-now<36*H) f={k:"Próximo alarme",t:`${next.a.time_hhmm} · ${next.a.label||"Alarme"}`,s:when(inH),tab:"alarms",go:"Ver alarmes"};
+  else if(shop.length) f={k:"Lista de compras",t:shop.length===1?"1 item para comprar":`${shop.length} itens para comprar`,s:shop.slice(0,3).map(i=>i.name).join(", ")+(shop.length>3?"…":""),tab:"shopping",go:"Abrir lista"};
+  const calm=!f;
+  if(calm) f={k:"Tudo em dia",t:"Nada pendente agora",s:"Anote abaixo o que lembrar, ou fale com a Cassandra."};
+  el.classList.toggle("calm",calm);
+  el.innerHTML=`<div class="df-ic">${FOCUS_IC[f.tab||"ok"]}</div><div class="df-body"><div class="df-k">${esc(f.k)}</div><div class="df-t">${esc(f.t)}</div><div class="df-s">${esc(f.s)}</div></div>`+(f.tab?`<button type="button" class="btn btn-primary btn-sm df-go" data-goto="${f.tab}">${esc(f.go)}</button>`:"");
+  el.querySelector(".df-go")?.addEventListener("click",()=>gotoTab(f.tab));
+}
+
+// Anotar pelo painel: "+ Compras" ou "+ Tarefa" (Enter = compras se tem vírgula, senão tarefa).
+async function dashAdd(kind){
+  const inp=document.getElementById("dqInput"),shop=kind==="shop";
+  const names=splitItems(inp.value,shop);
+  if(!names.length){inp.focus();return;}
+  inp.value="";
+  try{
+    for(const n of names) await api(shop?"/api/shopping/add":"/api/todos/add","POST",shop?{name:n}:{title:n});
+    uxToast(shop?(names.length===1?`✓ ${names[0]} na lista de compras`:`✓ ${names.length} itens na lista de compras`):(names.length===1?"✓ Tarefa anotada":`✓ ${names.length} tarefas anotadas`));
+  }catch(e){inp.value=names.join(shop?", ":"; ");uxToast("Não consegui salvar: "+e.message,true);}
+  await refresh();
+}
+document.getElementById("dqShop").addEventListener("click",()=>dashAdd("shop"));
+document.getElementById("dqTodo").addEventListener("click",()=>dashAdd("todo"));
+enter(document.getElementById("dqInput"),()=>dashAdd(document.getElementById("dqInput").value.includes(",")?"shop":"todo"));
 
 // ── Messages ──
 let _lastHistory=[];
