@@ -226,7 +226,7 @@ Restart=on-failure
 """, encoding="utf-8")
             _run(["systemctl", "--user", "daemon-reload"])
 
-    def _start_eq(self, mac: str, sink: dict[str, Any]) -> None:
+    def _start_eq(self, mac: str, sink: dict[str, Any], make_default: bool = True) -> None:
         with self._lock:
             self._write_conf(sink["name"])
             _run(["systemctl", "--user", "restart", EQ_SERVICE], timeout=20)
@@ -237,9 +237,11 @@ Restart=on-failure
                 if node:
                     break
             if not node:
-                _run(["wpctl", "set-default", str(sink["id"])])
+                if make_default:
+                    _run(["wpctl", "set-default", str(sink["id"])])
                 raise RuntimeError("o equalizador não subiu; a caixa continua tocando sem ele")
-            _run(["wpctl", "set-default", str(node["id"])])
+            if make_default:  # senão o filtro só serve à música (a voz foi mandada para outro aparelho)
+                _run(["wpctl", "set-default", str(node["id"])])
             self._eq_mac = mac.upper()
             self._apply_gains(_eq_of(mac), node)
         self._ensure_watch()
@@ -275,11 +277,19 @@ Restart=on-failure
                 pass
 
     def _tick(self) -> None:
+        from cassandra import audio_routes  # noqa: PLC0415 — audio_routes importa este módulo
+
+        try:
+            self._tick_eq(audio_routes.voice_allows_default)
+        finally:
+            audio_routes.enforce()  # a voz no aparelho escolhido na aba Aparelhos (ex.: a caixa acabou de voltar)
+
+    def _tick_eq(self, may_default) -> None:
         if self._eq_mac:
             sink = bt_sink(self._eq_mac)
             if sink and _eq_of(self._eq_mac)["enabled"] and not _node_by_name(EQ_NODE):
                 # o filtro caiu (ex.: o WirePlumber reiniciou): religa, senão o som vai para a saída errada
-                self._start_eq(self._eq_mac, sink)
+                self._start_eq(self._eq_mac, sink, make_default=may_default(self._eq_mac))
                 return
             if not sink:  # a caixa desconectou: o som volta para a saída normal
                 self._stop_eq()
@@ -292,7 +302,7 @@ Restart=on-failure
             if eq.get("enabled"):
                 sink = bt_sink(mac)
                 if sink:
-                    self._start_eq(mac, sink)
+                    self._start_eq(mac, sink, make_default=may_default(mac))
                     return
 
     def start(self) -> None:

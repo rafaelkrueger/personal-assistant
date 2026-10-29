@@ -9,6 +9,9 @@ STATE="$HOME/.local/state/cassandra-spotify"
 mkdir -p "$CACHE" "$STATE"
 PAIR=""
 [ -s "$STATE/credentials.json" ] || PAIR="--enable-device-auth"
+# Saída da música escolhida na aba Aparelhos da Cassandra (cassandra/audio_routes.py); sem o arquivo, a saída padrão.
+MUSIC_OUT="$HOME/.config/cassandra/music-output"
+[ -s "$MUSIC_OUT" ] && export PULSE_SINK="$(cat "$MUSIC_OUT")"
 exec "$HOME/.local/bin/librespot" --name Cassandra --device-type speaker --backend pulseaudio \
     --bitrate 320 --initial-volume 70 --enable-volume-normalisation \
     --cache "$CACHE" --system-cache "$STATE" --cache-size-limit 500M $PAIR

@@ -15,6 +15,7 @@ from cassandra import agent_alerts, audio_devices, llm_settings
 from cassandra import spotify as spotify_api
 from cassandra import network_devices
 from cassandra.mic_monitor import monitor as mic_monitor
+from cassandra import audio_routes
 from cassandra.bt_audio import bt_audio
 from cassandra.assistant import CassandraAssistant
 
@@ -1233,6 +1234,10 @@ HTML_PAGE = """<!doctype html>
           <div class="dv-grid" id="dvBt"><div class="bt-empty">Carregando…</div></div>
           <div class="dv-grid" id="dvBtFound"></div>
           <div class="bt-job" id="dvBtJob"></div>
+          <div class="dv-section-title"><span>Áudio da Cassandra</span></div>
+          <div class="settings-row-desc" style="margin-bottom:10px">Qual aparelho faz cada coisa. Se o escolhido estiver desligado, ela usa o padrão até ele voltar.</div>
+          <div class="dv-card" id="dvRoutes"><div class="bt-empty">Carregando…</div></div>
+          <div class="bt-job" id="dvRoutesMsg"></div>
         </div>
 
         <div id="dvRemote" style="display:none">
@@ -4115,6 +4120,23 @@ async function loadDeviceBt(){
     renderDeviceBtScan(d);
   }catch(e){document.getElementById("dvBt").innerHTML=`<div class="bt-empty">${esc(e.message)}</div>`;}
 }
+const ROUTE_LABELS={mic:["Microfone","quem ouve você"],voice:["Voz","respostas, alarmes e bipes"],music:["Música","o Spotify da Cassandra"]};
+function renderRoutes(d){
+  document.getElementById("dvRoutes").innerHTML=Object.keys(ROUTE_LABELS).map(k=>{
+    const r=d[k]||{};
+    const opts=(r.options||[]).map(o=>`<option value="${esc(o.value)}" ${o.value===r.value?"selected":""}>${esc(o.label)}${o.available===false?" (desligado)":""}</option>`).join("");
+    return `<div style="display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;padding:8px 0">
+      <div style="min-width:140px;flex:1"><div class="dv-name">${ROUTE_LABELS[k][0]}</div><div class="dv-sub">${esc(ROUTE_LABELS[k][1])}${r.now?" · agora: "+esc(r.now):""}</div></div>
+      <select class="settings-select" data-route="${k}" style="min-width:180px;max-width:100%;flex:1">${opts}</select></div>`;
+  }).join("")+(d.note?`<div class="settings-row-desc" style="margin-top:6px">${esc(d.note)}</div>`:"");
+}
+async function loadRoutes(){try{renderRoutes(await api("/api/audio-routes"));}catch(e){document.getElementById("dvRoutes").innerHTML=`<div class="bt-empty">${esc(e.message)}</div>`;}}
+document.getElementById("dvRoutes").addEventListener("change",async e=>{
+  const sel=e.target.closest("[data-route]"); if(!sel) return;
+  const msg=document.getElementById("dvRoutesMsg"); msg.className="bt-job running"; msg.textContent="Trocando…";
+  try{renderRoutes(await api("/api/audio-routes","POST",{[sel.dataset.route]:sel.value}));msg.className="bt-job ok";msg.textContent=sel.dataset.route==="mic"?"Pronto. O microfone troca em até 10 s.":"Pronto.";}
+  catch(err){msg.className="bt-job error";msg.textContent=err.message;loadRoutes();}
+});
 let dvBtPoll=null;
 function renderDeviceBtScan(d){
   const found=(d.devices||[]).filter(x=>!x.paired), busy=!!(d.job&&d.job.state==="running");
@@ -4137,7 +4159,7 @@ document.getElementById("dvBtScan").addEventListener("click",async()=>{
   try{await api("/api/bluetooth/power","POST",{on:true});await api("/api/bluetooth/scan","POST",{});}catch(err){alertUnlessTimeout(err);}
   loadDeviceBt();
 });
-function dvOpen(){document.getElementById("dvList").style.display="";document.getElementById("dvRemote").style.display="none";loadDevices();loadDeviceBt();}
+function dvOpen(){document.getElementById("dvList").style.display="";document.getElementById("dvRemote").style.display="none";loadDevices();loadDeviceBt();loadRoutes();}
 async function dvScan(){
   document.getElementById("dvScan").disabled=true; dvSay("Procurando aparelhos na rede…","running");
   try{renderDevices(await api("/api/devices/scan","POST",{}));const n=(dvState.found||[]).length;dvSay(n?`${n} aparelho${n>1?"s":""} encontrado${n>1?"s":""}.`:"Nenhum aparelho novo encontrado. Ele está ligado e no mesmo Wi-Fi?",n?"ok":"error");}
@@ -4813,6 +4835,9 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
             if parsed.path == "/api/audio":
                 self._send_json(audio_devices.audio_status())
                 return
+            if parsed.path == "/api/audio-routes":
+                self._send_json(audio_routes.options())
+                return
             m = re.match(r"^/api/btaudio/([0-9A-Fa-f:]{17})$", parsed.path)
             if m:
                 try:
@@ -5015,6 +5040,15 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                     self._send_json({"error": "Not found."}, status=HTTPStatus.NOT_FOUND)
                     return
                 self._send_json(bt.status())
+                return
+
+            if parsed.path == "/api/audio-routes":
+                try:
+                    self._send_json(audio_routes.set_routes(self._read_json_body()))
+                except audio_routes.RouteError as exc:
+                    self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                except Exception as exc:  # noqa: BLE001 — saída que sumiu, serviço que não reiniciou...
+                    self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_GATEWAY)
                 return
 
             m = re.match(r"^/api/btaudio/([0-9A-Fa-f:]{17})$", parsed.path)

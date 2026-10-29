@@ -85,20 +85,15 @@ def _to_16k(frame: bytes, rate: int) -> bytes:
 
 
 def bluetooth_mic() -> str | None:
-    """A entrada de um fone/caixa Bluetooth com microfone (viva-voz) conectado, ex. "bluez_input.41:42:9B:1E:A8:01".
+    """A entrada Bluetooth (viva-voz) que o microfone deve usar agora, ex. "bluez_input.41:42:9B:1E:A8:01"; None =
+    microfone USB. Segue a escolha da aba Aparelhos (cassandra/audio_routes.py).
 
     O WirePlumber cria essa entrada para todo aparelho com perfil viva-voz e troca o aparelho para esse perfil
     sozinho enquanto alguém grava dela (o som cai para qualidade de telefone, 16 kHz mono, nos dois sentidos).
-    MIC_SOURCE=usb ignora microfones Bluetooth e fica no microfone USB.
     """
-    if os.getenv("MIC_SOURCE", "auto").strip().lower() == "usb":
-        return None
-    try:
-        out = subprocess.run(["wpctl", "status", "--name"], capture_output=True, text=True, timeout=3).stdout
-    except (OSError, subprocess.SubprocessError):
-        return None
-    m = re.search(r"\b(bluez_input\.[0-9A-Fa-f:]{17})\b", out)
-    return m.group(1) if m else None
+    from cassandra.audio_routes import bluetooth_mic_input  # noqa: PLC0415
+
+    return bluetooth_mic_input()
 
 
 class _PipeWireStream:

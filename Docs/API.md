@@ -370,6 +370,22 @@ som volta sozinho para a saída normal; quando ela volta com o equalizador ligad
   saída), `eq_enabled`, `bass`/`treble` (-12 a +12 dB) e `preset` (`normal`, `grave`, `grave_forte`, `voz`,
   `agudo`). Devolve o mesmo que o GET.
 
+## 10b3. Áudio da Cassandra: microfone, voz e música (`/api/audio-routes`)
+
+Qual aparelho faz cada coisa (aba Aparelhos → "Áudio da Cassandra"). Código em `cassandra/audio_routes.py`,
+escolhas em `data/audio_routes.json`.
+
+- `mic`: `auto` (Bluetooth com viva-voz conectado, senão o USB), `usb` ou `bt:<MAC>`. O microfone troca em até 10 s.
+  Com o microfone de um aparelho Bluetooth em uso, o som que vai para ele fica em qualidade de telefone (perfil
+  viva-voz). A variável `MIC_SOURCE` do `.env` só vale como padrão enquanto nada foi escolhido.
+- `voice`: `auto` (não mexe) ou `bt:<MAC>` / `node:<nome no PipeWire>`. Vira a saída padrão: voz, alarmes e bipes.
+  O vigia do `bt_audio` reaplica a cada 10 s (ex.: a caixa escolhida acabou de reconectar).
+- `music`: `same` (a saída padrão) ou `bt:<MAC>` / `node:<nome>`. Grava `~/.config/cassandra/music-output`, que o
+  `cassandra-spotify.sh` passa ao librespot em `PULSE_SINK`, e reinicia o `cassandra-spotify`.
+
+`GET` devolve, para cada uma, `{ "value", "now", "options": [{ "value", "label", "available" }] }` (e `note`
+quando um microfone Bluetooth está em uso). `POST` recebe só o que muda, ex. `{ "voice": "bt:41:42:9B:1E:A8:01" }`.
+
 ## 10c. Spotify
 
 Controle pela Web API do Spotify (`cassandra/spotify.py`, login OAuth com PKCE —
