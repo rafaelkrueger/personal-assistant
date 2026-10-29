@@ -284,8 +284,10 @@ class MicrophoneInputSource:
         return text
 
     def _check_microphone(self) -> bool:
-        """Há algum aparelho de captura (ex.: microfone USB)? Loga só quando muda."""
-        present = bool(glob.glob("/proc/asound/card*/pcm*c"))
+        """Há algum aparelho de captura (microfone USB ou caixa/fone Bluetooth com viva-voz)? Loga só quando muda."""
+        from cassandra.vad_recorder import bluetooth_mic  # noqa: PLC0415
+
+        present = bool(glob.glob("/proc/asound/card*/pcm*c")) or bluetooth_mic() is not None
         if present != self._mic_present:
             monitor.set(present=present)
             if present:
