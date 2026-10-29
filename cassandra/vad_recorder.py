@@ -3,9 +3,13 @@ from __future__ import annotations
 
 import math
 import os
+import re
+import select
 import struct
+import subprocess
 import tempfile
 import threading
+import time
 import wave
 from collections import deque
 
@@ -80,6 +84,60 @@ def _to_16k(frame: bytes, rate: int) -> bytes:
     return np.clip(samples, -32768, 32767).astype(np.int16).tobytes()
 
 
+def bluetooth_mic() -> str | None:
+    """A entrada de um fone/caixa Bluetooth com microfone (viva-voz) conectado, ex. "bluez_input.41:42:9B:1E:A8:01".
+
+    O WirePlumber cria essa entrada para todo aparelho com perfil viva-voz e troca o aparelho para esse perfil
+    sozinho enquanto alguém grava dela (o som cai para qualidade de telefone, 16 kHz mono, nos dois sentidos).
+    MIC_SOURCE=usb ignora microfones Bluetooth e fica no microfone USB.
+    """
+    if os.getenv("MIC_SOURCE", "auto").strip().lower() == "usb":
+        return None
+    try:
+        out = subprocess.run(["wpctl", "status", "--name"], capture_output=True, text=True, timeout=3).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    m = re.search(r"\b(bluez_input\.[0-9A-Fa-f:]{17})\b", out)
+    return m.group(1) if m else None
+
+
+class _PipeWireStream:
+    """Microfone lido pelo pw-record, no lugar do PyAudio: o PyAudio só enxerga os microfones do ALSA (USB), e os
+    Bluetooth só existem no PipeWire. Mesma interface que o PyAudio usa aqui (read/stop_stream/close)."""
+
+    def __init__(self, target: str) -> None:
+        self.target = target
+        self._proc = subprocess.Popen(
+            ["pw-record", "--target", target, "--rate", str(SAMPLE_RATE), "--channels", str(CHANNELS),
+             "--format", "s16", "--raw", "--latency", f"{FRAME_MS}ms", "-"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        )
+        self._fd = self._proc.stdout.fileno()
+
+    def read(self, frames: int, exception_on_overflow: bool = False) -> bytes:  # noqa: ARG002
+        size = frames * SAMPLE_WIDTH
+        data = b""
+        while len(data) < size:
+            # a caixa desligou/saiu do alcance: sem isso a leitura travaria a Cassandra para sempre
+            ready, _, _ = select.select([self._fd], [], [], 3.0)
+            chunk = os.read(self._fd, size - len(data)) if ready else b""
+            if not chunk:
+                raise OSError(f"o microfone Bluetooth parou ({self.target})")
+            data += chunk
+        return data
+
+    def stop_stream(self) -> None:
+        pass
+
+    def close(self) -> None:
+        self._proc.terminate()
+        try:
+            self._proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            self._proc.kill()
+        self._proc.stdout.close()
+
+
 class VadRecorder:
     """Records audio continuously, returning one complete utterance per call.
 
@@ -109,6 +167,7 @@ class VadRecorder:
         self.max_duration = max_duration
         self.pre_roll_frames = pre_roll_frames
         self._pa = None
+        self._source_checked = 0.0  # última vez que conferiu se apareceu/sumiu um microfone Bluetooth
         monitor.set(threshold=energy_threshold)
         self._rate: int | None = None  # a taxa que o microfone atual aceitou
         self._noise: float | None = None  # ruído do ambiente (percentil baixo da energia recente sem fala)
@@ -138,7 +197,20 @@ class VadRecorder:
         return int(inputs[0]["index"]) if inputs else None
 
     def _open_stream(self, pa, pyaudio):
-        """Abre o microfone na 1ª taxa que ele aceitar. Devolve (stream, taxa, amostras por quadro de 30 ms)."""
+        """Abre o microfone na 1ª taxa que ele aceitar. Devolve (stream, taxa, amostras por quadro de 30 ms).
+        Um microfone Bluetooth conectado (viva-voz) tem preferência sobre o USB."""
+        self._source_checked = time.time()
+        bt = bluetooth_mic()
+        if bt:
+            stream = _PipeWireStream(bt)
+            if self._rate != -1:
+                print(f"[MIC] Microfone Bluetooth aberto: {bt}", flush=True)
+                monitor.set(device=bt, rate=SAMPLE_RATE)
+                monitor.event("status", f"Microfone aberto: Bluetooth ({bt.split('.', 1)[-1]})")
+            self._rate = -1  # marca "Bluetooth": ao voltar para o USB, a taxa dele é descoberta de novo
+            return stream, SAMPLE_RATE, FRAME_SIZE
+        if self._rate == -1:
+            self._rate = None
         device = self._input_device(pa)
         rates = list(_CAPTURE_RATES)
         if device is not None:
@@ -234,6 +306,12 @@ class VadRecorder:
 
         # O microfone fica aberto entre uma gravação e outra: o que a pessoa fala logo depois do bip (enquanto o
         # loop troca de gravação) fica guardado e não se perde. Antes ele fechava e reabria a cada fala.
+        if getattr(self, "_stream", None) is not None and time.time() - self._source_checked > 10:
+            # um microfone Bluetooth conectou ou desconectou: troca de microfone
+            self._source_checked = time.time()
+            current = self._stream[0].target if isinstance(self._stream[0], _PipeWireStream) else None
+            if bluetooth_mic() != current:
+                self._close_stream()
         if getattr(self, "_stream", None) is None:
             self._stream = self._open_stream(pa, pyaudio)
         stream, rate, device_frames = self._stream

@@ -1228,8 +1228,11 @@ HTML_PAGE = """<!doctype html>
           <div class="settings-row-desc" style="margin-bottom:10px">O aparelho precisa estar ligado e no mesmo Wi-Fi. Ao conectar, a Cassandra identifica o que ele é e, se der para controlá-lo, mostra a opção Controlar. Alguns pedem uma confirmação na própria tela.</div>
           <div class="dv-grid" id="dvFound"></div>
           <div class="bt-job" id="dvJob"></div>
-          <div class="dv-section-title"><span>Bluetooth</span><button class="btn btn-ghost btn-sm" onclick="gotoTab('settings')">Gerenciar</button></div>
+          <div class="dv-section-title"><span>Bluetooth</span><button class="btn btn-primary btn-sm" id="dvBtScan">Procurar Bluetooth</button></div>
+          <div class="settings-row-desc" style="margin-bottom:10px">Para uma caixa ou fone novo: deixe ele em modo de pareamento (luz piscando, normalmente segurando o botão de Bluetooth) e toque em Procurar Bluetooth.</div>
           <div class="dv-grid" id="dvBt"><div class="bt-empty">Carregando…</div></div>
+          <div class="dv-grid" id="dvBtFound"></div>
+          <div class="bt-job" id="dvBtJob"></div>
         </div>
 
         <div id="dvRemote" style="display:none">
@@ -4109,8 +4112,31 @@ async function loadDeviceBt(){
     document.getElementById("dvBt").innerHTML=!d.available?'<div class="bt-empty">Bluetooth indisponível.</div>':(paired.length?paired.map(x=>`
       <div class="dv-card"><div class="dv-head"><div class="dv-icon">${DV_BT_ICON}</div><div style="min-width:0;flex:1"><div class="dv-name">${esc(x.name)}</div><div class="dv-sub"><span class="dv-dot ${x.connected?"on":""}"></span>${x.connected?"conectado":"desconectado"}</div></div></div>
       <div class="dv-actions">${x.connected?`<button class="btn btn-primary btn-sm" data-bt-open="${esc(x.mac)}" data-name="${esc(x.name)}">Controlar</button><button class="btn btn-ghost btn-sm" data-dv-bt="disconnect" data-mac="${esc(x.mac)}">Desconectar</button>`:`<button class="btn btn-primary btn-sm" data-dv-bt="connect" data-mac="${esc(x.mac)}">Conectar</button>`}</div></div>`).join(""):'<div class="bt-empty">Nenhum aparelho Bluetooth pareado.</div>');
+    renderDeviceBtScan(d);
   }catch(e){document.getElementById("dvBt").innerHTML=`<div class="bt-empty">${esc(e.message)}</div>`;}
 }
+let dvBtPoll=null;
+function renderDeviceBtScan(d){
+  const found=(d.devices||[]).filter(x=>!x.paired), busy=!!(d.job&&d.job.state==="running");
+  document.getElementById("dvBtFound").innerHTML=found.length?found.map(x=>`
+      <div class="dv-card"><div class="dv-head"><div class="dv-icon">${DV_BT_ICON}</div><div style="min-width:0;flex:1"><div class="dv-name">${esc(x.name)}</div><div class="dv-sub">encontrado · ${esc(x.mac)}</div></div></div>
+      <div class="dv-actions"><button class="btn btn-primary btn-sm" data-dv-bt="connect" data-mac="${esc(x.mac)}" ${busy?"disabled":""}>Parear e conectar</button></div></div>`).join("")
+    :(d.scanning?'<div class="bt-empty">Procurando… deixe o aparelho em modo de pareamento.</div>':"");
+  const scan=document.getElementById("dvBtScan");
+  scan.disabled=!d.available||d.scanning||busy;
+  scan.textContent=d.scanning?"Procurando…":"Procurar Bluetooth";
+  const job=document.getElementById("dvBtJob");
+  const recent=d.job&&(busy||Date.now()/1000-d.job.at<120);
+  job.className="bt-job"+(recent?" "+d.job.state:""); job.textContent=recent?d.job.message:"";
+  // enquanto procura ou pareia, atualiza a cada 2 s; depois para
+  if(d.scanning||busy){if(!dvBtPoll) dvBtPoll=setInterval(loadDeviceBt,2000);}
+  else if(dvBtPoll){clearInterval(dvBtPoll);dvBtPoll=null;}
+}
+document.getElementById("dvBtScan").addEventListener("click",async()=>{
+  const scan=document.getElementById("dvBtScan"); scan.disabled=true;
+  try{await api("/api/bluetooth/power","POST",{on:true});await api("/api/bluetooth/scan","POST",{});}catch(err){alertUnlessTimeout(err);}
+  loadDeviceBt();
+});
 function dvOpen(){document.getElementById("dvList").style.display="";document.getElementById("dvRemote").style.display="none";loadDevices();loadDeviceBt();}
 async function dvScan(){
   document.getElementById("dvScan").disabled=true; dvSay("Procurando aparelhos na rede…","running");
@@ -4238,7 +4264,7 @@ document.getElementById("tab-devices").addEventListener("click",async e=>{
   if(con){try{renderDevices(await api("/api/devices/connect","POST",{host:con.dataset.dvConnect}));}catch(err){dvSay(err.message,"error");}return;}
   const bto=e.target.closest("[data-bt-open]"); if(bto){openBtPanel(bto.dataset.btOpen,bto.dataset.name);return;}
   const bt=e.target.closest("[data-dv-bt]");
-  if(bt){bt.disabled=true;try{await api(`/api/bluetooth/${bt.dataset.dvBt}`,"POST",{mac:bt.dataset.mac});}catch(err){alertUnlessTimeout(err);}setTimeout(loadDeviceBt,bt.dataset.dvBt==="connect"?6000:800);return;}
+  if(bt){bt.disabled=true;try{await api(`/api/bluetooth/${bt.dataset.dvBt}`,"POST",{mac:bt.dataset.mac});}catch(err){alertUnlessTimeout(err);}setTimeout(loadDeviceBt,800);return;}
   const conf=e.target.closest("[data-rm-confirm]");
   if(conf){
     const what=conf.dataset.rmConfirm==="shutdown"?"Desligar":"Reiniciar";
