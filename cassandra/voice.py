@@ -145,6 +145,29 @@ ESPEAK_FEMALE_VARIANT = "f4"
 _STREAM_RATE = 24_000
 # Frases curtas (ex.: "Não entendi.", "Pausei.") ficam guardadas: da 2ª vez em diante tocam na hora, sem API.
 _TTS_CACHE = Path("data/tts_cache")
+# Ganho da voz em dB (VOICE_BOOST_DB no .env; 0 desliga). A fala da OpenAI/Azure sai ~10 dB abaixo de uma música
+# (RMS ~-18 dBFS) e, numa caixinha Bluetooth, ficava baixa mesmo no volume máximo. O ganho passa por um limitador
+# suave (tanh): a fala sobe e os picos não estouram.
+_VOICE_BOOST_DB = float(os.getenv("VOICE_BOOST_DB", "8") or 0)
+
+
+class _Booster:
+    """Aplica o ganho da voz em PCM 16-bit mono que chega em pedaços (de tamanho qualquer, até ímpar)."""
+
+    def __init__(self, db: float = _VOICE_BOOST_DB) -> None:
+        self.gain = 10 ** (db / 20)
+        self._rest = b""
+
+    def __call__(self, chunk: bytes) -> bytes:
+        if self.gain <= 1.0:
+            return chunk
+        import numpy as np  # noqa: PLC0415
+
+        data = self._rest + chunk
+        cut = len(data) - len(data) % 2
+        self._rest = data[cut:]
+        x = np.frombuffer(data[:cut], dtype=np.int16).astype(np.float32) / 32768.0
+        return (np.tanh(x * self.gain) * 32000).astype(np.int16).tobytes()
 _CACHE_MAX_CHARS = 80
 
 
@@ -289,12 +312,15 @@ class VoiceOutput:
         play = ["pw-play", "--raw", "--format", "s16", "--rate", str(_STREAM_RATE), "--channels", "1", "-"]
         with self._play_lock:
             if cache and cache.exists():
-                with open(cache, "rb") as fh:
+                with tempfile.TemporaryFile() as fh:  # o cache guarda a voz original; o ganho é na hora de tocar
+                    fh.write(_Booster()(cache.read_bytes()))
+                    fh.seek(0)
                     self._run_player(play, stdin=fh)
                 usage_log.record_tts("azure", voice, len(text), cached=True)
                 return True
             proc = None
             got: list[bytes] = []
+            boost = _Booster()
             try:
                 with _azure_request(text, "raw-24khz-16bit-mono-pcm") as resp:
                     if resp.status_code != 200:
@@ -308,7 +334,7 @@ class VoiceOutput:
                             if self._last_engine != "azure":
                                 print("[VOZ] Falando com: azure (streaming)", flush=True)
                                 self._last_engine = "azure"
-                        proc.stdin.write(chunk)
+                        proc.stdin.write(boost(chunk))
                         if cache:
                             got.append(chunk)
             except Exception as exc:  # noqa: BLE001 — franquia esgotada, rede...: a próxima voz assume
@@ -352,12 +378,15 @@ class VoiceOutput:
         play = ["pw-play", "--raw", "--format", "s16", "--rate", str(_STREAM_RATE), "--channels", "1", "-"]
         with self._play_lock:
             if cache and cache.exists():
-                with open(cache, "rb") as fh:
+                with tempfile.TemporaryFile() as fh:  # o cache guarda a voz original; o ganho é na hora de tocar
+                    fh.write(_Booster()(cache.read_bytes()))
+                    fh.seek(0)
                     self._run_player(play, stdin=fh)
                 usage_log.record_tts("openai", self.tts_model, len(text), cached=True)
                 return True
             proc = None
             got: list[bytes] = []
+            boost = _Booster()
             try:
                 stream = self.llm.stream_speech(text, model=self.tts_model, voice=self.tts_voice)
                 for chunk in stream:
@@ -369,7 +398,7 @@ class VoiceOutput:
                         if self._last_engine != "openai":
                             print("[VOZ] Falando com: openai (streaming)", flush=True)
                             self._last_engine = "openai"
-                    proc.stdin.write(chunk)
+                    proc.stdin.write(boost(chunk))
                     if cache:
                         got.append(chunk)
             except Exception as exc:  # noqa: BLE001 — sem créditos, rede...: a voz grátis assume
