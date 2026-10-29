@@ -19,6 +19,7 @@ import json
 import os
 import re
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
@@ -234,3 +235,37 @@ def enforce() -> None:
     routes = load()
     if routes["voice"] != "auto":
         _apply_voice(routes["voice"])
+    _keep_bt_awake(routes)
+
+
+# ── caixas Bluetooth que desligam sozinhas ────────────────────────────────────
+# Caixas baratas se desligam após alguns minutos sem som (e somem do Pi). Para as caixas escolhidas para voz ou
+# música: um sopro inaudível (ruído a ~-70 dBFS, 1 s) a cada KEEPALIVE_S segundos as mantém acordadas, e uma caixa
+# escolhida que caiu é reconectada a cada RECONNECT_S segundos (se estiver ligada, volta sozinha).
+KEEPALIVE_S = float(os.getenv("BT_KEEPALIVE_S", "240") or 0)
+RECONNECT_S = float(os.getenv("BT_RECONNECT_S", "60") or 0)
+_last_keepalive: dict[str, float] = {}
+_last_reconnect: dict[str, float] = {}
+
+
+def _whisper() -> bytes:
+    """1 s de ruído baixíssimo (48 kHz, mono, s16): inaudível, mas a caixa entende que está tocando."""
+    import numpy as np  # noqa: PLC0415
+
+    return np.random.randint(-6, 7, 48000, dtype=np.int16).tobytes()
+
+
+def _keep_bt_awake(routes: dict[str, str]) -> None:
+    now = time.monotonic()
+    macs = {r[3:] for r in (routes["voice"], routes["music"]) if r.startswith("bt:")}
+    for mac in macs:
+        sink = bt_sink(mac)
+        if not sink:
+            if RECONNECT_S and now - _last_reconnect.get(mac, 0) >= RECONNECT_S:
+                _last_reconnect[mac] = now
+                subprocess.run(["bluetoothctl", "connect", mac], capture_output=True, timeout=20)
+            continue
+        if KEEPALIVE_S and now - _last_keepalive.get(mac, 0) >= KEEPALIVE_S:
+            _last_keepalive[mac] = now
+            subprocess.run(["pw-play", "--target", str(sink["name"]), "--rate", "48000", "--channels", "1",
+                            "--format", "s16", "--raw", "-"], input=_whisper(), capture_output=True, timeout=10)

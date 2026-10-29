@@ -50,3 +50,17 @@ def test_voice_allows_eq_default(routes):
     audio_routes.set_routes({"voice": "bt:41:42:9B:1E:A8:01"})
     assert not audio_routes.voice_allows_default("4C:6B:B8:DE:E4:FC")
     assert audio_routes.voice_allows_default("41:42:9b:1e:a8:01")
+
+
+def test_keeps_chosen_bluetooth_awake(routes, monkeypatch):
+    calls = []
+    monkeypatch.setattr(audio_routes.subprocess, "run", lambda cmd, **kw: calls.append(cmd[:2]))
+    monkeypatch.setattr(audio_routes, "_last_keepalive", {})
+    monkeypatch.setattr(audio_routes, "_last_reconnect", {})
+    sinks = {"41:42:9B:1E:A8:01": {"id": 1, "name": "bluez_output.41_42_9B_1E_A8_01.1"}}
+    monkeypatch.setattr(audio_routes, "bt_sink", lambda mac: sinks.get(mac))
+    routes_ = {"mic": "usb", "voice": "bt:41:42:9B:1E:A8:01", "music": "bt:4C:6B:B8:DE:E4:FC"}
+    audio_routes._keep_bt_awake(routes_)
+    assert sorted(calls) == [["bluetoothctl", "connect"], ["pw-play", "--target"]]
+    audio_routes._keep_bt_awake(routes_)  # logo em seguida: nada de novo
+    assert len(calls) == 2
