@@ -151,6 +151,18 @@ _TTS_CACHE = Path("data/tts_cache")
 _VOICE_BOOST_DB = float(os.getenv("VOICE_BOOST_DB", "8") or 0)
 
 
+# Caixas Bluetooth baratas (ex.: a Alaxe) desligam o amplificador no silêncio e só religam ~0,5 s depois que o som
+# volta — o começo da frase se perdia ("olá, tudo bem?" saía "tudo bem?"). Antes da fala vai um sopro de ruído
+# inaudível (~-60 dBFS) que acorda o amplificador; silêncio puro não serve, a caixa o ignora.
+_VOICE_LEAD_MS = float(os.getenv("VOICE_LEAD_MS", "700") or 0)
+
+
+def _lead_in(rate: int = 24_000) -> bytes:
+    import numpy as np  # noqa: PLC0415
+
+    return np.random.randint(-30, 31, int(rate * _VOICE_LEAD_MS / 1000), dtype=np.int16).tobytes()
+
+
 class _Booster:
     """Aplica o ganho da voz em PCM 16-bit mono que chega em pedaços (de tamanho qualquer, até ímpar)."""
 
@@ -313,7 +325,7 @@ class VoiceOutput:
         with self._play_lock:
             if cache and cache.exists():
                 with tempfile.TemporaryFile() as fh:  # o cache guarda a voz original; o ganho é na hora de tocar
-                    fh.write(_Booster()(cache.read_bytes()))
+                    fh.write(_lead_in(_STREAM_RATE) + _Booster()(cache.read_bytes()))
                     fh.seek(0)
                     self._run_player(play, stdin=fh)
                 usage_log.record_tts("azure", voice, len(text), cached=True)
@@ -331,6 +343,7 @@ class VoiceOutput:
                         if proc is None:
                             proc = subprocess.Popen(play, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
                                                     stderr=subprocess.DEVNULL)
+                            proc.stdin.write(_lead_in(_STREAM_RATE))
                             if self._last_engine != "azure":
                                 print("[VOZ] Falando com: azure (streaming)", flush=True)
                                 self._last_engine = "azure"
@@ -379,7 +392,7 @@ class VoiceOutput:
         with self._play_lock:
             if cache and cache.exists():
                 with tempfile.TemporaryFile() as fh:  # o cache guarda a voz original; o ganho é na hora de tocar
-                    fh.write(_Booster()(cache.read_bytes()))
+                    fh.write(_lead_in(_STREAM_RATE) + _Booster()(cache.read_bytes()))
                     fh.seek(0)
                     self._run_player(play, stdin=fh)
                 usage_log.record_tts("openai", self.tts_model, len(text), cached=True)
@@ -395,6 +408,7 @@ class VoiceOutput:
                     if proc is None:
                         proc = subprocess.Popen(play, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
                                                 stderr=subprocess.DEVNULL)
+                        proc.stdin.write(_lead_in(_STREAM_RATE))
                         if self._last_engine != "openai":
                             print("[VOZ] Falando com: openai (streaming)", flush=True)
                             self._last_engine = "openai"
