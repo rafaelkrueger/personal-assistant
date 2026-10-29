@@ -4142,9 +4142,11 @@ function openRemote(id){
   document.getElementById("rmSub").textContent=`${x.online?"online":"fora do ar"} · ${dvLabel(x.category)} · ${x.control_label}`;
   const caps=new Set(x.capabilities||[]);
   document.querySelectorAll("#dvRemote [data-rm]").forEach(b=>b.disabled=!caps.has(b.dataset.rm));
+  document.getElementById("rmWake").style.display=caps.has("wake")?"":"none";
   const note=document.getElementById("rmNote");
   if(panel==="computer"){note.style.display="";note.textContent="Controlado pelo Maestro, que roda neste computador. Desligar e reiniciar esperam 1 minuto — dá para cancelar.";}
-  else if(panel==="generic"){note.style.display="";note.textContent="A Cassandra ainda não tem controle próprio para este tipo de aparelho. Dá para abrir a página de configuração dele (no mesmo Wi-Fi) e, se ele aceitar, ligá-lo pela rede.";}
+  else if(panel==="generic"&&x.category==="router"){note.style.display="";note.textContent=`${x.about?x.about+" ":""}A Cassandra não controla roteadores; a página de configuração dele abre aqui no mesmo Wi-Fi (usuário e senha costumam estar na etiqueta do aparelho).`;}
+  else if(panel==="generic"){note.style.display="";note.textContent=`${x.about?x.about+" ":""}A Cassandra ainda não tem controle próprio para este tipo de aparelho. Dá para abrir a página de configuração dele (no mesmo Wi-Fi) e, se ele aceitar, ligá-lo pela rede.`;}
   else if(x.control==="dial"){note.style.display="";note.textContent="Este aparelho só aceita abrir e fechar apps pela rede. Para ligar, desligar e volume, use o controle dele, um Fire TV plugado nele ou um emissor infravermelho.";}
   else if(x.control==="firetv"){note.style.display="";note.textContent="Ligar/desligar e volume passam pelo HDMI (CEC): funcionam se a TV tiver o CEC ativado (Anynet+, SimpLink, Bravia Sync…).";}
   else note.style.display="none";

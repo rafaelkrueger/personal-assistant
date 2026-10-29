@@ -434,7 +434,10 @@ que anuncia (`category`) e ganha um controle (`control`) se existir um para ele.
 categoria (`remote: "tv"` = controle remoto de TV). Conectados em `data/devices.json` (fora do git).
 
 `category`: `tv`, `streaming`, `speaker`, `light`, `computer`, `router`, `printer`, `smart_home`,
-`media_server`, `other` (dá para corrigir: `POST /api/devices/{id}/category`).
+`media_server`, `other` (dá para corrigir: `POST /api/devices/{id}/category`). O gateway da rede (rota padrão)
+é sempre `router`, a menos que o usuário tenha escolhido outra categoria. `about` é uma frase dizendo o que o
+aparelho é (ex.: "Modem de fibra óptica (ONT) Huawei EchoLife… É o roteador principal da casa"), pelo modelo e
+por ser ou não o gateway; nomes genéricos como "Huawei IGD" viram o nome do modelo.
 
 | `control` | O que controla |
 |---|---|

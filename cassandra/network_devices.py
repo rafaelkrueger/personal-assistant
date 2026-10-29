@@ -106,6 +106,23 @@ def _mac_of(host: str) -> str | None:
     return m.group(1) if m else None
 
 
+_gateway_cache: tuple[float, str | None] = (0.0, None)
+
+
+def _gateway_ip() -> str | None:
+    """O roteador principal da rede (rota padrão): é por ele que a casa sai para a internet."""
+    global _gateway_cache
+    if time.time() - _gateway_cache[0] < 60:
+        return _gateway_cache[1]
+    try:
+        out = subprocess.run(["ip", "route", "show", "default"], capture_output=True, text=True, timeout=3).stdout
+    except (OSError, subprocess.SubprocessError):
+        out = ""
+    m = re.search(r"default via ([0-9.]+)", out)
+    _gateway_cache = (time.time(), m.group(1) if m else None)
+    return _gateway_cache[1]
+
+
 def _page_url(host: str) -> str | None:
     for port, scheme in ((80, "http"), (443, "https"), (8080, "http")):
         if _port_open(host, port, 0.6):
@@ -261,6 +278,43 @@ _CATEGORY_RULES: list[tuple[str, str]] = [
 ]
 
 
+# Modelos conhecidos pelo que anunciam (fabricante/modelo/nome): (padrão, nome curto, o que é).
+_MODEL_RULES: list[tuple[str, str, str]] = [
+    (r"echolife|\b[eh]g8\d{3}|\bhs8\d{3}", "Modem de fibra Huawei",
+     "Modem de fibra óptica (ONT) Huawei EchoLife: o aparelho da operadora que recebe a fibra e faz o Wi-Fi."),
+    (r"zte.*\bf6\d\d|\bzxhn\b", "Modem de fibra ZTE",
+     "Modem de fibra óptica (ONT) ZTE: o aparelho da operadora que recebe a fibra e faz o Wi-Fi."),
+    (r"nokia.*\bg-?\d{3,4}|\balcl\b", "Modem de fibra Nokia",
+     "Modem de fibra óptica (ONT) Nokia: o aparelho da operadora que recebe a fibra e faz o Wi-Fi."),
+]
+# Nomes que o aparelho dá a si mesmo mas não dizem nada ("Huawei IGD" = Internet Gateway Device).
+_GENERIC_NAME = re.compile(r"\bigd\b|internet ?gateway ?device|wfadevice|upnp device", re.I)
+
+
+def _model_rule(info: dict[str, Any]) -> tuple[str, str] | None:
+    text = " ".join([info.get("manufacturer") or "", info.get("model") or "", info.get("name") or "",
+                     *info.get("names", [])]).lower()
+    return next(((name, about) for pattern, name, about in _MODEL_RULES if re.search(pattern, text)), None)
+
+
+def describe(info: dict[str, Any], gateway: str | None = None) -> str:
+    """Uma frase dizendo o que o aparelho é (para a tela de detalhes)."""
+    rule = _model_rule(info)
+    parts = [rule[1]] if rule else []
+    if gateway and info.get("host") == gateway:
+        parts.append("É o roteador principal da casa: toda a internet passa por ele.")
+    elif not rule and info.get("category") == "router":
+        parts.append("Roteador ou repetidor de Wi-Fi.")
+    return " ".join(parts)
+
+
+def _nicer_name(name: str, info: dict[str, Any], is_gateway: bool) -> str:
+    if not _GENERIC_NAME.search(name or ""):
+        return name
+    rule = _model_rule(info)
+    return rule[0] if rule else ("Roteador principal" if is_gateway else name)
+
+
 def classify(info: dict[str, Any]) -> str:
     text = " ".join([*info.get("ssdp", []), *info.get("device_types", []), *info.get("mdns", []),
                      *info.get("names", []), info.get("manufacturer") or "", info.get("model") or "",
@@ -387,6 +441,7 @@ def discover(timeout: float = 4.0) -> list[dict[str, Any]]:
                          if urllib.parse.urlparse(u.strip()).hostname and not re.fullmatch(r"[0-9.]+", urllib.parse.urlparse(u.strip()).hostname)), "")
             entry["names"].append((name or "Computador").split(".")[0].upper())
     own = _own_ips()
+    gateway = _gateway_ip()
     out = []
     for host, info in list(found.items()):
         if host in own:
@@ -395,11 +450,14 @@ def discover(timeout: float = 4.0) -> list[dict[str, Any]]:
         name = names[0] if names else (info["model"] or info["hostname"].split(".")[0] or host)
         if name.isupper() and name.isalpha() and len(name) > 3:
             name = name.title()  # "MULTILASER" -> "Multilaser"
+        name = _nicer_name(name, info, host == gateway)
+        category = ("computer" if host in maestro_hosts else "router" if host == gateway
+                    else "light" if info.get("wiz") or info.get("yeelight") else classify(info))
         out.append({
             "host": host, "name": name, "manufacturer": info["manufacturer"], "model": info["model"],
             "hostname": info["hostname"], "dial_url": info["dial_url"],
-            "category": "computer" if host in maestro_hosts else ("light" if info.get("wiz") or info.get("yeelight")
-                                                                   else classify(info)),
+            "category": category,
+            "about": describe({**info, "category": category}, gateway),
             "control": ("maestro_pc" if host in maestro_hosts else "wiz" if info.get("wiz")
                         else "yeelight" if info.get("yeelight") else _control_for(info)),
             "services": sorted(info["mdns"] | {s for s in info["ssdp"] if not s.startswith("uuid:")})[:12],
@@ -952,7 +1010,15 @@ class DeviceManager:
         """Completa MAC e página de configuração de aparelhos conectados antes disso existir."""
         devices = self._load()
         changed = False
+        gateway = _gateway_ip()
         for d in devices:
+            if d["host"] == gateway and d.get("category") != "router" and not d.get("category_manual"):
+                d["category"] = "router"  # o gateway é sempre o roteador (uma classificação antiga pode ter errado)
+                changed = True
+            nicer = _nicer_name(d["name"], d, d["host"] == gateway)
+            if nicer != d["name"]:
+                d["name"] = nicer
+                changed = True
             if "page_url" not in d:
                 d["page_url"] = _page_url(d["host"])
                 changed = True
@@ -1027,9 +1093,10 @@ class DeviceManager:
         view = {k: device.get(k) for k in ("id", "name", "host", "model", "manufacturer", "category", "control",
                                            "default", "mac", "page_url")}
         view["control_label"] = CONTROL_LABELS.get(control, "")
+        view["about"] = describe(device, _gateway_ip())
         caps = set(driver.capabilities)
-        if not device.get("mac"):
-            caps.discard("wake")
+        if not device.get("mac") or device.get("category") == "router":
+            caps.discard("wake")  # roteador desligado nem responderia: não faz sentido "ligar pela rede"
         view["capabilities"] = sorted(caps)
         view["panel"] = PANELS.get(control, "generic")  # qual tela de controle a UI mostra
         view["remote"] = view["panel"]  # nome antigo
@@ -1133,6 +1200,7 @@ class DeviceManager:
         for d in devices:
             if d["id"] == device_id:
                 d["category"] = category
+                d["category_manual"] = True  # escolha do usuário: refresh_details não desfaz
         self._save(devices)
 
     # controlar
