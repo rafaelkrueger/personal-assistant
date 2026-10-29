@@ -4134,7 +4134,7 @@ async function loadRoutes(){try{renderRoutes(await api("/api/audio-routes"));}ca
 document.getElementById("dvRoutes").addEventListener("change",async e=>{
   const sel=e.target.closest("[data-route]"); if(!sel) return;
   const msg=document.getElementById("dvRoutesMsg"); msg.className="bt-job running"; msg.textContent="Trocando…";
-  try{renderRoutes(await api("/api/audio-routes","POST",{[sel.dataset.route]:sel.value}));msg.className="bt-job ok";msg.textContent=sel.dataset.route==="mic"?"Pronto. O microfone troca em até 30 s.":"Pronto.";}
+  try{renderRoutes(await api("/api/audio-routes","POST",{[sel.dataset.route]:sel.value}));msg.className="bt-job ok";msg.textContent=sel.dataset.route==="mic"?"Pronto. O microfone troca na próxima pausa.":"Pronto.";}
   catch(err){msg.className="bt-job error";msg.textContent=err.message;loadRoutes();}
 });
 let dvBtPoll=null;

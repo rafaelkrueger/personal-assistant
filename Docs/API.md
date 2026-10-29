@@ -375,7 +375,7 @@ som volta sozinho para a saída normal; quando ela volta com o equalizador ligad
 Qual aparelho faz cada coisa (aba Aparelhos → "Áudio da Cassandra"). Código em `cassandra/audio_routes.py`,
 escolhas em `data/audio_routes.json`.
 
-- `mic`: `auto` (Bluetooth com viva-voz conectado, senão o USB), `usb` ou `bt:<MAC>`. O microfone troca em até 30 s.
+- `mic`: `auto` (o USB; sem ele, um Bluetooth com viva-voz), `usb` ou `bt:<MAC>`. O microfone troca na próxima pausa.
   Com o microfone de um aparelho Bluetooth em uso, o som que vai para ele fica em qualidade de telefone (perfil
   viva-voz). A variável `MIC_SOURCE` do `.env` só vale como padrão enquanto nada foi escolhido.
 - `voice`: `auto` (não mexe) ou `bt:<MAC>` / `node:<nome no PipeWire>`. Vira a saída padrão: voz, alarmes e bipes.

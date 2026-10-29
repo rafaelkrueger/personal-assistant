@@ -5,6 +5,8 @@
   ~/.config/cassandra/music-output (o nome da saída no PipeWire) e passa em PULSE_SINK; trocar reinicia o serviço.
   Se a saída escolhida não existir (caixa desligada), o PipeWire toca na saída padrão.
 - microfone: o VadRecorder pergunta mic_choice() — USB pelo PyAudio, ou a entrada viva-voz de um aparelho Bluetooth.
+  Microfone Bluetooth só quando escolhido (ou sem USB): ele deixa o som da caixa em qualidade de telefone (baixo,
+  mono, com chiado) — o Bluetooth não tem microfone e som de alta qualidade ao mesmo tempo.
 
 As escolhas ficam em data/audio_routes.json: {"mic": "auto"|"usb"|"bt:MAC", "voice": "auto"|"bt:MAC"|"node:<nome>",
 "music": "same"|"bt:MAC"|"node:<nome>"}. Um aparelho Bluetooth desconectado volta a valer quando reconectar: o vigia
@@ -88,6 +90,8 @@ def bluetooth_mic_input() -> str | None:
     if choice.startswith("bt:"):
         want = "bluez_input." + choice[3:].upper()
         return next((i for i in inputs if i.upper() == want.upper()), None)
+    if glob.glob("/proc/asound/card*/pcm*c"):
+        return None  # automático: com microfone USB, fica nele
     return inputs[0] if inputs else None
 
 
@@ -115,10 +119,10 @@ def options() -> dict[str, Any]:
     bt_out = [{"value": "bt:" + d["mac"], "label": d["name"], "available": d["mac"] in connected} for d in bt]
     pi = _pi_sinks(nodes)
     usb_present = bool(glob.glob("/proc/asound/card*/pcm*c"))
-    mic_opts = [{"value": "auto", "label": "Automático (Bluetooth com microfone, se houver; senão o USB)",
+    mic_opts = [{"value": "auto", "label": "Automático (o USB; sem ele, um Bluetooth com viva-voz)",
                  "available": True},
                 {"value": "usb", "label": "Microfone USB", "available": usb_present}]
-    mic_opts += [{"value": "bt:" + d["mac"], "label": f"{d['name']} (viva-voz)", "available": d["mac"] in inputs}
+    mic_opts += [{"value": "bt:" + d["mac"], "label": f"{d['name']} (viva-voz: som dela vira qualidade de telefone)", "available": d["mac"] in inputs}
                  for d in bt if d["has_mic"]]
     voice_opts = [{"value": "auto", "label": "Saída padrão do Pi", "available": True}, *bt_out, *pi]
     music_opts = [{"value": "same", "label": "A mesma da voz", "available": True}, *bt_out, *pi]

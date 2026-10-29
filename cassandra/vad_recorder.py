@@ -166,6 +166,7 @@ class VadRecorder:
         self._pa = None
         self._source_checked = 0.0  # última vez que conferiu se apareceu/sumiu um microfone Bluetooth
         self._source_misses = 0  # conferências seguidas em que o microfone certo era outro
+        self._opened_choice = ""  # a escolha da aba Aparelhos quando o microfone atual foi aberto
         monitor.set(threshold=energy_threshold)
         self._rate: int | None = None  # a taxa que o microfone atual aceitou
         self._noise: float | None = None  # ruído do ambiente (percentil baixo da energia recente sem fala)
@@ -197,7 +198,10 @@ class VadRecorder:
     def _open_stream(self, pa, pyaudio):
         """Abre o microfone na 1ª taxa que ele aceitar. Devolve (stream, taxa, amostras por quadro de 30 ms).
         Um microfone Bluetooth conectado (viva-voz) tem preferência sobre o USB."""
+        from cassandra.audio_routes import mic_choice  # noqa: PLC0415
+
         self._source_checked = time.time()
+        self._opened_choice = mic_choice()
         bt = bluetooth_mic()
         if bt:
             stream = _PipeWireStream(bt)
@@ -304,6 +308,10 @@ class VadRecorder:
 
         # O microfone fica aberto entre uma gravação e outra: o que a pessoa fala logo depois do bip (enquanto o
         # loop troca de gravação) fica guardado e não se perde. Antes ele fechava e reabria a cada fala.
+        from cassandra.audio_routes import mic_choice  # noqa: PLC0415
+
+        if getattr(self, "_stream", None) is not None and mic_choice() != self._opened_choice:
+            self._close_stream()  # a escolha mudou na aba Aparelhos: troca já, sem a folga abaixo
         if getattr(self, "_stream", None) is not None and time.time() - self._source_checked > 10:
             # um microfone Bluetooth conectou ou desconectou: troca de microfone — só depois de 3 conferências
             # seguidas (~30 s), porque a entrada Bluetooth some por instantes quando a caixa troca de perfil

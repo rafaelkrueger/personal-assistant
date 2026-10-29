@@ -33,7 +33,10 @@ def test_invalid_values(routes):
 def test_mic_choice_picks_the_chosen_bluetooth(routes, monkeypatch):
     monkeypatch.setattr(audio_routes, "_bt_inputs",
                         lambda: ["bluez_input.4C:6B:B8:DE:E4:FC", "bluez_input.41:42:9B:1E:A8:01"])
-    assert audio_routes.bluetooth_mic_input() == "bluez_input.4C:6B:B8:DE:E4:FC"  # auto: o 1º
+    monkeypatch.setattr(audio_routes.glob, "glob", lambda pattern: [])
+    assert audio_routes.bluetooth_mic_input() == "bluez_input.4C:6B:B8:DE:E4:FC"  # auto sem USB: o 1º
+    monkeypatch.setattr(audio_routes.glob, "glob", lambda pattern: ["/proc/asound/card2/pcm0c"])
+    assert audio_routes.bluetooth_mic_input() is None  # auto com USB: fica no USB
     audio_routes.set_routes({"mic": "bt:41:42:9B:1E:A8:01"})
     assert audio_routes.bluetooth_mic_input() == "bluez_input.41:42:9B:1E:A8:01"
     audio_routes.set_routes({"mic": "usb"})
