@@ -113,8 +113,10 @@ class _PipeWireStream:
         size = frames * SAMPLE_WIDTH
         data = b""
         while len(data) < size:
-            # a caixa desligou/saiu do alcance: sem isso a leitura travaria a Cassandra para sempre
-            ready, _, _ = select.select([self._fd], [], [], 3.0)
+            # a caixa desligou/saiu do alcance: sem isso a leitura travaria a Cassandra para sempre. Folga de 10 s:
+            # a troca para o perfil viva-voz leva alguns segundos, e desistir antes fazia a caixa ficar trocando de
+            # perfil até perder o áudio.
+            ready, _, _ = select.select([self._fd], [], [], 10.0)
             chunk = os.read(self._fd, size - len(data)) if ready else b""
             if not chunk:
                 raise OSError(f"o microfone Bluetooth parou ({self.target})")
@@ -163,6 +165,7 @@ class VadRecorder:
         self.pre_roll_frames = pre_roll_frames
         self._pa = None
         self._source_checked = 0.0  # última vez que conferiu se apareceu/sumiu um microfone Bluetooth
+        self._source_misses = 0  # conferências seguidas em que o microfone certo era outro
         monitor.set(threshold=energy_threshold)
         self._rate: int | None = None  # a taxa que o microfone atual aceitou
         self._noise: float | None = None  # ruído do ambiente (percentil baixo da energia recente sem fala)
@@ -302,10 +305,13 @@ class VadRecorder:
         # O microfone fica aberto entre uma gravação e outra: o que a pessoa fala logo depois do bip (enquanto o
         # loop troca de gravação) fica guardado e não se perde. Antes ele fechava e reabria a cada fala.
         if getattr(self, "_stream", None) is not None and time.time() - self._source_checked > 10:
-            # um microfone Bluetooth conectou ou desconectou: troca de microfone
+            # um microfone Bluetooth conectou ou desconectou: troca de microfone — só depois de 3 conferências
+            # seguidas (~30 s), porque a entrada Bluetooth some por instantes quando a caixa troca de perfil
             self._source_checked = time.time()
             current = self._stream[0].target if isinstance(self._stream[0], _PipeWireStream) else None
-            if bluetooth_mic() != current:
+            self._source_misses = self._source_misses + 1 if bluetooth_mic() != current else 0
+            if self._source_misses >= 3:
+                self._source_misses = 0
                 self._close_stream()
         if getattr(self, "_stream", None) is None:
             self._stream = self._open_stream(pa, pyaudio)
