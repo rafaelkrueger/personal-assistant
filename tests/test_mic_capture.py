@@ -14,7 +14,7 @@ RATE = 16_000
 def _voice(seconds: float, rms: float, f0: float = 140.0) -> np.ndarray:
     """Som com "tom de voz" (harmônicos de f0, como uma vogal) — passa no _is_voiced."""
     t = np.arange(int(seconds * RATE)) / RATE
-    x = sum(np.sin(2 * np.pi * f0 * k * t) / k for k in range(1, 12))
+    x = sum(np.sin(2 * np.pi * f0 * k * t) for k in range(1, 12))
     return x * rms / np.sqrt(np.mean(x * x))
 
 

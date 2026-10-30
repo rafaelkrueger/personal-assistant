@@ -172,6 +172,7 @@ class MicrophoneInputSource:
         self._signaled = False
         self._candidate = False
         self._candidate_at = 0.0
+        self._early = ("", 0)  # (o que a conferência antecipada ouviu, até que quadro)
         try:
             text = self._capture_and_transcribe(silence_override, wake_phase=wake_phase, max_wait=max_wait)
         except Exception as exc:  # noqa: BLE001
@@ -220,7 +221,8 @@ class MicrophoneInputSource:
             waited = at
             name_start = getattr(stream, "name_start", None)
             first = int((name_start - 0.25) * 1000 / 30) if name_start and name_start > 0.6 else 0
-            path = _frames_to_wav(frames[max(0, first):])
+            end = len(frames)
+            path = _frames_to_wav(frames[max(0, first):end])
             try:
                 heard = (self._transcribe(path) or "").strip()
             except Exception:  # noqa: BLE001 — sem transcrição agora: a conferência final decide (e tem o plano B)
@@ -230,8 +232,20 @@ class MicrophoneInputSource:
             if abandoned.is_set():
                 return
             if self._name_starts(heard):
+                self._early = (heard, end)
                 self._signal_wake()
                 return
+
+    def _after_early_check(self, frames: list[bytes]) -> str | None:
+        """O que a conferência antecipada já ouviu, se depois do trecho dela só veio a pausa que encerrou a gravação
+        (nenhum quadro com voz): aí não há nada novo a transcrever e a sessão abre ~1 s antes. Só para o nome
+        sozinho — se o trecho já tinha parte do pedido, a frase inteira é transcrita."""
+        from cassandra.vad_recorder import _is_voiced  # noqa: PLC0415
+
+        heard, end = getattr(self, "_early", ("", 0))
+        if not heard or self._without_name(heard):
+            return None
+        return heard if sum(_is_voiced(f) for f in frames[end:]) <= 1 else None
 
     def _signal_wake(self) -> None:
         """Nome confirmado: toca o som de ativação (e pausa a música, via on_wake)."""
@@ -318,8 +332,9 @@ class MicrophoneInputSource:
                 text = self._with_wake_word(self._transcribe(wav_path))
             elif self._signaled:
                 # O nome já foi confirmado (e o bip tocou) enquanto a pessoa falava: falta só o pedido.
+                full = self._after_early_check(frames)
                 try:
-                    full = (self._transcribe(wav_path) or "").strip()
+                    full = full if full is not None else (self._transcribe(wav_path) or "").strip()
                 except Exception as exc:  # noqa: BLE001 — já ativou: abre a sessão e a pessoa repete o pedido
                     print(f"[WAKE] Sem transcrição do pedido ({str(exc)[:120]}).", flush=True)
                     full = ""

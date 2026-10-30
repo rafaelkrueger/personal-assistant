@@ -192,3 +192,20 @@ def test_long_narrative_after_the_name_is_background_not_a_request():
                     "me lembra amanhã de ligar pro dentista às três da tarde e depois passar no mercado pra comprar "
                     "pão, leite e ovos", "Liga a TV. Coloca na Netflix. E abaixa o volume."]:
         assert not _looks_like_background(request), request
+
+
+def test_name_alone_reuses_the_early_check_when_only_the_pause_followed():
+    import numpy as np
+
+    t = np.arange(480) / 16000
+    voice = sum(np.sin(2 * np.pi * 140 * k * t) for k in range(1, 12)) * 600  # harmônicos como uma vogal
+    voiced = voice.astype(np.int16).tobytes()
+    quiet = (np.random.default_rng(0).normal(0, 60, 480)).astype(np.int16).tobytes()
+    m = _src()
+    m._early = ("Cassandra.", 40)
+    assert m._after_early_check([voiced] * 40 + [quiet] * 30) == "Cassandra."  # só a pausa depois: sem 2ª transcrição
+    assert m._after_early_check([voiced] * 40 + [voiced] * 8 + [quiet] * 30) is None  # falou mais (o pedido)
+    m._early = ("Cassandra, que", 40)
+    assert m._after_early_check([voiced] * 40 + [quiet] * 30) is None  # o trecho já tinha parte do pedido
+    m._early = ("", 0)
+    assert m._after_early_check([quiet] * 30) is None
