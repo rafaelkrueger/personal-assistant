@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
+from skills import spoken
 from skills.base import Skill
 
 
@@ -24,29 +26,33 @@ class TodoSkill(Skill):
         )
 
     def handle(self, text: str) -> str:
-        lowered = text.lower()
-        if any(k in lowered for k in ["listar", "mostrar", "quais", "ver tarefas"]):
+        lowered = spoken.norm(text)
+        if any(k in lowered for k in ["listar", "mostrar", "mostra", "quais", "ver tarefas", "o que tem",
+                                      "ler a lista", "le a lista", "minhas tarefas"]):
             return self._list_tasks_text()
-        if any(k in lowered for k in ["adicion", "incluir", "coloque"]):
-            title = self._extract_title(text, ["adicion", "incluir", "coloque"])
-            if not title:
-                return "Qual tarefa voce quer adicionar?"
-            self.add_task(title)
-            return f"Tarefa adicionada: {title}."
-        if any(k in lowered for k in ["conclu", "marcar", "finaliz"]):
-            title = self._extract_title(text, ["conclu", "marcar", "finaliz"])
-            if not title:
-                return "Qual tarefa voce quer marcar como concluida?"
-            if self.mark_done_by_title(title):
-                return f"Tarefa marcada como concluida: {title}."
-            return f"Nao encontrei a tarefa '{title}'."
-        if any(k in lowered for k in ["remov", "tirar", "excluir", "apagar"]):
-            title = self._extract_title(text, ["remov", "tirar", "excluir", "apagar"])
+        # o verbo é a palavra inteira: "Adicionar pagar luz" é "pagar luz" (antes entrava "ar pagar luz")
+        action = spoken.first_action(text, {"remove": spoken.REMOVE_VERBS, "done": spoken.DONE_VERBS,
+                                            "add": spoken.ADD_VERBS})
+        if action == "remove":
+            title = self._title(text, spoken.REMOVE_VERBS)
             if not title:
                 return "Qual tarefa voce quer remover?"
             if self.remove_task_by_title(title):
                 return f"Tarefa removida: {title}."
             return f"Nao encontrei a tarefa '{title}'."
+        if action == "done":
+            title = self._title(text, spoken.DONE_VERBS)
+            if not title:
+                return "Qual tarefa voce quer marcar como concluida?"
+            if self.mark_done_by_title(title):
+                return f"Tarefa marcada como concluida: {title}."
+            return f"Nao encontrei a tarefa '{title}'."
+        if action == "add":
+            title = self._title(text, spoken.ADD_VERBS)
+            if not title:
+                return "Qual tarefa voce quer adicionar?"
+            self.add_task(title)
+            return f"Tarefa adicionada: {title}."
         return "Posso adicionar, remover, concluir ou listar sua lista de tarefas."
 
     def list_tasks(self) -> list[dict]:
@@ -85,20 +91,20 @@ class TodoSkill(Skill):
         return changed
 
     def mark_done_by_title(self, title: str) -> bool:
-        norm = title.strip().lower()
+        norm = spoken.norm(title)  # sem acento nem maiúscula: o falado acha o digitado
         tasks = self._load()
         for task in tasks:
-            if str(task.get("title", "")).strip().lower() == norm:
+            if spoken.norm(str(task.get("title", ""))) == norm:
                 task["completed"] = True
                 self._save(tasks)
                 return True
         return False
 
     def remove_task_by_title(self, title: str) -> bool:
-        norm = title.strip().lower()
+        norm = spoken.norm(title)
         tasks = self._load()
         for task in tasks:
-            if str(task.get("title", "")).strip().lower() == norm:
+            if spoken.norm(str(task.get("title", ""))) == norm:
                 return self.remove_task(str(task.get("id")))
         return False
 
@@ -123,18 +129,8 @@ class TodoSkill(Skill):
         self.db_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
     @staticmethod
-    def _extract_title(text: str, markers: list[str]) -> str:
-        lowered = text.lower()
-        idx = -1
-        marker_used = ""
-        for marker in markers:
-            pos = lowered.find(marker)
-            if pos != -1:
-                idx = pos
-                marker_used = marker
-                break
-        if idx == -1:
-            return ""
-        payload = text[idx + len(marker_used) :].strip(" .,:;-")
-        payload = payload.replace("na lista de tarefas", "").replace("da lista de tarefas", "").strip(" .,:;-")
-        return payload
+    def _title(text: str, verbs: str) -> str:
+        """A tarefa depois do verbo, sem "na lista de tarefas" nem "como concluída"."""
+        found = spoken.item_after_verb(text, verbs)
+        title = found[0] if found else ""
+        return re.sub(r"\s+(?:como\s+)?(?:conclu[ií]d[ao]|feit[ao]|finalizad[ao])$", "", title, flags=re.IGNORECASE)

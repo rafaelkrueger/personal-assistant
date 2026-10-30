@@ -4,19 +4,21 @@ from __future__ import annotations
 import re
 
 from cassandra.timer_manager import TimerManager, format_duration
+from skills import spoken
+from skills.alarm.skill import relative
 from skills.base import Skill
 
+# Com prazo (ver relative): "me avisa daqui a 10 minutos", "me lembra em meia hora" (texto em spoken.norm).
 _TRIGGER_KEYWORDS = [
-    "timer",
-    "cronômetro",
-    "cronometro",
-    "alarme",
     "me avisa",
+    "me avise",
     "me lembra",
+    "me lembre",
     "avisa em",
     "avisa daqui",
     "daqui a",
     "daqui em",
+    "dentro de",
 ]
 
 
@@ -27,8 +29,11 @@ class TimerSkill(Skill):
         self.tm = timer_manager
 
     def can_handle(self, text: str) -> bool:
-        lowered = text.lower()
-        return any(kw in lowered for kw in _TRIGGER_KEYWORDS)
+        t = spoken.norm(text)
+        if re.search(r"\b(timer|temporizador|cronometro)\b", t):
+            return True
+        # "me lembra / me avisa" só com prazo ("daqui a 10 minutos", "em meia hora"); num horário ("às 8") é alarme
+        return any(kw in t for kw in _TRIGGER_KEYWORDS) and relative(t)
 
     def handle(self, text: str) -> str:
         lowered = text.lower()
@@ -62,40 +67,8 @@ class TimerSkill(Skill):
         self.tm.add(timer_name, duration)
         return f"Timer de {label} iniciado. Vou te avisar quando terminar."
 
-    _WORD_TO_NUM = {
-        "um": 1, "uma": 1, "dois": 2, "duas": 2, "três": 3, "tres": 3,
-        "quatro": 4, "cinco": 5, "seis": 6, "sete": 7, "oito": 8, "nove": 9,
-        "dez": 10, "onze": 11, "doze": 12, "treze": 13, "quatorze": 14,
-        "catorze": 14, "quinze": 15, "dezesseis": 16, "dezessete": 17,
-        "dezoito": 18, "dezenove": 19, "vinte": 20, "trinta": 30,
-        "quarenta": 40, "cinquenta": 50, "sessenta": 60,
-    }
-
-    @classmethod
-    def _normalize_numbers(cls, text: str) -> str:
-        for word, num in cls._WORD_TO_NUM.items():
-            text = re.sub(rf"\b{word}\b", str(num), text)
-        return text
-
     @classmethod
     def _parse_duration(cls, text: str) -> int | None:
-        t = cls._normalize_numbers(text.lower())
-
-        m = re.search(r"(\d+)\s*(?:hora|horas|hr|hrs|h)\b", t)
-        if m:
-            return int(m.group(1)) * 3600
-
-        m = re.search(r"(\d+)\s*(?:minuto|minutos|min|mins)\b", t)
-        if m:
-            return int(m.group(1)) * 60
-
-        m = re.search(r"(\d+)\s*(?:segundo|segundos|seg|segs)\b", t)
-        if m:
-            return int(m.group(1))
-
-        # Bare number with no unit → assume minutes
-        m = re.search(r"\b(\d+)\b", t)
-        if m:
-            return int(m.group(1)) * 60
-
-        return None
+        """"5 minutos", "meia hora", "uma hora e meia", "vinte e cinco minutos", "1h30"... (ver skills.spoken).
+        Antes "uma hora e meia" virava 1 hora e "1 hora e 30 minutos", 1 hora."""
+        return spoken.duration_seconds(text)
