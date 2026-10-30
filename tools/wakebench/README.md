@@ -34,3 +34,19 @@ Colunas: `acerto` = chamadas em que o Vosk achou o nome; `falso` = frases sem o 
 custa uma conferência na nuvem, que as descarta); `cand(s)` = segundos entre o fim do nome e o candidato; `fim(s)` /
 `p90fim` = quanto a gravação demora para terminar depois da fala; `sem fim` = gravações que não terminaram até 7 s
 depois da fala.
+
+### Bip na hora (`WakeStream.instant`)
+
+O nome dito sozinho e claro bipa pela decisão local, sem esperar a nuvem — e nenhuma palavra parecida pode bipar.
+`--labels hard` usa as palavras soltas parecidas com o nome ("Cansada", "Fernanda", "Kassab"...). Rode com o filtro
+aberto e escolha a confiança e a duração depois, sem rodar de novo:
+
+```bash
+ABRE="--set cassandra.local_speech.INSTANT_MIN_CONF=0 --set cassandra.local_speech.INSTANT_NAME_SECONDS=[0,9]"
+wb/Scripts/python run_bench.py inst_pos --labels pos --dist 2-3m,sala,longe --tv silencio,tv $ABRE
+wb/Scripts/python run_bench.py inst_hard --labels hard --dist 2-3m,sala --tv silencio $ABRE
+wb/Scripts/python tvonly.py inst_tv $ABRE
+wb/Scripts/python instant.py inst_pos inst_hard --conf 0.6 --secs 0.3,1.3   # ou --partial: só o texto parcial
+```
+
+Fora do repositório (a pasta com `clips/` e o modelo), aponte o código: `CASSANDRA_REPO=<repo>`.

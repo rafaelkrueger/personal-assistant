@@ -100,6 +100,10 @@ def scene(clip_id: str, distance: str, tv: str, seed: int) -> tuple[np.ndarray, 
     bg[i0:i0 + len(y)] += y
     audio = np.clip(bg, -32768, 32767).astype(np.int16)
     words = meta["words"]
+    if not words:  # o serviço de voz às vezes não manda os tempos das palavras: a fala inteira pelo volume
+        fr = x[: len(x) // 480 * 480].reshape(-1, 480)
+        act = np.nonzero(np.sqrt((fr ** 2).mean(1)) > 0.05 * np.sqrt((fr ** 2).mean(1)).max())[0]
+        words = [{"w": meta["text"], "start": act[0] * 0.01, "end": (act[-1] + 1) * 0.01}]
     name_end = next((w["end"] for w in words if "assandra" in w["w"].lower()), None)
     marks = {
         "speech_start": lead + words[0]["start"],

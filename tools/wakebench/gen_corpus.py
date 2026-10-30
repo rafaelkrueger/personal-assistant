@@ -19,6 +19,17 @@ POS = [  # o nome chama (começo ou fim)
     "Cassandra, aumenta o volume.", "Cassandra, pausa a música.", "Cassandra, coloca um alarme pras seis e meia.",
     "Ei Cassandra, apaga a luz da sala.", "Cassandra, pergunta pro Pulse quanto eu dormi essa noite.",
     "Cassandra, me lembra de tomar o remédio às oito.", "Que horas são, Cassandra?", "Tá me ouvindo, Cassandra?",
+    "Cassandra!", "Ô Cassandra!", "Cassandra... tá aí?",
+]
+# Palavras soltas parecidas com o nome (nomes, exclamações): o pior caso para o bip na hora, que vale para o nome
+# dito sozinho. Nenhuma pode bipar.
+HARD = [
+    "Cansada.", "Casada.", "Sandra!", "Alessandra?", "Amanda!", "Fernanda.", "Leandra?", "Cássia!", "Cassino.",
+    "Varanda.", "Lasanha!", "Alexandre!", "Alexandra!", "Cachorra!", "Vanessa!", "Andressa!", "Kassab.", "Assando.",
+    "Cansado.", "Passando!", "Comanda.", "Propaganda.", "Ciranda.", "Quitanda.", "Sacada!", "Escandalosa!",
+    "Cascavel!", "Cassiano!", "Casa nova.", "Clara!", "Sandro!", "Alessandro?", "Miranda!", "Iolanda!", "Wanda!",
+    "Brenda!", "Samanta!", "Casanova.", "Cansei.", "Sandrinha!", "Leandro!", "Fernando!", "Ô Sandra!",
+    "Que saudade!", "Tá cansada?", "Cadê a Sandra?", "Cássio!", "Teodora!",
 ]
 NEG = [  # não pode ativar
     "A casa da Sandra fica perto daqui.", "Eu tô muito cansada hoje.", "O Alessandro ligou de novo.",
@@ -68,8 +79,9 @@ async def synth(sem, cid, text, voice, rate, pitch):
                                       "end": (chunk["offset"] + chunk["duration"]) / 1e7})
                 break
             except Exception as exc:  # noqa: BLE001
-                if attempt == 3:
-                    raise
+                if attempt == 3:  # o serviço recusa algumas combinações de voz e frase: fica sem essa
+                    print(f"sem áudio para {cid} ({text!r}, {voice}): {exc}", file=sys.stderr)
+                    return None
                 await asyncio.sleep(2 + attempt * 3)
     mp3 = OUT / f"{cid}.mp3"
     mp3.write_bytes(audio)
@@ -89,13 +101,15 @@ async def main():
             jobs.append(synth(sem, f"p{pi:02d}_s{si:02d}", text, voice, rate, pitch))
         for ni, text in enumerate(NEG):
             jobs.append(synth(sem, f"n{ni:02d}_s{si:02d}", text, voice, rate, pitch))
+        for hi, text in enumerate(HARD):
+            jobs.append(synth(sem, f"h{hi:02d}_s{si:02d}", text, voice, rate, pitch))
     tv_voices = ["pt-BR-AntonioNeural", "pt-BR-FranciscaNeural", "pt-BR-ThalitaMultilingualNeural"]
     for ti, text in enumerate(TV):
         jobs.append(synth(sem, f"tv{ti:02d}", text, tv_voices[ti % 3], "+5%", "+0Hz"))
-    metas = await asyncio.gather(*jobs)
+    metas = [m for m in await asyncio.gather(*jobs) if m]
     corpus = []
     for m in metas:
-        label = "tv" if m["id"].startswith("tv") else ("pos" if m["id"].startswith("p") else "neg")
+        label = {"t": "tv", "p": "pos", "h": "hard"}.get(m["id"][0], "neg")
         corpus.append({**m, "label": label})
     (Path(__file__).parent / "corpus.json").write_text(json.dumps(corpus, ensure_ascii=False, indent=1),
                                                          encoding="utf-8")

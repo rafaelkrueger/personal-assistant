@@ -15,7 +15,7 @@ from multiprocessing import Pool
 from pathlib import Path
 
 HERE = Path(__file__).parent
-REPO = Path(__file__).resolve().parents[2]
+REPO = Path(os.environ.get("CASSANDRA_REPO") or Path(__file__).resolve().parents[2])  # cópia fora do repo: aponte
 MODEL = HERE / "vosk-model-small-pt-0.3"
 
 
@@ -91,11 +91,18 @@ def run_scene(job):
     t0 = time.perf_counter()
     while True:
         ws = _LOCAL.stream()
-        cand = {"pos": None}
+        cand = {"pos": None, "instant": None, "decided": None}
 
-        def on_frame(f, ws=ws, cand=cand):
+        def on_frame(f, ws=ws, cand=cand):  # o mesmo que MicrophoneInputSource faz a cada quadro
             if ws.feed(f) and cand["pos"] is None:
                 cand["pos"] = fake.pos / sim.RATE
+            live = rec.live
+            if live is not None:
+                ok = ws.instant(live.quiet, live.onset)
+                if ws.instant_info is not None and cand["decided"] is None:
+                    cand["decided"] = fake.pos / sim.RATE  # quando a decisão do bip na hora saiu (sim ou não)
+                if ok and cand["instant"] is None:
+                    cand["instant"] = fake.pos / sim.RATE
             return ws.heard
 
         try:
@@ -104,7 +111,8 @@ def run_scene(job):
             heard, only, text = ws.close()
             if heard:  # achou o nome, mas a gravação não terminou até o fim da cena
                 recs.append({"start": None, "end": None, "heard": True, "text": text, "cand": cand["pos"],
-                             "unterminated": True})
+                             "unterminated": True, "instant": cand["instant"], "decided": cand["decided"],
+                             "info": ws.instant_info})
             break
         heard, only, text = ws.close()
         end = fake.pos / sim.RATE
@@ -113,10 +121,13 @@ def run_scene(job):
                 dur = w.getnframes() / w.getframerate()
             os.unlink(path)
             recs.append({"start": round(end - dur, 3), "end": round(end, 3), "heard": heard, "text": text,
-                         "cand": cand["pos"], "name_start": getattr(ws, "name_start", None)})
+                         "cand": cand["pos"], "name_start": getattr(ws, "name_start", None),
+                         "instant": cand["instant"], "decided": cand["decided"], "info": ws.instant_info,
+                         "peak": round(rec.last_peak)})
         elif heard:
             recs.append({"start": None, "end": round(end, 3), "heard": heard, "text": text, "cand": cand["pos"],
-                         "dropped": True})
+                         "dropped": True, "instant": cand["instant"], "decided": cand["decided"],
+                         "info": ws.instant_info})
     return {"clip": clip_id, "dist": dist, "tv": tv, "seed": seed, "marks": marks, "recs": recs,
             "cpu": round(time.perf_counter() - t0, 2), "len": round(len(audio) / sim.RATE, 2)}
 
@@ -176,6 +187,7 @@ def main():
     ap.add_argument("--tv", default="silencio,tv")
     ap.add_argument("--neg", type=float, default=1.0, help="fração das frases sem o nome")
     ap.add_argument("--speakers", type=int, default=18)
+    ap.add_argument("--labels", default="pos,neg", help="pos, neg e/ou hard (palavras soltas parecidas com o nome)")
     ap.add_argument("--set", action="append", default=[])
     ap.add_argument("--workers", type=int, default=4)
     args = ap.parse_args()
@@ -184,7 +196,7 @@ def main():
 
     jobs = []
     for c in sim.corpus():
-        if c["label"] == "tv":
+        if c["label"] not in args.labels.split(","):
             continue
         spk = int(c["id"].split("_s")[1])
         if spk >= args.speakers:
