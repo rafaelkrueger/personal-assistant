@@ -223,3 +223,19 @@ def test_the_beep_echo_after_the_name_is_not_the_request():
     chimes = [False] * 40 + [True] * 6 + [False] * 30
     assert m._after_early_check(frames, chimes) == "Cassandra."  # o eco não é pedido: nada de 2ª transcrição
     assert m._after_early_check(frames) is None  # sem a marca, parecia que a pessoa tinha falado mais
+
+
+def test_the_cloud_transcription_gets_the_cloud_audio(monkeypatch):
+    from cassandra import input_sources
+
+    sent = []
+    m = _src()
+    m.transcription_provider, m.transcription_model, m.transcription_language = "openai", "gpt-4o-transcribe", "pt"
+    m.transcription_prompt, m._azure_down_until, m._openai_down_until, m.local = "", 0.0, 0.0, None
+    m.llm = type("L", (), {"transcribe_audio_file": lambda self, path, **kw: sent.append(path) or "ok"})()
+    monkeypatch.setattr(input_sources.llm_settings, "get",
+                        lambda: {"stt_provider": "openai", "stt_model": "", "openai_api_key": "k"})
+    m._cloud_for = {"gravacao.wav": "fala-24k.wav"}
+    transcribe = MicrophoneInputSource._transcribe.__get__(m)  # o de verdade (o _src troca por um falso)
+    assert transcribe("gravacao.wav") == "ok" and sent == ["fala-24k.wav"]  # a gravação inteira: só a fala, 24 kHz
+    assert transcribe("trecho.wav") == "ok" and sent[-1] == "trecho.wav"  # recortes (conferência) seguem iguais

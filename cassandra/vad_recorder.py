@@ -170,6 +170,26 @@ class _HighPass:
         return np.clip(np.rint(x), -32768, 32767).astype(np.int16).tobytes()
 
 
+# O áudio que vai para a transcrição na nuvem: só a fala, com CLOUD_MARGIN_FRAMES de folga em cada ponta, e a 24 kHz
+# com filtro anti-aliasing de verdade (FIR, janela de Kaiser), direto dos 48 kHz do microfone. Medido no Pi com 116
+# frases no gpt-4o-transcribe (sala, em silêncio e com TV): erro de palavras 13,8% -> 10,1%, frases certas 81 -> 90,
+# nenhum texto inventado (antes 1) e 30% menos áudio cobrado — os agudos de 8-11 kHz (o "s", o "ch") ajudam a nuvem.
+# O Vosk e o detector seguem a 16 kHz com a média de 3 amostras: o mesmo filtro de verdade a 16 kHz PIOROU o Vosk
+# pequeno (bancada, 612 chamadas: 361 -> 345 nomes achados; na sala com TV, 68% -> 63%).
+CLOUD_RATE = 24_000
+CLOUD_CUTOFF_HZ = 10_900.0
+CLOUD_TAPS = 95
+CLOUD_MARGIN_FRAMES = 10  # 0,3 s
+
+
+def _lowpass(taps: int, cutoff: float, rate: int, beta: float = 8.0):
+    import numpy as np  # noqa: PLC0415
+
+    n = np.arange(taps) - (taps - 1) / 2
+    h = np.sinc(2 * cutoff / rate * n) * np.kaiser(taps, beta)
+    return (h / h.sum()).astype(np.float32)
+
+
 def _to_16k(frame: bytes, rate: int) -> bytes:
     """PCM 16-bit mono na taxa do microfone -> 16 kHz."""
     if rate == SAMPLE_RATE:
@@ -519,6 +539,10 @@ class VadRecorder:
 
         pre_roll: list[bytes] = []
         pre_chime: list[bool] = []  # quais quadros do pre_roll eram o eco do bip
+        pre_raw: list[bytes] = []  # o pre_roll como o microfone entregou (para o áudio da nuvem, ver CLOUD_RATE)
+        recorded_raw: list[bytes] = []
+        raw_ok = True  # recorded_raw acompanha recorded quadro a quadro
+        onset_at = last_loud = 0  # onde a fala começou e o último quadro com fala (índices de recorded)
         recorded: list[bytes] = []
         speaking = False
         silent_frames = 0
@@ -532,6 +556,7 @@ class VadRecorder:
         self.last_barged = False
         self.last_peak = 0.0
         self.live = None
+        self.last_cloud_wav = None
         threshold = self._threshold()
         fast_end = False  # quem ouve ao vivo avisou (ex.: o nome foi reconhecido): basta uma pausa curta
         # Nome reconhecido ao vivo: o bip já tocou, mas a gravação segue até o fim da frase ("Cassandra, que horas
@@ -568,6 +593,7 @@ class VadRecorder:
                         break
                     pre_roll.clear()
                     pre_chime.clear()
+                    pre_raw.clear()
                     busy_tail.append(frame)
                     if len(busy_tail) > 50:
                         busy_tail.pop(0)
@@ -575,6 +601,7 @@ class VadRecorder:
                         # Interrompida: a gravação começa aqui, já com o nome, e segue até a pessoa parar de falar.
                         barged = True
                         speaking = True
+                        raw_ok = False  # o começo veio do busy_tail (16 kHz): a nuvem recebe a gravação comum
                         recorded.extend(busy_tail)
                         busy_tail.clear()
                         silent_frames = 0
@@ -591,9 +618,11 @@ class VadRecorder:
                         threshold = self._threshold()
                     pre_roll.append(frame)
                     pre_chime.append(chime)
+                    pre_raw.append(data)
                     if len(pre_roll) > self.pre_roll_frames:
                         pre_roll.pop(0)
                         pre_chime.pop(0)
+                        pre_raw.pop(0)
                     if energy > max(threshold, min_level or 0.0):
                         speaking = True
                         # o eco do bip pode abrir a gravação (alguém pode falar logo depois), mas nunca conta como voz
@@ -607,14 +636,20 @@ class VadRecorder:
                                 fast_end = bool(on_frame(f)) or fast_end
                             self.live = LiveFrame(False, voiced_frames, 0.0, threshold, levels, chime)
                             fast_end = bool(on_frame(frame)) or fast_end
+                        onset_at = len(recorded) + len(pre_roll) - 1
                         recorded.extend(pre_roll)
+                        recorded_raw.extend(pre_raw)
                         pre_roll.clear()
                         pre_chime.clear()
+                        pre_raw.clear()
                         recorded.append(frame)
+                        recorded_raw.append(data)
+                        last_loud = len(recorded) - 1
                         silent_frames = 0
                         speech_frames = 1
                 else:
                     recorded.append(frame)
+                    recorded_raw.append(data)
                     voiced = not chime and _is_voiced(clean)
                     voiced_frames += voiced
                     smooth = math.sqrt(sum(e * e for e in recent) / len(recent))
@@ -637,6 +672,7 @@ class VadRecorder:
                         silent_frames = 0
                     if energy >= threshold * 0.8:  # sílabas mais fracas contam; o chiado (bem abaixo) não
                         speech_frames += 1
+                        last_loud = len(recorded) - 1
         except Exception:
             self._close_stream()  # microfone desplugado etc.: reabre na próxima
             raise
@@ -674,7 +710,40 @@ class VadRecorder:
             wf.setsampwidth(SAMPLE_WIDTH)
             wf.setframerate(SAMPLE_RATE)
             wf.writeframes(b"".join(recorded))
+        try:
+            raw = recorded_raw if raw_ok and len(recorded_raw) == len(recorded) else None
+            self.last_cloud_wav = self._cloud_wav(recorded, raw, rate, onset_at, last_loud)
+        except Exception as exc:  # noqa: BLE001 — sem ela, vai a gravação comum
+            print(f"[VAD] áudio para a nuvem falhou ({exc}); vai a gravação comum.", flush=True)
+            self.last_cloud_wav = None
 
+        return tmp.name
+
+    @staticmethod
+    def _cloud_wav(recorded: list[bytes], raw: list[bytes] | None, rate: int, onset: int, last: int) -> str | None:
+        """WAV para a transcrição na nuvem (ver CLOUD_RATE): só a fala, a 24 kHz se o microfone deu 48 kHz (senão a
+        gravação comum, só cortada). Quem chama apaga."""
+        import numpy as np  # noqa: PLC0415
+
+        first, end = max(0, onset - CLOUD_MARGIN_FRAMES), min(len(recorded), last + 1 + CLOUD_MARGIN_FRAMES)
+        if end - first < 3:
+            return None
+        if raw is not None and rate % CLOUD_RATE == 0:
+            x = np.frombuffer(b"".join(raw[first:end]), dtype=np.int16).astype(np.float32)
+            y = np.convolve(x, _lowpass(CLOUD_TAPS, CLOUD_CUTOFF_HZ, rate), mode="same")[::rate // CLOUD_RATE]
+            pcm, out_rate = np.clip(y, -32768, 32767).astype(np.int16).tobytes(), CLOUD_RATE
+            if HPF_HZ:  # o mesmo filtro de graves da gravação, em pedaços de 30 ms (ele foi feito para quadros)
+                hpf, step = _HighPass(HPF_HZ, rate=CLOUD_RATE), CLOUD_RATE * FRAME_MS // 1000 * 2
+                pcm = b"".join(hpf(pcm[i:i + step]) for i in range(0, len(pcm), step))
+        else:
+            pcm, out_rate = b"".join(recorded[first:end]), SAMPLE_RATE
+        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        tmp.close()
+        with wave.open(tmp.name, "wb") as wf:
+            wf.setnchannels(CHANNELS)
+            wf.setsampwidth(SAMPLE_WIDTH)
+            wf.setframerate(out_rate)
+            wf.writeframes(pcm)
         return tmp.name
 
     def _close_stream(self) -> None:

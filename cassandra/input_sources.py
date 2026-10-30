@@ -385,6 +385,9 @@ class MicrophoneInputSource:
             abandoned.set()  # daqui em diante uma conferência atrasada não bipa mais
         if not wav_path:
             return ""
+        # a nuvem recebe só a fala, a 24 kHz (ver vad_recorder.CLOUD_RATE); o Vosk e os cortes usam a gravação comum
+        cloud_wav = getattr(self._recorder, "last_cloud_wav", None)
+        self._cloud_for = {wav_path: cloud_wav} if cloud_wav else {}
 
         try:
             if getattr(self._recorder, "last_barged", False):
@@ -442,6 +445,12 @@ class MicrophoneInputSource:
                 text = self._transcribe(wav_path)
         finally:
             os.unlink(wav_path)
+            if cloud_wav:
+                try:
+                    os.unlink(cloud_wav)
+                except OSError:
+                    pass
+            self._cloud_for = {}
 
         text = (text or "").strip()
         if text and (self._signaled or not wake_phase):
@@ -525,7 +534,7 @@ class MicrophoneInputSource:
         if use_openai:
             try:
                 return self.llm.transcribe_audio_file(
-                    wav_path,
+                    getattr(self, "_cloud_for", {}).get(wav_path, wav_path),
                     model=model,
                     language=self.transcription_language,
                     prompt=self.transcription_prompt,

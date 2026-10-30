@@ -240,3 +240,46 @@ def test_loudness_is_measured_only_in_the_voice_band():
     assert abs(vr._band_rms(tone(1000)) - vr.VadRecorder._rms(tone(1000))) < 2  # na faixa: o mesmo RMS
     assert vr._band_rms(tone(120)) < 15  # motor / zumbido elétrico: fora (-35 dB ou mais)
     assert vr._band_rms(tone(6000)) < 5  # chiado agudo: fora
+
+
+def test_the_cloud_gets_only_the_speech_at_24khz(recorder):
+    import wave
+
+    rng = np.random.default_rng(9)
+    t48 = np.arange(int(1.5 * 48000)) / 48000
+    voice48 = sum(np.sin(2 * np.pi * 140 * k * t48) for k in range(1, 12))
+    voice48 = voice48 * 2500 / np.sqrt(np.mean(voice48 ** 2))
+    audio48 = np.concatenate([rng.normal(0, 80, 48000 * 2), voice48 + rng.normal(0, 80, len(voice48)),
+                              rng.normal(0, 80, 48000 * 3)])
+    rec, _ = recorder(np.zeros(16))
+    rec._stream = (_Stream(audio48), 48000, 1440)  # o microfone USB entrega 48 kHz
+    path = rec.record_utterance(silence_duration=0.6)
+    cloud = rec.last_cloud_wav
+    try:
+        with wave.open(path) as w:
+            full = w.getnframes() / w.getframerate()
+            assert w.getframerate() == 16000
+        with wave.open(cloud) as w:
+            assert w.getframerate() == 24000  # os agudos até ~11 kHz chegam à nuvem
+            speech = w.getnframes() / w.getframerate()
+        assert abs(speech - (1.5 + 0.6)) < 0.25  # só a fala e 0,3 s de folga em cada ponta
+        assert full > speech + 0.8  # a gravação comum (Vosk) segue com a pré-gravação e o silêncio do fim
+    finally:
+        import os
+
+        os.unlink(path)
+        os.unlink(cloud)
+
+
+def test_the_cloud_audio_is_only_cut_when_the_mic_is_16khz(recorder):
+    import os
+    import wave
+
+    rng = np.random.default_rng(10)
+    audio = np.concatenate([rng.normal(0, 80, 16000 * 2), _voice(1.5, 2500), rng.normal(0, 80, 16000 * 3)])
+    rec, _ = recorder(audio)  # viva-voz Bluetooth: já é 16 kHz
+    path = rec.record_utterance(silence_duration=0.6)
+    with wave.open(rec.last_cloud_wav) as w:
+        assert w.getframerate() == 16000 and abs(w.getnframes() / 16000 - 2.1) < 0.25
+    os.unlink(path)
+    os.unlink(rec.last_cloud_wav)
