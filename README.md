@@ -166,6 +166,11 @@ créditos), a Cassandra usa só o local pelos 10 minutos seguintes.
    terminar o pedido. Nome dito no meio da TV (depois de uma pausa) é conferido a partir dele.
 5. **Transcrição**: `gpt-4o-transcribe` com um *contexto* (não exemplos de pedidos: com exemplos o modelo os
    repetia em áudio ruim). Em 111 falas: nome reconhecido 29/31 (antes 9/31), erro de palavras 3% (antes 31%).
+   A nuvem recebe **só a fala** (0,3 s de folga em cada ponta) **a 24 kHz**, com filtro anti-aliasing de verdade,
+   direto dos 48 kHz do microfone (`vad_recorder.CLOUD_RATE`). Medido no Pi, 116 frases na sala (em silêncio e com
+   TV): erro de palavras 13,8% → 10,1%, frases certas 81 → 90, nenhum texto inventado e 30% menos áudio cobrado.
+   O Vosk segue a 16 kHz com a média de 3 amostras: o mesmo filtro a 16 kHz piorou o modelo pequeno (bancada:
+   361 → 345 nomes achados em 612 chamadas).
    A conexão HTTPS fica aberta 2 min e, se fechou, reabre assim que alguém começa a falar (cada conferência
    economiza ~0,3 s). Texto que repete 5+ palavras seguidas do contexto é inventado (virava pedido). Chave do
    Azure recusada (401/403) não é tentada de novo até ser trocada.
@@ -183,7 +188,9 @@ créditos), a Cassandra usa só o local pelos 10 minutos seguintes.
    algarismos: "seis e meia" era "não entendi o horário", "7h30" virava 7:00 e "me lembra às oito" virava timer de
    8 minutos). "Me lembra de X às 8" vira alarme com o motivo; "tenho alarme pra hoje?" lista; "amanhã às 6" não
    toca hoje; "de segunda a sexta" é o intervalo. Nas listas, o verbo é a palavra inteira ("Adicionar leite" era
-   "ar leite") e "pão, leite e ovos" são três itens.
+   "ar leite") e "pão, leite e ovos" são três itens. Volume: "volume 50", "em cinquenta", "no máximo", "aumenta um
+   pouco" (antes só "50%"; e "desmuta" silenciava). O LLM sabe que o texto vem da voz e pode ter palavras trocadas
+   por outras de som parecido.
 
 ## Outros agentes, sempre via maestro
 

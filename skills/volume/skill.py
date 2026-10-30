@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 
 from cassandra import audio_devices
+from skills import spoken
 from skills.base import Skill
 
 
@@ -26,26 +27,32 @@ class VolumeSkill(Skill):
     def handle(self, text: str) -> str:
         if not self._backend:
             return "Controle de volume nao disponivel neste sistema."
-        t = text.lower()
+        # Como a transcrição devolve: "volume 50", "volume em cinquenta", "no máximo", "aumenta um pouco".
+        plain = re.sub(r"\bum pouc\w*", " ", spoken.norm(text))  # "um pouco" não é o número 1
+        t = spoken.numbers(plain)
 
-        if any(k in t for k in ["muta", "silenciar", "sem som", "mute"]):
-            return self._set_mute(True)
-        if any(k in t for k in ["desmuta", "unmute", "liga o som", "restaura o som"]):
+        # "desmuta" antes de "muta" (antes "desmuta o som" silenciava: "muta" está dentro de "desmuta")
+        if re.search(r"\b(desmut\w*|unmute|liga o som|restaura o som|volta o som|tira do mudo)\b", t):
             return self._set_mute(False)
+        if re.search(r"\b(mut\w*|silenci\w*|sem som|mute)\b", t):
+            return self._set_mute(True)
 
-        m = re.search(r"\b(\d{1,3})\s*%", t)
+        up = re.search(r"\b(aument\w*|sobe|subir|mais alto|mais volume)\b", t)
+        down = re.search(r"\b(diminu\w*|baix\w*|abaix\w*|menos volume|mais baixo)\b", t)
+        if re.search(r"\b(maximo|no talo)\b", t) and not down:
+            return self._set_volume(100)
+        if re.search(r"\bminimo\b", t) and not up:
+            return self._set_volume(10)
+        if re.search(r"\b(metade|meio volume)\b", t):
+            return self._set_volume(50)
+        m = re.search(r"\b(\d{1,3})\b", t)
+        if up or down:
+            step = int(m.group(1)) if m else 10
+            return self._change_volume(f"{'+' if up else '-'}{step}%")
         if m:
-            pct = max(0, min(100, int(m.group(1))))
-            return self._set_volume(pct)
+            return self._set_volume(max(0, min(100, int(m.group(1)))))
 
-        if any(k in t for k in ["aumenta", "sobe", "mais alto", "mais volume", "aumentar"]):
-            step = self._extract_step(t)
-            return self._change_volume(f"+{step}%")
-        if any(k in t for k in ["diminui", "baixa", "menos volume", "mais baixo", "diminuir"]):
-            step = self._extract_step(t)
-            return self._change_volume(f"-{step}%")
-
-        return "Nao entendi o comando de volume. Tente: 'volume 50%', 'aumenta o volume' ou 'muta o som'."
+        return "Nao entendi o comando de volume. Tente: 'volume 50', 'aumenta o volume' ou 'muta o som'."
 
     def _set_volume(self, pct: int) -> str:
         audio_devices.set_volume(pct)
@@ -59,8 +66,3 @@ class VolumeSkill(Skill):
     def _set_mute(self, mute: bool) -> str:
         audio_devices.set_mute(mute)
         return "Som silenciado." if mute else "Som restaurado."
-
-    @staticmethod
-    def _extract_step(text: str, default: int = 10) -> int:
-        m = re.search(r"\b(\d+)\b", text)
-        return int(m.group(1)) if m else default

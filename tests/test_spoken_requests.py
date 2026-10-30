@@ -133,3 +133,21 @@ def test_numbers_by_word():
     assert spoken.numbers("cento e vinte e cinco") == "125"
     assert spoken.numbers("sete e meia") == "7 e meia"
     assert spoken.numbers("cinco e vinte") == "5 e 20"  # "cinco e vinte" não é um número só
+
+
+def test_volume_understands_spoken_requests(monkeypatch):
+    from cassandra import audio_devices
+    from skills.volume.skill import VolumeSkill
+
+    calls = []
+    monkeypatch.setattr(audio_devices, "_backend", lambda: "wpctl")
+    monkeypatch.setattr(audio_devices, "set_volume", lambda pct: calls.append(("set", pct)))
+    monkeypatch.setattr(audio_devices, "change_volume", lambda delta: calls.append(("change", delta)))
+    monkeypatch.setattr(audio_devices, "set_mute", lambda mute: calls.append(("mute", mute)))
+    skill = VolumeSkill()
+    for text, call in [("Volume 50", ("set", 50)), ("coloca o volume em cinquenta", ("set", 50)),
+                       ("volume no máximo", ("set", 100)), ("aumenta o volume um pouco", ("change", 10)),
+                       ("abaixa o volume em vinte", ("change", -20)), ("Desmuta o som", ("mute", False)),
+                       ("muta o som", ("mute", True)), ("volume 30%", ("set", 30))]:
+        skill.handle(text)
+        assert calls[-1] == call, text
