@@ -98,7 +98,7 @@ def run_scene(job):
                 cand["pos"] = fake.pos / sim.RATE
             live = rec.live
             if live is not None:
-                ok = ws.instant(live.quiet, live.onset)
+                ok = ws.instant(live.quiet, live.speech_before)
                 if ws.instant_info is not None and cand["decided"] is None:
                     cand["decided"] = fake.pos / sim.RATE  # quando a decisão do bip na hora saiu (sim ou não)
                 if ok and cand["instant"] is None:

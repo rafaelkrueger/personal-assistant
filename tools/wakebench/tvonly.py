@@ -37,7 +37,7 @@ def job(args):
         def on_frame(f, ws=ws):
             ws.feed(f)
             if rec.live is not None:
-                ws.instant(rec.live.quiet, rec.live.onset)
+                ws.instant(rec.live.quiet, rec.live.speech_before)
             return ws.heard
 
         try:
