@@ -153,12 +153,14 @@ créditos), a Cassandra usa só o local pelos 10 minutos seguintes.
    Sem isso a gravação não terminava e ela levava até 30 s para responder. Depois do nome, no máximo 8 s.
 2. **Candidato** (Vosk, gramática restrita): acha o nome ao vivo, ~0,2 s depois de ele ser dito.
 3. **Bip na hora** (`WakeStream.instant`): o nome dito **sozinho**, seguido de uma pausa ("Cassandra." … e a pessoa
-   espera), bipa pela decisão local, sem esperar a nuvem — ~0,2 s depois do nome. Só quando nada mais foi
-   reconhecido, a pausa vem logo e a fala toda até ela cabe num nome (≤ 1,3 s: o Vosk às vezes ignora as palavras
-   em volta e via "o nome sozinho" em "eu falei com a Cassandra ontem"). Na bancada: o nome sozinho bipa na hora
-   92% das vezes a 2-3 m e 78% na sala (em silêncio); palavras soltas parecidas ("Casada!", "Passando!") bipam
-   ~1,7% das vezes, e a transcrição desfaz (som baixinho de desligar, a música volta). Fechar o resultado do Vosk
-   para ter a confiança custava ~0,35 s no Pi e quase não separava — desligado.
+   espera), bipa pela decisão local, sem esperar a nuvem — ~0,2 s depois do nome (mais ~0,6 s do Bluetooth até
+   a caixa tocar). Só quando nada mais foi reconhecido, a pausa vem logo e a fala alta até ela cabe num nome
+   (≤ 1,3 s, contando do primeiro som alto: o Vosk às vezes ignora as palavras em volta e via "o nome sozinho" em
+   "eu falei com a Cassandra ontem"; a TV mais baixa antes do nome não conta). Na bancada: o nome sozinho bipa na
+   hora 92% das vezes a 2-3 m e 78% na sala (em silêncio; com a TV alta, a nuvem decide como antes); frases sem o
+   nome bipam 0,4% e palavras soltas parecidas ("Casada!", "Passando!") 1,4% — e a transcrição desfaz (som
+   baixinho de desligar, a música volta). Fechar o resultado do Vosk para ter a confiança custava ~0,35 s no Pi e
+   quase não separava — desligado.
 4. **Conferência** (`input_sources.py`): o resto (nome com o pedido emendado, de longe, por cima da TV) espera a
    transcrição: o trecho até o nome vai na hora e, se ele começa pelo nome, toca o bip — sem esperar a pessoa
    terminar o pedido. Nome dito no meio da TV (depois de uma pausa) é conferido a partir dele.
@@ -171,8 +173,17 @@ créditos), a Cassandra usa só o local pelos 10 minutos seguintes.
    (o bip inteiro). Assim que alguém começa a falar, um sopro inaudível já acorda a caixa por um canal que fica
    aberto (`SpeakerWaker`), e o bip sai **por esse canal**: um `pw-play` novo levava 0,2-1,7 s só para começar a
    tocar no Pi; o canal aberto toca ~40 ms depois (o bip também perdeu os 0,1 s de silêncio do começo do arquivo).
+   O **eco do bip** volta pelo microfone (medido: 0,58 s depois, ~0,45 s, alto como uma voz perto) e virava
+   "pedido" inventado ("Pedidinhos.", "context:", "música no Spotify"): esse trecho é marcado na captura
+   (`speech_state.chiming`) e nunca conta como voz — quem fala por cima não perde nada.
 7. **Depois do nome**: o pedido é da mesma pessoa — som muito mais baixo que a voz de quem chamou não abre
    gravação, e uma fala longa e narrativa (várias frases, 25+ palavras) é ignorada como TV/conversa.
+8. **O pedido falado** (`skills/spoken.py`): horários e durações como a transcrição devolve — "sete e meia",
+   "7h30", "duas da tarde", "dez para as oito", "meia hora", "uma hora e meia", "vinte e cinco minutos" (antes só
+   algarismos: "seis e meia" era "não entendi o horário", "7h30" virava 7:00 e "me lembra às oito" virava timer de
+   8 minutos). "Me lembra de X às 8" vira alarme com o motivo; "tenho alarme pra hoje?" lista; "amanhã às 6" não
+   toca hoje; "de segunda a sexta" é o intervalo. Nas listas, o verbo é a palavra inteira ("Adicionar leite" era
+   "ar leite") e "pão, leite e ovos" são três itens.
 
 ## Outros agentes, sempre via maestro
 

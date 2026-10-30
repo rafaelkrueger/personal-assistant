@@ -47,9 +47,9 @@ def _heard_stream(words, fed=60, partial=None):
     return ws
 
 
-def _step(ws, quiet, since_onset=25):
+def _step(ws, quiet, speech=0.75):
     ws._fed += 1  # o feed() do quadro (o reconhecimento em si não importa aqui)
-    return ws.instant(quiet, since_onset + (ws._quiet_run + 1 if quiet else 0))
+    return ws.instant(quiet, lambda _quiet_frames: speech)
 
 
 def _pause(ws, frames):
@@ -97,10 +97,20 @@ def test_text_only_decision_never_closes_the_result(text_only):
 def test_a_long_sentence_around_the_name_never_beeps_early(text_only):
     # "Eu falei com a Cassandra ontem": o Vosk às vezes só reconhece o nome — mas a fala até a pausa é longa demais.
     ws = _heard_stream([_word("cassandra")])
-    assert not any(_step(ws, True, since_onset=70) for _ in range(INSTANT_QUIET_FRAMES + 2))
+    assert not any(_step(ws, True, speech=2.1) for _ in range(INSTANT_QUIET_FRAMES + 2))
     assert ws.instant_info["why"].startswith("falou")
     ws = _heard_stream([_word("cassandra")])
-    assert any(_step(ws, True, since_onset=35) for _ in range(INSTANT_QUIET_FRAMES + 2))  # "Ô Cassandra!" ~1 s
+    assert any(_step(ws, True, speech=1.05) for _ in range(INSTANT_QUIET_FRAMES + 2))  # "Ô Cassandra!" ~1 s
+
+
+def test_only_the_loud_voice_before_the_pause_counts_as_speech():
+    tv, voice, pause = [300.0] * 40, [2000.0] * 22 + [500.0] * 2 + [1800.0] * 3, [250.0] * 6
+    # a TV (bem mais baixa) falou 1,2 s antes do nome: só o nome conta
+    live = LiveFrame(True, 20, 1900.0, 400.0, tv + voice + pause)
+    assert abs(live.speech_before(5) - 0.81) < 0.04
+    # a mesma pessoa falando tudo no mesmo volume ("eu falei com a Cassandra"): conta tudo, mesmo com pausas curtas
+    live = LiveFrame(True, 40, 1900.0, 400.0, [1900.0] * 20 + [300.0] * 8 + [1900.0] * 12 + voice + pause)
+    assert live.speech_before(5) > 1.9
 
 
 def test_speech_that_goes_on_after_the_name_never_beeps_early(conf_check):
@@ -143,7 +153,7 @@ class _FakeRecorder:
     def record_utterance(self, on_frame=None, **_):
         for i in range(self.frames):
             self.live = LiveFrame(quiet=i >= self.quiet_from, voiced=min(i, 20), peak=1500.0, threshold=400.0,
-                                  onset=max(0, i - 15))
+                                  levels=[1500.0] * min(i, 25) + [100.0] * max(0, i - 25))
             on_frame(b"\x00\x00" * 480)
             time.sleep(0.002)
         fd, path = tempfile.mkstemp(suffix=".wav")
@@ -170,7 +180,7 @@ class _FakeStream:
             return True
         return False
 
-    def instant(self, quiet, since_onset=0):
+    def instant(self, quiet, speech_before=None):
         if self.n == 45 and quiet and self.instant_ok:
             self.instant_info = {"ok": True, "why": "", "conf": 1.0, "seconds": 0.6, "after_name": 0.3}
             return True
@@ -256,9 +266,10 @@ def test_sounds_are_decoded_once_without_the_leading_silence(tmp_path):
 
 
 def test_cue_plays_through_the_open_channel(monkeypatch):
-    from cassandra import voice
+    from cassandra import speech_state, voice
 
-    written = []
+    written, chimes = [], []
+    monkeypatch.setattr(speech_state, "chiming", lambda start, seconds: chimes.append((start, seconds)))
 
     class _Pipe:
         def write(self, data):
@@ -290,6 +301,9 @@ def test_cue_plays_through_the_open_channel(monkeypatch):
         time.sleep(0.01)
     first = next(w for w in written if beep in w)
     assert len(first) - len(beep) == int(waker.RATE * waker.LEAD) * 2  # 0,5 s de sopro na frente
+    # o microfone é avisado de quando o eco chega: depois do sopro e do canal abrir, e por ~o bip + a folga
+    assert chimes[-1][0] == pytest.approx(waker.LEAD + 0.3 + waker.ECHO_FROM)
+    assert chimes[-1][1] == pytest.approx(waker.ECHO_TO - waker.ECHO_FROM + 0.1 + 0.2)
     waker._since -= waker.WARM  # canal aberto há tempo: a caixa já acordou
     written.clear()
     assert waker.cue("on.mp3")
@@ -297,6 +311,7 @@ def test_cue_plays_through_the_open_channel(monkeypatch):
     while beep not in written and time.monotonic() < deadline:
         time.sleep(0.01)
     assert beep in written  # sem sopro na frente: sai na hora
+    assert chimes[-1][0] == pytest.approx(waker.ECHO_FROM)
     with waker._lock:
         waker._until = 0.0
 
@@ -309,6 +324,55 @@ def test_a_piece_of_the_context_prompt_is_a_made_up_transcription():
     # ouvido no Pi com o áudio do bip/ruído logo depois do nome: virou pedido
     assert m._hallucinated("pedidos de casa como música no Spotify, TV, Netflix, alarmes, lembretes")
     assert m._hallucinated("Música no Spotify, TV, Netflix, alarmes, lembretes.")
+    assert m._hallucinated("música no Spotify")  # só palavras do contexto (ouvido no Pi logo depois do bip)
     for real in ["Cassandra, toca música no Spotify.", "Liga a TV e abre a Netflix.", "Pergunta pro Pulse quanto eu dormi.",
-                 "Coloca um alarme e um lembrete pras sete."]:
+                 "Coloca um alarme e um lembrete pras sete.", "a TV", "Netflix"]:
         assert not m._hallucinated(real), real
+
+
+def test_the_beep_echo_never_counts_as_voice(monkeypatch):
+    """O eco do bip (alto e às vezes "com voz") abria a gravação da sessão e virava pedido inventado."""
+    import sys
+    import types
+
+    import numpy as np
+
+    from cassandra import audio_routes, speech_state, vad_recorder as vr
+
+    fake = types.ModuleType("pyaudio")
+    fake.paInt16 = 8
+    fake.PyAudio = lambda: types.SimpleNamespace(terminate=lambda: None)
+    monkeypatch.setitem(sys.modules, "pyaudio", fake)
+    monkeypatch.setattr(audio_routes, "mic_choice", lambda: "usb")
+
+    def voiced(seconds, rms):
+        t = np.arange(int(seconds * 16000)) / 16000
+        x = sum(np.sin(2 * np.pi * 140 * k * t) for k in range(1, 12))
+        return x * rms / np.sqrt(np.mean(x * x))
+
+    rng = np.random.default_rng(3)
+    audio = np.concatenate([rng.normal(0, 60, 16000 * 2), voiced(0.45, 6000), rng.normal(0, 60, 16000 * 2)])
+
+    class _Stream:
+        pos = 0
+
+        def read(self, n, exception_on_overflow=False):  # noqa: ARG002
+            if self.pos + n > len(audio):
+                raise EOFError
+            self.pos += n
+            return np.clip(audio[self.pos - n:self.pos], -32768, 32767).astype(np.int16).tobytes()
+
+    def record(echo_window):
+        stream = _Stream()
+        # o eco do bip: os quadros de 2,0 a 2,5 s (o tempo da captura vem do quadro lido)
+        monkeypatch.setattr(speech_state, "chime", lambda: echo_window and 2.0 <= stream.pos / 16000 <= 2.5)
+        rec = vr.VadRecorder(energy_threshold=400, silence_duration=0.6, max_duration=30.0)
+        rec._stream, rec._opened_choice, rec._source_checked = (stream, 16000, 480), "usb", 1e18
+        try:
+            return rec.record_utterance(silence_duration=0.6, max_wait=3.5, min_voiced=2)
+        except EOFError:
+            return None
+
+    assert record(echo_window=False) is not None  # sem a marca, o mesmo som "com voz" virava uma fala
+    assert record(echo_window=True) is None  # com a marca: só o eco, nada para transcrever
+

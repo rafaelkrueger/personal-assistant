@@ -55,8 +55,9 @@ AGC_MAX_GAIN = 5.0
 # confere o bip na hora também, e o desfaz se não era o nome (ver MicrophoneInputSource).
 INSTANT_QUIET_FRAMES = 5  # a pausa depois do nome (~150 ms); 0 desliga o bip na hora
 INSTANT_WAIT_FRAMES = 20  # a pausa tem que vir até ~0,6 s depois do candidato (senão a fala continuou)
-# Até a pausa, a fala toda não pode ser mais longa que um nome ("Ô Cassandra!" ~1,1 s): o Vosk às vezes ignora as
-# palavras em volta e via "o nome sozinho" em "eu falei com a Cassandra ontem" (medido: 40% dessas frases bipavam).
+# A fala alta que termina na pausa não pode ser mais longa que um nome ("Ô Cassandra!" ~1,1 s): o Vosk às vezes
+# ignora as palavras em volta e via "o nome sozinho" em "eu falei com a Cassandra ontem" (medido: 40% dessas frases
+# bipavam). Só a fala alta conta (ver LiveFrame.speech_before): a TV mais baixa antes do nome não tira o bip na hora.
 INSTANT_MAX_SPEECH_S = 1.3
 # Conferir também a confiança e a duração da palavra exige fechar o resultado do Vosk (~0,35 s no Pi a 600 MHz) e,
 # medido, quase não separa: nome de verdade p25 0,88 / mediana 0,99, palavras parecidas p25 0,70 / mediana 0,97 — e
@@ -274,9 +275,10 @@ class WakeStream:
             return True
         return False
 
-    def instant(self, quiet: bool, since_onset: int = 0) -> bool:
+    def instant(self, quiet: bool, speech_before=None) -> bool:
         """True (uma vez só) quando dá para bipar sem esperar a nuvem — ver INSTANT_*. Chamado a cada quadro, logo
-        depois do feed(); quiet = o gravador conta o quadro como pausa; since_onset = quadros desde o começo da fala."""
+        depois do feed(); quiet = o gravador conta o quadro como pausa; speech_before(quadros de pausa) = segundos de
+        fala até a pausa (LiveFrame.speech_before)."""
         if not self._open or self.instant_info is not None:
             return False
         self._quiet_run = self._quiet_run + 1 if quiet else 0
@@ -289,7 +291,7 @@ class WakeStream:
         partial = json.loads(self._rec.PartialResult()).get("partial", "")
         heard = " ".join([*self._texts, partial]).split()
         names = [w for w in self.speech.wake_words if w not in _SHORT_NAMES and w not in _NEAR_NAME_FIRST]
-        speech = max(0, since_onset - self._quiet_run) * 0.03  # do começo da fala até a pausa
+        speech = speech_before(self._quiet_run) if speech_before else 0.0
         info = {"ok": False, "heard": " ".join(heard), "speech": round(speech, 2)}
         if INSTANT_CONF_CHECK:
             # Tempos e confiança só existem no resultado fechado (~0,35 s no Pi a 600 MHz). Ligar as palavras no

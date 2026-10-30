@@ -850,6 +850,7 @@ class CassandraAssistant:
         """Som curto pelo canal já aberto da caixa (sai na hora); sem ele, pelo player normal."""
         if self.sound_player.enabled and not speaker_waker.cue(path, volume):
             self.sound_player.play(path, volume=None if volume == 1.0 else volume)
+            speech_state.chiming(0.3, 2.5)  # um pw-play novo leva 0,2-1,7 s para começar: o eco chega quando der
 
     def _shutdown_with_goodbye(self) -> None:
         self.memory.clear()

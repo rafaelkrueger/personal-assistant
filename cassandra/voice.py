@@ -200,6 +200,8 @@ class SpeakerWaker:
     CHUNK = RATE // 50 * 2  # 20 ms de sopro por vez (bytes)
     LEAD = 0.5  # sopro antes de um som se o canal acabou de abrir (a caixa ainda dormia)
     WARM = 0.8  # canal aberto há tanto tempo: a caixa já acordou
+    # Quando o eco do som chega ao microfone depois de escrito: medido no Pi com a Alaxe, 0,58 s (o Bluetooth).
+    ECHO_FROM, ECHO_TO = 0.35, 0.6
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -234,8 +236,9 @@ class SpeakerWaker:
         threading.Thread(target=load, name="carrega-sons", daemon=True).start()
 
     def cue(self, path: str, volume: float = 1.0) -> bool:
-        """Toca um som curto (o bip) pelo canal aberto. False = não dá (sem pw-play, som não carregado): o chamador
-        toca do jeito normal."""
+        """Toca um som curto (o bip) pelo canal aberto e avisa o microfone de quando o eco dele chega (o eco não é
+        voz — speech_state.chiming). False = não dá (sem pw-play, som não carregado): o chamador toca do jeito
+        normal."""
         pcm = self._sounds.get((path, volume))
         if not pcm or shutil.which("pw-play") is None:
             return False
@@ -245,6 +248,9 @@ class SpeakerWaker:
         with self._lock:
             self._cues.append(lead + pcm)
         self.hold((len(lead) + len(pcm)) / (2 * self.RATE) + 0.5)
+        # canal fechado: o pw-play ainda leva ~0,3 s para abrir, e o sopro vem antes
+        start = 0.0 if warm else self.LEAD + 0.3
+        speech_state.chiming(start + self.ECHO_FROM, self.ECHO_TO - self.ECHO_FROM + _audible(pcm, self.RATE) + 0.2)
         return True
 
     def _decode(self, path: str, volume: float) -> bytes:
@@ -293,6 +299,17 @@ class SpeakerWaker:
                     proc.wait(timeout=3)
                 except (OSError, subprocess.TimeoutExpired):
                     proc.kill()
+
+
+def _audible(pcm: bytes, rate: int) -> float:
+    """Segundos até o som cair abaixo de 5% do pico (o on.mp3: ~0,4 s de bip e uma cauda bem mais baixa)."""
+    import numpy as np  # noqa: PLC0415
+
+    x = np.abs(np.frombuffer(pcm, dtype=np.int16).astype(np.float32))
+    if not len(x):
+        return 0.0
+    loud = np.nonzero(x > 0.05 * float(x.max()))[0]
+    return float(loud[-1] + 1) / rate
 
 
 def _noise(samples: int) -> bytes:

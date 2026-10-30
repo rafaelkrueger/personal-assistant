@@ -10,7 +10,7 @@ import threading
 import time
 import wave
 from collections import deque
-from typing import NamedTuple
+from typing import NamedTuple, Sequence
 
 from cassandra.mic_monitor import monitor
 from cassandra import speech_state
@@ -82,7 +82,19 @@ class LiveFrame(NamedTuple):
     voiced: int  # quadros com voz desde o começo da gravação
     peak: float  # pico da voz nesta gravação
     threshold: float  # limite de fala agora
-    onset: int = 0  # quadros desde que a fala começou (o limite foi cruzado)
+    levels: Sequence[float] = ()  # volume de cada quadro desde que a fala começou
+    chime: bool = False  # o quadro caiu no eco do bip dela (speech_state.chime): não conta como voz
+
+    def speech_before(self, quiet_frames: int) -> float:
+        """Segundos do primeiro som ALTO da gravação (>= REL_SILENCE x o pico, o mesmo critério da pausa) até onde a
+        pausa de quiet_frames quadros começou: a fala de quem chamou, inteira — "eu falei com a Cassandra" conta
+        toda —, mas sem a TV mais baixa que já falava antes dela."""
+        floor = REL_SILENCE * self.peak
+        last = len(self.levels) - quiet_frames - 1
+        while last >= 0 and self.levels[last] < floor:  # a pausa é medida na média: os últimos quadros já eram baixos
+            last -= 1
+        first = next((i for i in range(last + 1) if self.levels[i] >= floor), last + 1)
+        return max(0, last - first + 1) * FRAME_MS / 1000
 
 
 def _is_voiced(frame: bytes) -> bool:
@@ -265,7 +277,7 @@ class _CaptureThread:
         try:
             while not self._stop.is_set():
                 data = self.stream.read(self._frames, exception_on_overflow=False)
-                self._put((data, speech_state.busy()))
+                self._put((data, speech_state.busy(), speech_state.chime()))
         except Exception as exc:  # noqa: BLE001 — microfone desplugado, caixa Bluetooth desligou...
             self._error = exc
         finally:
@@ -276,8 +288,8 @@ class _CaptureThread:
                 pass
             self._put(None)  # acorda quem espera um quadro
 
-    def read_frame(self, timeout: float = 15.0) -> tuple[bytes, bool]:
-        """(áudio, ela estava falando na hora). OSError se o microfone parou."""
+    def read_frame(self, timeout: float = 15.0) -> tuple[bytes, bool, bool]:
+        """(áudio, ela estava falando na hora, era o eco do bip dela). OSError se o microfone parou."""
         import queue  # noqa: PLC0415
 
         try:
@@ -499,13 +511,14 @@ class VadRecorder:
             read_frame = stream.read_frame
         else:  # stream de teste (lido direto, sem a thread)
             def read_frame():
-                return stream.read(device_frames, exception_on_overflow=False), speech_state.busy()
+                return stream.read(device_frames, exception_on_overflow=False), speech_state.busy(), speech_state.chime()
         if getattr(self, "_hpf", None) is None and HPF_HZ:
             self._hpf = _HighPass(HPF_HZ)
         hpf = self._hpf if HPF_HZ else None
         recent: deque[float] = deque(maxlen=max(1, SILENCE_SMOOTH_FRAMES))  # energia dos últimos quadros
 
         pre_roll: list[bytes] = []
+        pre_chime: list[bool] = []  # quais quadros do pre_roll eram o eco do bip
         recorded: list[bytes] = []
         speaking = False
         silent_frames = 0
@@ -527,7 +540,7 @@ class VadRecorder:
         fast_end_at: int | None = None  # quadro em que o nome foi reconhecido
         after_name_frames = int(AFTER_NAME_MAX_S * 1000 / FRAME_MS)
         peak = 0.0  # pico (suavizado) da voz de quem fala nesta gravação
-        onset_at = 0  # quadro em que a fala começou
+        levels: list[float] = []  # volume de cada quadro desde que a fala começou (LiveFrame.speech_before)
         waited_frames = 0
         max_wait_frames = int(max_wait * 1000 / FRAME_MS) if max_wait else None
 
@@ -538,7 +551,7 @@ class VadRecorder:
                     interrupted = True
                     break
 
-                data, busy = read_frame()
+                data, busy, chime = read_frame()
                 raw = _to_16k(data, rate)
                 clean = hpf(raw) if hpf is not None else raw
                 frame = clean if HPF_FOR_RECOGNITION else raw  # o que vai para o Vosk, a gravação e a transcrição
@@ -554,6 +567,7 @@ class VadRecorder:
                         echo_aborted = True
                         break
                     pre_roll.clear()
+                    pre_chime.clear()
                     busy_tail.append(frame)
                     if len(busy_tail) > 50:
                         busy_tail.pop(0)
@@ -572,34 +586,43 @@ class VadRecorder:
                     waited_frames += 1
                     if max_wait_frames and waited_frames > max_wait_frames:
                         break  # ninguém falou dentro do prazo
-                    self._learn_noise(energy, threshold)
-                    threshold = self._threshold()
+                    if not chime:  # o eco do bip não é o ambiente
+                        self._learn_noise(energy, threshold)
+                        threshold = self._threshold()
                     pre_roll.append(frame)
+                    pre_chime.append(chime)
                     if len(pre_roll) > self.pre_roll_frames:
                         pre_roll.pop(0)
+                        pre_chime.pop(0)
                     if energy > max(threshold, min_level or 0.0):
                         speaking = True
-                        voiced_frames = sum(_is_voiced(f) for f in pre_roll) + _is_voiced(frame)
-                        onset_at = frames_read
-                        self.live = LiveFrame(False, voiced_frames, 0.0, threshold)
+                        # o eco do bip pode abrir a gravação (alguém pode falar logo depois), mas nunca conta como voz
+                        voiced_frames = (sum(_is_voiced(f) for f, c in zip(pre_roll, pre_chime) if not c)
+                                         + (not chime and _is_voiced(frame)))
+                        levels.append(energy)
+                        self.live = LiveFrame(False, voiced_frames, 0.0, threshold, levels, chime)
                         if on_frame:
-                            for f in pre_roll:
+                            for f, c in zip(pre_roll, pre_chime):
+                                self.live = LiveFrame(False, voiced_frames, 0.0, threshold, levels, c)
                                 fast_end = bool(on_frame(f)) or fast_end
+                            self.live = LiveFrame(False, voiced_frames, 0.0, threshold, levels, chime)
                             fast_end = bool(on_frame(frame)) or fast_end
                         recorded.extend(pre_roll)
                         pre_roll.clear()
+                        pre_chime.clear()
                         recorded.append(frame)
                         silent_frames = 0
                         speech_frames = 1
                 else:
                     recorded.append(frame)
-                    voiced = _is_voiced(clean)
+                    voiced = not chime and _is_voiced(clean)
                     voiced_frames += voiced
                     smooth = math.sqrt(sum(e * e for e in recent) / len(recent))
                     if voiced:
                         peak = max(peak, smooth)
                     quiet = smooth < max(threshold * SILENCE_RATIO, REL_SILENCE * peak)
-                    self.live = LiveFrame(quiet, voiced_frames, peak, threshold, frames_read - onset_at)
+                    levels.append(energy)
+                    self.live = LiveFrame(quiet, voiced_frames, peak, threshold, levels, chime)
                     if on_frame:
                         fast_end = bool(on_frame(frame)) or fast_end
                     if fast_end and fast_end_at is None:

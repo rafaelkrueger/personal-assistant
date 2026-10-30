@@ -250,7 +250,7 @@ class MicrophoneInputSource:
                 self._signal_wake()
                 return
 
-    def _after_early_check(self, frames: list[bytes]) -> str | None:
+    def _after_early_check(self, frames: list[bytes], chimes: list[bool] | None = None) -> str | None:
         """O que a conferência antecipada já ouviu, se depois do trecho dela só veio a pausa que encerrou a gravação
         (nenhum quadro com voz): aí não há nada novo a transcrever e a sessão abre ~1 s antes. Só para o nome
         sozinho — se o trecho já tinha parte do pedido, a frase inteira é transcrita."""
@@ -259,7 +259,8 @@ class MicrophoneInputSource:
         heard, end = getattr(self, "_early", ("", 0))
         if not heard or self._without_name(heard):
             return None
-        return heard if sum(_is_voiced(f) for f in frames[end:]) <= 1 else None
+        after = range(end, len(frames))
+        return heard if sum(_is_voiced(frames[i]) for i in after if not (chimes and chimes[i])) <= 1 else None
 
     def _signal_wake(self, instant: dict | None = None) -> None:
         """Nome confirmado: toca o som de ativação (e pausa a música, via on_wake). instant = a decisão local do
@@ -341,22 +342,24 @@ class MicrophoneInputSource:
 
         def on_frame(frame: bytes) -> bool:
             """True = o nome talvez foi dito (o gravador pode encerrar na primeira pausa depois dele)."""
+            live = getattr(self._recorder, "live", None)
             frames.append(frame)
+            chimes.append(bool(live is not None and live.chime))
             if stream is not None and stream.feed(frame):
                 self._mark_candidate()
                 checker.start()
-            live = getattr(self._recorder, "live", None)
             if live is None:
                 return self._candidate
             if not spoke and live.voiced >= _SPEECH_VOICED_FRAMES:
                 spoke.append(True)
                 self._notify(self.on_speech)
                 self._warm_transcription()
-            if stream is not None and stream.instant(live.quiet, live.onset) and not self._signaled:
+            if stream is not None and stream.instant(live.quiet, live.speech_before) and not self._signaled:
                 self._signal_wake(instant=stream.instant_info)
             return self._candidate
 
         frames: list[bytes] = []  # tudo o que foi gravado até agora (para a conferência antecipada do nome)
+        chimes: list[bool] = []  # quais desses quadros eram o eco do bip dela (não contam como voz)
         done, abandoned = threading.Event(), threading.Event()
         checker = threading.Thread(target=self._confirm_early, args=(frames, done, abandoned, stream),
                                    name="confere-nome", daemon=True)
@@ -389,7 +392,7 @@ class MicrophoneInputSource:
                 text = self._with_wake_word(self._transcribe(wav_path))
             elif self._signaled:
                 # O nome já foi confirmado (e o bip tocou) enquanto a pessoa falava: falta só o pedido.
-                full = self._after_early_check(frames)
+                full = self._after_early_check(frames, chimes)
                 try:
                     full = full if full is not None else (self._transcribe(wav_path) or "").strip()
                 except Exception as exc:  # noqa: BLE001 — já ativou: abre a sessão e a pessoa repete o pedido
@@ -554,6 +557,10 @@ class MicrophoneInputSource:
         said, told = t.split(), prompt.split()
         runs = {tuple(told[i:i + _PROMPT_ECHO_WORDS]) for i in range(len(told) - _PROMPT_ECHO_WORDS + 1)}
         if any(tuple(said[i:i + _PROMPT_ECHO_WORDS]) in runs for i in range(len(said) - _PROMPT_ECHO_WORDS + 1)):
+            return True
+        # ... ou uma frase feita só de palavras dele: "música no Spotify" virou pedido duas vezes no Pi, logo depois
+        # do bip. Pedido de verdade tem um verbo que o contexto não tem ("toca música no Spotify" passa).
+        if told and len(said) >= 3 and set(said) <= set(told):
             return True
         return any(p in t for p in _HALLUCINATIONS)
 

@@ -209,3 +209,17 @@ def test_name_alone_reuses_the_early_check_when_only_the_pause_followed():
     assert m._after_early_check([voiced] * 40 + [quiet] * 30) is None  # o trecho já tinha parte do pedido
     m._early = ("", 0)
     assert m._after_early_check([quiet] * 30) is None
+
+
+def test_the_beep_echo_after_the_name_is_not_the_request():
+    import numpy as np
+
+    t = np.arange(480) / 16000
+    voiced = (sum(np.sin(2 * np.pi * 140 * k * t) for k in range(1, 12)) * 600).astype(np.int16).tobytes()
+    quiet = (np.random.default_rng(0).normal(0, 60, 480)).astype(np.int16).tobytes()
+    m = _src()
+    m._early = ("Cassandra.", 40)
+    frames = [voiced] * 40 + [voiced] * 6 + [quiet] * 30  # depois do nome: o eco do bip (soa "com voz")
+    chimes = [False] * 40 + [True] * 6 + [False] * 30
+    assert m._after_early_check(frames, chimes) == "Cassandra."  # o eco não é pedido: nada de 2ª transcrição
+    assert m._after_early_check(frames) is None  # sem a marca, parecia que a pessoa tinha falado mais

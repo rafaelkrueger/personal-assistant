@@ -226,7 +226,8 @@ def test_capture_thread_keeps_the_audio_while_processing_lags(monkeypatch):
     got = []
     with pytest.raises(OSError):
         while True:
-            data, was_busy = cap.read_frame(timeout=2)
+            data, was_busy, chime = cap.read_frame(timeout=2)
+            assert not chime  # nenhum bip tocou
             got.append((int.from_bytes(data[:2], "little"), was_busy))
     assert [n for n, _ in got] == list(range(1, 61))  # nenhum quadro perdido, na ordem
     assert [b for _, b in got[:7]] == [True] * 5 + [False] * 2  # a marca é a da hora da captura

@@ -27,6 +27,7 @@ _active: dict[int, int] = {}  # geração -> falas tocando agora (pode haver mai
 _quiet_after = 0.0  # monotonic a partir do qual o microfone volta a valer
 _recent: list[tuple[float, str]] = []  # (quando, texto normalizado) do que ela falou
 _gen = 0  # geração atual: muda a cada interrupção
+_chime = (0.0, 0.0)  # (de, até), monotonic: quando o eco do bip dela chega ao microfone (ver chiming)
 _task = threading.local()  # geração da tarefa que roda nesta thread (ver task_begin)
 
 
@@ -119,6 +120,25 @@ def speaking(text: str = ""):
         yield gen
     finally:
         end(gen)
+
+
+def chiming(start: float, seconds: float) -> None:
+    """Um som curto dela (o bip de ativação) acabou de ser tocado: o eco chega ao microfone daqui a `start` s e dura
+    `seconds` s. Medido no Pi com a caixa Bluetooth: chega ~0,58 s depois e fica ~0,45 s acima do limite, alto como
+    uma voz perto do microfone — e às vezes "com voz". Esse trecho não conta como fala de ninguém (o bip virava
+    "pedido": "context:", "música no Spotify"). Mais curto que a cauda de eco da fala (busy): quem fala por cima não
+    perde nada, o áudio fica na gravação."""
+    global _chime
+    now = time.monotonic()
+    with _lock:
+        _chime = (now + start, now + start + seconds)
+
+
+def chime() -> bool:
+    """O microfone pode estar ouvindo o eco do bip agora (ver chiming)."""
+    with _lock:
+        begin, end = _chime
+    return begin <= time.monotonic() < end
 
 
 def busy() -> bool:
