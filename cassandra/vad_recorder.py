@@ -58,6 +58,11 @@ PRE_ROLL_FRAMES = 30  # ~0,9 s
 HPF_HZ = 100.0
 # O filtro também no áudio que vai para o reconhecimento (Vosk e transcrição); False = só na medida de volume.
 HPF_FOR_RECOGNITION = True
+# O volume que decide "tem fala / acabou a fala" é medido só na faixa da voz (250-4000 Hz): ronco de motor,
+# ventilador ou zumbido elétrico (100-300 Hz) e chiado agudo ficam de fora. Medido no Pi: com um ruído desses o
+# "silêncio" caiu de 357 para 138 RMS; a voz não perde nada (formantes e quase toda a energia ficam na faixa).
+BAND_ENERGY = True
+BAND_HZ = (250.0, 4000.0)
 # O silêncio que encerra a fala é medido na média dos últimos quadros (~120 ms): um pico solto do ruído não
 # recomeça a contagem da pausa.
 SILENCE_SMOOTH_FRAMES = 4
@@ -85,6 +90,33 @@ def _is_voiced(frame: bytes) -> bool:
         return False
     spec = np.abs(np.fft.rfft(x * np.hanning(len(x)))) ** 2
     return float(spec.max() / spec.sum()) < VOICED_MAX_TONAL
+
+
+def _band_rms(frame: bytes) -> float:
+    """RMS só da faixa BAND_HZ (pela FFT do quadro com janela Hann — sem ela, o ronco "vaza" para a faixa; mesma
+    escala do RMS comum)."""
+    import numpy as np  # noqa: PLC0415
+
+    x = np.frombuffer(frame, dtype=np.int16).astype(np.float32)
+    n = len(x)
+    if not n:
+        return 0.0
+    window = _hann(n)
+    spec = np.fft.rfft(x * window)
+    lo, hi = int(BAND_HZ[0] * n / SAMPLE_RATE), int(BAND_HZ[1] * n / SAMPLE_RATE)
+    power = float((spec.real[lo:hi] ** 2 + spec.imag[lo:hi] ** 2).sum())
+    return math.sqrt(2.0 * power / float(np.mean(window * window))) / n
+
+
+_HANN: dict[int, object] = {}
+
+
+def _hann(n: int):
+    import numpy as np  # noqa: PLC0415
+
+    if n not in _HANN:
+        _HANN[n] = np.hanning(n).astype(np.float32)
+    return _HANN[n]
 
 
 class _HighPass:
@@ -384,10 +416,15 @@ class VadRecorder:
         """Uma "fala" descartada (ou que nunca terminava) era ruído: entra na medida do ambiente, e o limite sobe
         na hora — senão o mesmo barulho dispara gravações inúteis de novo e de novo."""
         for f in frames[-_NOISE_WINDOW:]:
-            self._quiet.append(self._rms(f))
+            self._quiet.append(self._energy(f))
         if len(self._quiet) >= 20:
             ordered = sorted(self._quiet)
             self._noise = ordered[int(len(ordered) * _NOISE_PERCENTILE)]
+
+    @staticmethod
+    def _energy(frame: bytes) -> float:
+        """O volume que o VAD usa (ver BAND_ENERGY)."""
+        return _band_rms(frame) if BAND_ENERGY else VadRecorder._rms(frame)
 
     @staticmethod
     def _rms(frame: bytes) -> float:
@@ -493,7 +530,7 @@ class VadRecorder:
                 raw = _to_16k(data, rate)
                 clean = hpf(raw) if hpf is not None else raw
                 frame = clean if HPF_FOR_RECOGNITION else raw  # o que vai para o Vosk, a gravação e a transcrição
-                energy = self._rms(clean)
+                energy = _band_rms(raw) if BAND_ENERGY else self._rms(clean)
                 recent.append(energy)
                 monitor.level(energy)
 

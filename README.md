@@ -146,8 +146,10 @@ créditos), a Cassandra usa só o local pelos 10 minutos seguintes.
 
 1. **Captura** (`vad_recorder.py`): uma thread só lê o microfone e guarda o áudio numa fila. O microfone USB
    tem ~30 ms de buffer: qualquer pausa maior do processamento (o Vosk, no Pi lento) perdia o começo da fala —
-   o nome. Um **filtro de graves** (100 Hz) tira o ronco do microfone (ruído 360 → 200), e o fim da fala é
-   medido na média de ~120 ms e também **relativo à voz de quem fala** (a TV bem mais baixa conta como pausa).
+   o nome. Um **filtro de graves** (100 Hz) tira o ronco do microfone, e o volume que decide "tem fala" é medido
+   **só na faixa da voz** (250-4000 Hz): motor, ventilador e zumbido elétrico ficam de fora (ruído 357 → 138 numa
+   noite com um ronco desses). O fim da fala é medido na média de ~120 ms e também **relativo à voz de quem
+   fala** (a TV bem mais baixa conta como pausa).
    Sem isso a gravação não terminava e ela levava até 30 s para responder. Depois do nome, no máximo 8 s.
 2. **Candidato** (Vosk, gramática restrita): acha o nome ao vivo, ~0,2 s depois de ele ser dito.
 3. **Conferência** (`input_sources.py`): o trecho até o nome vai na hora para a transcrição; se ele começa pelo

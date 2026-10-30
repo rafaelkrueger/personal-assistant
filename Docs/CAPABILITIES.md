@@ -63,9 +63,11 @@ técnicos e exemplos de API estão em [`API.md`](./API.md) — este arquivo é s
   Raspberry Pi. Quem precisar de um agente pessoal também pode pedir a ela (`POST /api/personal-agents/ask`).
 - **Pedir coisas aos outros agentes (web-agent, IDE, editor), sempre através do maestro**: ela é origem de pedidos
   em `POST /maestro/request`, pelo plug-in `maestro_link`.
-- **Ouvir pelo microfone** (quando houver um plugado): detecta o nome
-  "Cassandra" no próprio aparelho, sem mandar nada para a internet, e só então
-  transcreve o comando.
+- **Ouvir pelo microfone** (USB, ou o viva-voz de uma caixa Bluetooth): detecta o nome
+  "Cassandra" no próprio aparelho, sem mandar nada para a internet, confere o nome
+  na transcrição (gpt-4o-transcribe) assim que ele é dito — o bip sai ~1 s depois do
+  nome, sem esperar o pedido terminar — e transcreve o comando. Ver "Como ela ouve"
+  no README.
 
 ## Não pode / não faz
 
@@ -88,7 +90,8 @@ técnicos e exemplos de API estão em [`API.md`](./API.md) — este arquivo é s
 - **Não controla outros aparelhos** da casa (luzes, TV, tomadas): não há
   integração com automação residencial.
 - **O microfone é só local**: ela ouve apenas o que é falado perto do Raspberry
-  Pi; hoje não há microfone plugado (a entrada por texto funciona sempre).
+  Pi (a entrada por texto funciona sempre). De longe e com barulho alto ela erra
+  mais o nome: o reconhecedor do aparelho é pequeno (Vosk) para caber no Pi 3.
 
 ## Parâmetros de despacho
 

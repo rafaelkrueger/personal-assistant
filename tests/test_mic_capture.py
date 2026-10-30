@@ -231,3 +231,11 @@ def test_capture_thread_keeps_the_audio_while_processing_lags(monkeypatch):
     assert [n for n, _ in got] == list(range(1, 61))  # nenhum quadro perdido, na ordem
     assert [b for _, b in got[:7]] == [True] * 5 + [False] * 2  # a marca é a da hora da captura
     cap.close()
+
+
+def test_loudness_is_measured_only_in_the_voice_band():
+    t = np.arange(480) / RATE
+    tone = lambda hz: (1000 * np.sin(2 * np.pi * hz * t)).astype(np.int16).tobytes()  # noqa: E731
+    assert abs(vr._band_rms(tone(1000)) - vr.VadRecorder._rms(tone(1000))) < 2  # na faixa: o mesmo RMS
+    assert vr._band_rms(tone(120)) < 15  # motor / zumbido elétrico: fora (-35 dB ou mais)
+    assert vr._band_rms(tone(6000)) < 5  # chiado agudo: fora
