@@ -85,6 +85,48 @@ def test_agc_raises_quiet_speech_and_leaves_loud_speech_alone():
     assert _Agc()(loud) == loud  # perto do microfone: sem ganho
 
 
+def _early(transcripts, done_set=False, error=False):
+    """Roda a conferência antecipada com transcrições combinadas; devolve (bipou, nº de transcrições)."""
+    import threading
+
+    from cassandra import input_sources
+
+    m = _src()
+    calls, wakes = [], []
+
+    def transcribe(_path):
+        calls.append(1)
+        if error:
+            raise RuntimeError("sem internet")
+        return transcripts[len(calls) - 1]
+
+    m._transcribe = transcribe
+    m._signal_wake = lambda: wakes.append(1)
+    done = threading.Event()
+    if done_set:
+        done.set()
+    old, input_sources._EARLY_CHECKS = input_sources._EARLY_CHECKS, (0.01, 0.02)
+    try:
+        m._confirm_early([b"\x00\x00" * 480], done, threading.Event())
+    finally:
+        input_sources._EARLY_CHECKS = old
+    return bool(wakes), len(calls)
+
+
+def test_early_check_beeps_as_soon_as_the_name_opens_the_clip():
+    assert _early(["Cassandra"]) == (True, 1)
+    assert _early(["Ô Cassandra, que"]) == (True, 1)
+    assert _early(["Cass", "Cassandra, que horas"]) == (True, 2)  # 1º trecho cortou o nome: a 2ª chance pega
+
+
+def test_early_check_never_beeps_for_a_name_that_does_not_open_the_clip():
+    # Nome no fim do trecho pode ser o meio de uma frase ("...com a Cassandra ontem"): fica para a conferência final.
+    assert _early(["Eu falei com a Cassandra", "Eu falei com a Cassandra ontem"]) == (False, 2)
+    assert _early(["Cansada de", "Cansada de esperar"]) == (False, 2)
+    assert _early(["Cassandra"], done_set=True) == (False, 0)  # gravação já acabou: nada de transcrição extra
+    assert _early(["Cassandra"], error=True) == (False, 1)
+
+
 def _stream():
     from cassandra.local_speech import LocalSpeech, WakeStream
 
@@ -138,3 +180,15 @@ def test_short_names_never_count_in_the_middle_of_other_speech():
     assert not _src()._name_in("Sandra, vem cá", full_only=True)
     assert _src()._name_in("Cassandra, que horas são?", full_only=True)
     assert _src("Sandra, vem cá")._verify_name("x.wav", "sandra", full_only=True)[0] is False
+
+
+def test_long_narrative_after_the_name_is_background_not_a_request():
+    from cassandra.assistant import _looks_like_background
+
+    tv = ("Mas faz parte da jornada. Só perguntaria, mas qual é a pior parte de viajar e fazer viagens? Eu diria que é "
+          "isso, você tem que ser uma pessoa desapegada. Você tem que encontrar várias pessoas e tem que ficar normal.")
+    assert _looks_like_background(tv)
+    for request in ["que horas são?", "toca Legião Urbana no Spotify",
+                    "me lembra amanhã de ligar pro dentista às três da tarde e depois passar no mercado pra comprar "
+                    "pão, leite e ovos", "Liga a TV. Coloca na Netflix. E abaixa o volume."]:
+        assert not _looks_like_background(request), request

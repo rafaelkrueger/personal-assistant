@@ -9,7 +9,7 @@ import json
 import urllib.error
 import urllib.request
 
-from cassandra.voice import _azure_config
+from cassandra.voice import _azure_config, azure_key_rejected, reject_azure_key
 
 # O idioma da transcrição vem como código curto (TRANSCRIPTION_LANGUAGE=pt); o Azure quer a variante regional.
 _LOCALES = {"pt": "pt-BR", "en": "en-US", "es": "es-ES"}
@@ -19,6 +19,8 @@ def transcribe(wav_path: str, language: str = "pt") -> str:
     key, region, _voice = _azure_config()
     if not key:
         raise RuntimeError("chave do Azure não configurada")
+    if azure_key_rejected():
+        raise RuntimeError("o Azure recusou a chave (troque em Configurações > Modelo de IA)")
     locale = _LOCALES.get(language, language or "pt-BR")
     with open(wav_path, "rb") as fh:
         audio = fh.read()
@@ -33,6 +35,8 @@ def transcribe(wav_path: str, language: str = "pt") -> str:
         with urllib.request.urlopen(req, timeout=20) as resp:
             data = json.loads(resp.read().decode("utf-8") or "{}")
     except urllib.error.HTTPError as exc:
+        if exc.code in (401, 403):
+            reject_azure_key(key)
         raise RuntimeError(f"HTTP {exc.code}: {exc.read()[:160]!r}") from exc
     from cassandra import usage_log  # noqa: PLC0415
 

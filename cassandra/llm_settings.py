@@ -64,7 +64,7 @@ _DEFAULTS: dict[str, Any] = {
     "local_llm_model": _env("LOCAL_LLM_MODEL"),
     # Transcrição do microfone (Configurações > Modelo de IA > Transcrição). O .env é o padrão.
     "stt_provider": _env("TRANSCRIPTION_PROVIDER", "auto").lower() or "auto",
-    "stt_model": _env("TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe") or "gpt-4o-mini-transcribe",
+    "stt_model": _env("TRANSCRIPTION_MODEL", "gpt-4o-transcribe") or "gpt-4o-transcribe",
     # Voz da Cassandra pelo Azure (Microsoft Speech). Sem chave, a voz é a da OpenAI (ver voice.py).
     "azure_speech_key": _env("AZURE_SPEECH_KEY"),
     "azure_speech_region": _env("AZURE_SPEECH_REGION", "brazilsouth") or "brazilsouth",
@@ -172,6 +172,26 @@ def active_provider() -> str:
     return get()["llm_provider"]
 
 
+# Conexão HTTPS mantida aberta entre chamadas: o padrão do SDK (5 s) fechava a conexão logo e cada conferência do
+# nome pagava de novo a conexão + TLS (~0,3 s a mais, medido no Pi). Se o servidor fechar antes, o SDK reconecta.
+_KEEPALIVE_SECONDS = 120.0
+
+
+def _http_client():
+    try:
+        from openai import DefaultHttpxClient  # noqa: PLC0415
+        from openai._constants import DEFAULT_CONNECTION_LIMITS  # noqa: PLC0415
+
+        limits = type(DEFAULT_CONNECTION_LIMITS)(
+            max_connections=DEFAULT_CONNECTION_LIMITS.max_connections,
+            max_keepalive_connections=DEFAULT_CONNECTION_LIMITS.max_keepalive_connections,
+            keepalive_expiry=_KEEPALIVE_SECONDS,
+        )
+        return DefaultHttpxClient(limits=limits)
+    except Exception:  # noqa: BLE001 — SDK de outra versão: fica com o cliente padrão
+        return None
+
+
 def _client(api_key: str, base_url: str = "", **options: Any) -> OpenAI:
     key = (api_key, base_url)
     with _lock:
@@ -180,6 +200,9 @@ def _client(api_key: str, base_url: str = "", **options: Any) -> OpenAI:
             kwargs: dict[str, Any] = {"api_key": api_key, **options}
             if base_url:
                 kwargs["base_url"] = base_url
+            http = _http_client()
+            if http is not None:
+                kwargs.setdefault("http_client", http)
             client = _clients[key] = OpenAI(**kwargs)
         return client
 

@@ -115,6 +115,8 @@ class _AzureResponse:
         except urllib.error.HTTPError as exc:  # 401 chave errada, 429 franquia/limite, ...
             self._resp = exc
             self.status_code = exc.code
+            if exc.code in (401, 403):
+                reject_azure_key(key)
 
     def iter_bytes(self, size: int = 4096) -> Iterator[bytes]:
         while True:
@@ -131,6 +133,24 @@ class _AzureResponse:
 
     def __exit__(self, *exc) -> None:
         self._resp.close()
+
+
+# Chave que o Azure RECUSOU (401/403: errada, apagada ou de um recurso excluído). Tentar de novo a cada 10 min
+# atrasava a fala e a conferência do nome a cada tentativa: só volta a tentar quando a chave muda nas Configurações.
+_azure_rejected = ""
+
+
+def azure_key_rejected() -> bool:
+    key = _azure_config()[0]
+    return bool(key) and key == _azure_rejected
+
+
+def reject_azure_key(key: str) -> None:
+    global _azure_rejected
+    if key and key != _azure_rejected:
+        _azure_rejected = key
+        print("[AZURE] O Azure recusou a chave (401/403): troque em Configurações > Modelo de IA. Até lá, voz e "
+              "transcrição vão pela OpenAI.", flush=True)
 
 
 def _azure_request(text: str, output_format: str) -> _AzureResponse:
@@ -158,9 +178,69 @@ _VOICE_LEAD_MS = float(os.getenv("VOICE_LEAD_MS", "700") or 0)
 
 
 def _lead_in(rate: int = 24_000) -> bytes:
+    """O sopro antes da fala — vazio se o SpeakerWaker já mantém a caixa acordada (aí a fala sai sem esperar)."""
+    if speaker_waker.awake():
+        return b""
     import numpy as np  # noqa: PLC0415
 
     return np.random.randint(-30, 31, int(rate * _VOICE_LEAD_MS / 1000), dtype=np.int16).tobytes()
+
+
+class SpeakerWaker:
+    """Mantém o amplificador da caixa acordado (o mesmo sopro inaudível do _lead_in, contínuo) por alguns segundos.
+
+    Chamado quando o nome PROVAVELMENTE foi dito (candidato do Vosk, ~1 s antes do bip) e quando um pedido começa a
+    ser atendido: o bip de ativação dura ~0,4 s e a caixa que acorda em ~0,5 s o engolia inteiro — ela ouvia e
+    parecia que não. Com a caixa acordada, a resposta também não precisa do sopro antes da fala."""
+
+    RATE = 24_000
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._until = 0.0
+        self._running = False
+
+    def awake(self) -> bool:
+        return self._running and time.monotonic() < self._until - 0.3
+
+    def hold(self, seconds: float) -> None:
+        if shutil.which("pw-play") is None:
+            return
+        with self._lock:
+            self._until = max(self._until, time.monotonic() + seconds)
+            if self._running:
+                return
+            self._running = True
+        threading.Thread(target=self._run, name="acorda-caixa", daemon=True).start()
+
+    def _run(self) -> None:
+        import numpy as np  # noqa: PLC0415
+
+        chunk = np.random.randint(-30, 31, self.RATE // 10, dtype=np.int16).tobytes()  # 0,1 s
+        proc = None
+        try:
+            proc = subprocess.Popen(["pw-play", "--raw", "--format", "s16", "--rate", str(self.RATE), "--channels",
+                                     "1", "-"], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL)
+            while True:
+                with self._lock:
+                    if time.monotonic() >= self._until:
+                        self._running = False
+                        break
+                proc.stdin.write(chunk)  # bloqueia no ritmo do som (o cano guarda ~1 s)
+        except (OSError, ValueError):
+            with self._lock:
+                self._running = False
+        finally:
+            if proc is not None:
+                try:
+                    proc.stdin.close()
+                    proc.wait(timeout=3)
+                except (OSError, subprocess.TimeoutExpired):
+                    proc.kill()
+
+
+speaker_waker = SpeakerWaker()
 
 
 class _Booster:
@@ -318,7 +398,8 @@ class VoiceOutput:
     def _speak_azure_stream(self, text: str) -> bool:
         """Fala `text` com a voz do Azure tocando enquanto chega. False se não deu (a próxima voz assume)."""
         key, _region, voice = _azure_config()
-        if self._player != "pw-play" or not key or time.monotonic() < self._azure_down_until:
+        if (self._player != "pw-play" or not key or time.monotonic() < self._azure_down_until
+                or azure_key_rejected()):
             return False
         cache = self._cache_path(text, engine=f"azure|{voice}")
         play = ["pw-play", "--raw", "--format", "s16", "--rate", str(_STREAM_RATE), "--channels", "1", "-"]
@@ -560,7 +641,7 @@ class VoiceOutput:
         from cassandra import llm_settings  # noqa: PLC0415
 
         openai_ok = bool(llm_settings.get()["openai_api_key"]) and time.monotonic() >= self._openai_down_until
-        azure_ok = bool(_azure_config()[0]) and time.monotonic() >= self._azure_down_until
+        azure_ok = bool(_azure_config()[0]) and time.monotonic() >= self._azure_down_until and not azure_key_rejected()
         if self.engine == "azure":
             # Azure; se ele falhar (ex.: franquia do mês esgotada), a OpenAI segura até ele voltar
             return (["azure"] if azure_ok else []) + (["openai"] if openai_ok else []) + ["espeak"]

@@ -67,9 +67,9 @@ export OPENAI_MODEL="gpt-4o-mini"
 export ASSISTANT_NAME="cassandra"
 export ASSISTANT_ALIASES="cassandra,casandra,cassanda"
 export INPUT_MODE="text"
-export TRANSCRIPTION_MODEL="gpt-4o-mini-transcribe"
+export TRANSCRIPTION_MODEL="gpt-4o-transcribe"
 export TRANSCRIPTION_LANGUAGE="pt"
-export TRANSCRIPTION_PROMPT="A fala principal e em portugues do Brasil. Preserve nomes proprios e titulos de musicas no idioma original."
+export TRANSCRIPTION_PROMPT="Fala em português do Brasil dirigida à assistente de voz Cassandra: pedidos de casa como música no Spotify, TV, Netflix, alarmes, lembretes e os agentes Cifra, Pulse, Torque e Lume."
 export MIC_CHUNK_SECONDS="1"
 export MIC_DEBUG="true"
 export WAKE_TIMEOUT_SECONDS="10"
@@ -141,6 +141,26 @@ TRANSCRIPTION_PROVIDER=auto   # auto (OpenAI se houver chave; se falhar, local) 
 Com `local` (ou `auto` sem chave/créditos), o comando também é transcrito pelo Vosk: grátis, mas leva
 alguns segundos por frase num Raspberry Pi 3 e erra mais que a OpenAI. Se a OpenAI falhar (ex.: sem
 créditos), a Cassandra usa só o local pelos 10 minutos seguintes.
+
+### Como ela ouve (e por quê — tudo medido no Pi ou numa bancada com o chiado real do microfone)
+
+1. **Captura** (`vad_recorder.py`): uma thread só lê o microfone e guarda o áudio numa fila. O microfone USB
+   tem ~30 ms de buffer: qualquer pausa maior do processamento (o Vosk, no Pi lento) perdia o começo da fala —
+   o nome. Um **filtro de graves** (100 Hz) tira o ronco do microfone (ruído 360 → 200), e o fim da fala é
+   medido na média de ~120 ms e também **relativo à voz de quem fala** (a TV bem mais baixa conta como pausa).
+   Sem isso a gravação não terminava e ela levava até 30 s para responder. Depois do nome, no máximo 8 s.
+2. **Candidato** (Vosk, gramática restrita): acha o nome ao vivo, ~0,2 s depois de ele ser dito.
+3. **Conferência** (`input_sources.py`): o trecho até o nome vai na hora para a transcrição; se ele começa pelo
+   nome, toca o bip — sem esperar a pessoa terminar o pedido. Nome dito no meio da TV (depois de uma pausa) é
+   conferido a partir dele.
+4. **Transcrição**: `gpt-4o-transcribe` com um *contexto* (não exemplos de pedidos: com exemplos o modelo os
+   repetia em áudio ruim). Em 111 falas: nome reconhecido 29/31 (antes 9/31), erro de palavras 3% (antes 31%).
+   A conexão HTTPS fica aberta 2 min (cada conferência economiza ~0,3 s). Chave do Azure recusada (401/403)
+   não é tentada de novo até ser trocada.
+5. **Caixa Bluetooth**: caixas como a Alaxe desligam o amplificador no silêncio e engoliam o começo do som (o
+   bip inteiro). Quando o nome provavelmente foi dito, um sopro inaudível já acorda a caixa (`SpeakerWaker`).
+6. **Depois do nome**: o pedido é da mesma pessoa — som muito mais baixo que a voz de quem chamou não abre
+   gravação, e uma fala longa e narrativa (várias frases, 25+ palavras) é ignorada como TV/conversa.
 
 ## Outros agentes, sempre via maestro
 

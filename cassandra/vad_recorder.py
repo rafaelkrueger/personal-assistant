@@ -3,9 +3,7 @@ from __future__ import annotations
 
 import math
 import os
-import re
 import select
-import struct
 import subprocess
 import tempfile
 import threading
@@ -49,8 +47,27 @@ MIN_VOICED_FRAMES = 3  # ~0,2 s de voz
 # limite só, a fala fraca (voz de longe) caía abaixo dele no meio da palavra e a gravação acabava ali — o Vosk
 # recebia um pedaço do nome e ouvia "nada".
 SILENCE_RATIO = 0.7
-# Áudio guardado de antes do limite ser cruzado: o começo do nome ("Cas-") é fraco e ficava de fora.
-PRE_ROLL_FRAMES = 15  # ~0,45 s
+# Áudio guardado de antes do limite ser cruzado: o começo do nome ("Cas-") é fraco e ficava de fora. Também dá ao
+# Vosk um pouco do ambiente antes da fala para ele se ajustar (ele recomeça do zero a cada gravação): medido, de
+# longe 52% -> 57% das chamadas reconhecidas com 0,9 s no lugar de 0,45 s.
+PRE_ROLL_FRAMES = 30  # ~0,9 s
+# Filtro de graves (passa-altas). O "chiado" do microfone USB é quase todo ronco abaixo de 300 Hz (50 Hz e uma
+# vibração de ~12 Hz, medidos), onde a voz não tem quase nada: sem ele o ruído cai de ~360 para ~220 RMS e os picos
+# pela metade. Com o ronco, o ruído ficava ACIMA do limite de silêncio e a gravação não terminava — ela demorava
+# até 30 s para responder e, com a TV ligada, não ouvia o nome. 0 desliga.
+HPF_HZ = 100.0
+# O filtro também no áudio que vai para o reconhecimento (Vosk e transcrição); False = só na medida de volume.
+HPF_FOR_RECOGNITION = True
+# O silêncio que encerra a fala é medido na média dos últimos quadros (~120 ms): um pico solto do ruído não
+# recomeça a contagem da pausa.
+SILENCE_SMOOTH_FRAMES = 4
+# Silêncio também é relativo a QUEM fala: abaixo de REL_SILENCE x o pico da voz da pessoa nesta gravação (~-10 dB)
+# conta como pausa. A TV do outro lado da sala é bem mais baixa que a pessoa falando com a Cassandra: sem isso, a
+# TV mantinha a gravação aberta e o pedido só era processado segundos depois de a pessoa terminar.
+REL_SILENCE = 0.3
+# Depois do nome, a gravação dura no máximo isto (o pedido mais longo cabe): com barulho contínuo (TV alta, música)
+# ela terminava só nos 30 s do limite geral.
+AFTER_NAME_MAX_S = 8.0
 
 
 def _is_voiced(frame: bytes) -> bool:
@@ -61,11 +78,42 @@ def _is_voiced(frame: bytes) -> bool:
     energy = float((x * x).sum())
     if energy < 1e4:
         return False
-    ac = np.correlate(x, x, "full")[len(x) - 1:]
+    # autocorrelação pela FFT (mesmo resultado que np.correlate, ~10x mais leve no Pi): 1024 >= 2 x 480, sem dar a volta
+    f = np.fft.rfft(x, 1024)
+    ac = np.fft.irfft((f * np.conj(f)).real, 1024)
     if float(ac[40:201].max() / ac[0]) < VOICED_PERIODICITY:
         return False
     spec = np.abs(np.fft.rfft(x * np.hanning(len(x)))) ** 2
     return float(spec.max() / spec.sum()) < VOICED_MAX_TONAL
+
+
+class _HighPass:
+    """Passa-altas de 2ª ordem (dois de 1ª ordem em cascata, 12 dB por oitava), contínuo de um quadro para o outro.
+    Vetorizado em numpy (o Pi não tem scipy): y[n] = a·y[n-1] + b·(x[n] - x[n-1]), com b = (1 + a) / 2 (ganho 1 na
+    faixa da voz), resolvido por soma acumulada."""
+
+    def __init__(self, cutoff: float = HPF_HZ, rate: int = SAMPLE_RATE) -> None:
+        self.a = math.exp(-2 * math.pi * cutoff / rate)
+        self.b = (1 + self.a) / 2
+        self._state = [(0.0, 0.0), (0.0, 0.0)]  # (último x, último y) de cada estágio
+        self._powers: dict[int, tuple] = {}
+
+    def __call__(self, frame: bytes) -> bytes:
+        import numpy as np  # noqa: PLC0415
+
+        x = np.frombuffer(frame, dtype=np.int16).astype(np.float64)
+        if not len(x):
+            return frame
+        if len(x) not in self._powers:
+            k = np.arange(len(x), dtype=np.float64)
+            self._powers[len(x)] = (self.a ** k, self.a ** -k)
+        pw, inv = self._powers[len(x)]
+        for i, (x1, y1) in enumerate(self._state):
+            u = self.b * np.diff(x, prepend=x1)
+            y = pw * (np.cumsum(inv * u) + self.a * y1)
+            self._state[i] = (float(x[-1]), float(y[-1]))
+            x = y
+        return np.clip(np.rint(x), -32768, 32767).astype(np.int16).tobytes()
 
 
 def _to_16k(frame: bytes, rate: int) -> bytes:
@@ -135,6 +183,78 @@ class _PipeWireStream:
         self._proc.stdout.close()
 
 
+# Quanto áudio a fila do microfone guarda (se o processamento ficar para trás, o mais velho sai).
+_CAPTURE_QUEUE_SECONDS = 20.0
+
+
+class _CaptureThread:
+    """Lê o microfone numa thread só para isso e guarda o áudio numa fila.
+
+    O microfone USB tem só ~30 ms de buffer (medido no Pi): qualquer pausa maior do laço que processa o áudio — o
+    Vosk digerindo o começo da fala, o coletor de lixo, outra thread — perdia som, e o começo da fala é justamente o
+    nome. Cada quadro leva a marca de se a Cassandra estava falando NA HORA da captura (speech_state.busy()): a fila
+    pode ser processada um pouco depois, e a voz dela nunca pode virar pedido."""
+
+    def __init__(self, stream, frames: int) -> None:
+        import queue  # noqa: PLC0415
+
+        self.stream = stream  # PyAudio ou _PipeWireStream
+        self.target = getattr(stream, "target", None)
+        self._frames = frames
+        self._queue = queue.Queue(maxsize=max(1, int(_CAPTURE_QUEUE_SECONDS * 1000 / FRAME_MS)))
+        self._stop = threading.Event()
+        self._error: Exception | None = None
+        self._thread = threading.Thread(target=self._run, name="microfone", daemon=True)
+        self._thread.start()
+
+    def _put(self, item) -> None:
+        import queue  # noqa: PLC0415
+
+        try:
+            self._queue.put_nowait(item)
+        except queue.Full:  # o processamento ficou muito para trás: o áudio mais velho sai
+            try:
+                self._queue.get_nowait()
+            except queue.Empty:
+                pass
+            self._queue.put_nowait(item)
+
+    def _run(self) -> None:
+        try:
+            while not self._stop.is_set():
+                data = self.stream.read(self._frames, exception_on_overflow=False)
+                self._put((data, speech_state.busy()))
+        except Exception as exc:  # noqa: BLE001 — microfone desplugado, caixa Bluetooth desligou...
+            self._error = exc
+        finally:
+            try:
+                self.stream.stop_stream()
+                self.stream.close()
+            except Exception:  # noqa: BLE001
+                pass
+            self._put(None)  # acorda quem espera um quadro
+
+    def read_frame(self, timeout: float = 15.0) -> tuple[bytes, bool]:
+        """(áudio, ela estava falando na hora). OSError se o microfone parou."""
+        import queue  # noqa: PLC0415
+
+        try:
+            item = self._queue.get(timeout=timeout)
+        except queue.Empty as exc:
+            raise OSError("o microfone parou de mandar áudio") from exc
+        if item is None:
+            self._put(None)  # quem ler de novo também vê o fim
+            raise OSError(f"o microfone parou: {self._error}")
+        return item
+
+    def stop_stream(self) -> None:
+        pass
+
+    def close(self) -> None:
+        self._stop.set()
+        self._thread.join(timeout=2.0)  # a própria thread fecha o aparelho (fechar daqui, no meio de um read, não é seguro)
+
+
 class VadRecorder:
     """Records audio continuously, returning one complete utterance per call.
 
@@ -157,12 +277,12 @@ class VadRecorder:
         energy_threshold: int = 400,
         silence_duration: float = 1.2,
         max_duration: float = 30.0,
-        pre_roll_frames: int = PRE_ROLL_FRAMES,
+        pre_roll_frames: int | None = None,
     ) -> None:
         self.energy_threshold = energy_threshold
         self.silence_duration = silence_duration
         self.max_duration = max_duration
-        self.pre_roll_frames = pre_roll_frames
+        self.pre_roll_frames = pre_roll_frames or PRE_ROLL_FRAMES
         self._pa = None
         self._source_checked = 0.0  # última vez que conferiu se apareceu/sumiu um microfone Bluetooth
         self._source_misses = 0  # conferências seguidas em que o microfone certo era outro
@@ -271,11 +391,10 @@ class VadRecorder:
 
     @staticmethod
     def _rms(frame: bytes) -> float:
-        count = len(frame) // 2
-        if not count:
-            return 0.0
-        shorts = struct.unpack(f"{count}h", frame)
-        return math.sqrt(sum(s * s for s in shorts) / count)
+        import numpy as np  # noqa: PLC0415
+
+        x = np.frombuffer(frame, dtype=np.int16).astype(np.float32)
+        return float(np.sqrt(np.mean(x * x))) if len(x) else 0.0
 
     def record_utterance(
         self,
@@ -285,6 +404,7 @@ class VadRecorder:
         max_wait: float | None = None,
         min_voiced: int | None = None,
         on_busy_frame=None,
+        min_level: float | None = None,
     ) -> str | None:
         """Block until speech is detected, then record until silence.
 
@@ -294,6 +414,9 @@ class VadRecorder:
             interrupt_event: When set by an external thread (e.g. a fired timer),
                 recording stops immediately and returns None so the caller can
                 handle the interrupt before the next listening window.
+            min_level: volume mínimo da fala (RMS) — depois do nome, o pedido vem da mesma pessoa, com uma voz
+                parecida com a do chamado; som bem mais baixo que isso (a TV do outro lado da sala) não abre gravação
+                nem vira pedido. last_peak guarda o pico da voz de cada gravação.
 
         Returns:
             Absolute path to a temporary WAV file containing the utterance,
@@ -306,8 +429,8 @@ class VadRecorder:
         max_frames = int(self.max_duration * 1000 / FRAME_MS)
         silence_frames_needed = int(effective_silence * 1000 / FRAME_MS)
 
-        # O microfone fica aberto entre uma gravação e outra: o que a pessoa fala logo depois do bip (enquanto o
-        # loop troca de gravação) fica guardado e não se perde. Antes ele fechava e reabria a cada fala.
+        # O microfone fica aberto entre uma gravação e outra, lido sem parar pela _CaptureThread: o que a pessoa fala
+        # logo depois do bip (enquanto o loop transcreve e troca de gravação) fica na fila e não se perde.
         from cassandra.audio_routes import mic_choice  # noqa: PLC0415
 
         if getattr(self, "_stream", None) is not None and mic_choice() != self._opened_choice:
@@ -316,14 +439,24 @@ class VadRecorder:
             # um microfone Bluetooth conectou ou desconectou: troca de microfone — só depois de 3 conferências
             # seguidas (~30 s), porque a entrada Bluetooth some por instantes quando a caixa troca de perfil
             self._source_checked = time.time()
-            current = self._stream[0].target if isinstance(self._stream[0], _PipeWireStream) else None
+            current = getattr(self._stream[0], "target", None)
             self._source_misses = self._source_misses + 1 if bluetooth_mic() != current else 0
             if self._source_misses >= 3:
                 self._source_misses = 0
                 self._close_stream()
         if getattr(self, "_stream", None) is None:
-            self._stream = self._open_stream(pa, pyaudio)
+            opened, opened_rate, opened_frames = self._open_stream(pa, pyaudio)
+            self._stream = (_CaptureThread(opened, opened_frames), opened_rate, opened_frames)
         stream, rate, device_frames = self._stream
+        if isinstance(stream, _CaptureThread):
+            read_frame = stream.read_frame
+        else:  # stream de teste (lido direto, sem a thread)
+            def read_frame():
+                return stream.read(device_frames, exception_on_overflow=False), speech_state.busy()
+        if getattr(self, "_hpf", None) is None and HPF_HZ:
+            self._hpf = _HighPass(HPF_HZ)
+        hpf = self._hpf if HPF_HZ else None
+        recent: deque[float] = deque(maxlen=max(1, SILENCE_SMOOTH_FRAMES))  # energia dos últimos quadros
 
         pre_roll: list[bytes] = []
         recorded: list[bytes] = []
@@ -337,11 +470,15 @@ class VadRecorder:
         frames_read = 0
         busy_tail: list[bytes] = []  # ~1,5 s de áudio da fala dela, para a gravação incluir o nome dito por cima
         self.last_barged = False
+        self.last_peak = 0.0
         threshold = self._threshold()
         fast_end = False  # quem ouve ao vivo avisou (ex.: o nome foi reconhecido): basta uma pausa curta
         # Nome reconhecido ao vivo: o bip já tocou, mas a gravação segue até o fim da frase ("Cassandra, que horas
         # são?" numa gravação só). Encerrar na 1ª pausa depois do nome picava o pedido em dois e perdia o começo.
         fast_silence_frames = max(silence_frames_needed, int(_AFTER_NAME_SILENCE * 1000 / FRAME_MS))
+        fast_end_at: int | None = None  # quadro em que o nome foi reconhecido
+        after_name_frames = int(AFTER_NAME_MAX_S * 1000 / FRAME_MS)
+        peak = 0.0  # pico (suavizado) da voz de quem fala nesta gravação
         waited_frames = 0
         max_wait_frames = int(max_wait * 1000 / FRAME_MS) if max_wait else None
 
@@ -352,11 +489,15 @@ class VadRecorder:
                     interrupted = True
                     break
 
-                frame = _to_16k(stream.read(device_frames, exception_on_overflow=False), rate)
-                energy = self._rms(frame)
+                data, busy = read_frame()
+                raw = _to_16k(data, rate)
+                clean = hpf(raw) if hpf is not None else raw
+                frame = clean if HPF_FOR_RECOGNITION else raw  # o que vai para o Vosk, a gravação e a transcrição
+                energy = self._rms(clean)
+                recent.append(energy)
                 monitor.level(energy)
 
-                if speech_state.busy():
+                if busy:
                     # A Cassandra está falando (ou a caixa ainda toca o fim): o que o microfone ouve é ela mesma.
                     # Nada disso vira pedido — senão ela se ativa sozinha e responde a si mesma em loop. Só o nome
                     # dela interrompe: on_busy_frame procura o nome e, se achar, cancela a fala (speech_state).
@@ -387,7 +528,7 @@ class VadRecorder:
                     pre_roll.append(frame)
                     if len(pre_roll) > self.pre_roll_frames:
                         pre_roll.pop(0)
-                    if energy > threshold:
+                    if energy > max(threshold, min_level or 0.0):
                         speaking = True
                         if on_frame:
                             for f in pre_roll:
@@ -401,10 +542,18 @@ class VadRecorder:
                         speech_frames = 1
                 else:
                     recorded.append(frame)
-                    voiced_frames += _is_voiced(frame)
+                    voiced = _is_voiced(clean)
+                    voiced_frames += voiced
                     if on_frame:
                         fast_end = bool(on_frame(frame)) or fast_end
-                    if energy < threshold * SILENCE_RATIO:
+                    smooth = math.sqrt(sum(e * e for e in recent) / len(recent))
+                    if voiced:
+                        peak = max(peak, smooth)
+                    if fast_end and fast_end_at is None:
+                        fast_end_at = frames_read
+                    if fast_end_at is not None and frames_read - fast_end_at >= after_name_frames:
+                        break  # barulho contínuo depois do nome: o pedido já cabia aqui
+                    if smooth < max(threshold * SILENCE_RATIO, REL_SILENCE * peak):
                         silent_frames += 1
                         if silent_frames >= (fast_silence_frames if fast_end else silence_frames_needed):
                             break
@@ -429,6 +578,10 @@ class VadRecorder:
         speech_seconds = speech_frames * FRAME_MS / 1000
         # Se o nome já foi reconhecido ao vivo (o bip já tocou), a fala é de verdade: nunca descarta.
         self.last_barged = barged
+        self.last_peak = peak
+        if min_level and not fast_end and not barged and peak < min_level:
+            print(f"[VAD] descartado: voz {peak:.0f} bem mais baixa que a de quem chamou ({min_level:.0f})", flush=True)
+            return None
         if not fast_end and not barged:
             needed = MIN_VOICED_FRAMES if min_voiced is None else min_voiced
             if speech_seconds < MIN_SPEECH_SECONDS or voiced_frames < needed:
@@ -449,6 +602,7 @@ class VadRecorder:
         return tmp.name
 
     def _close_stream(self) -> None:
+        self._hpf = None  # microfone novo: o filtro recomeça do zero
         opened, self._stream = getattr(self, "_stream", None), None
         if opened is not None:
             try:

@@ -1747,8 +1747,8 @@ HTML_PAGE = """<!doctype html>
               <div class="settings-row-info"><div class="settings-row-label">Modelo da OpenAI</div><div class="settings-row-desc">Quando for pela OpenAI</div></div>
               <div class="settings-row-control">
                 <select id="stt-model" class="settings-select">
-                  <option value="gpt-4o-mini-transcribe">gpt-4o-mini-transcribe</option>
-                  <option value="gpt-4o-transcribe">gpt-4o-transcribe</option>
+                  <option value="gpt-4o-transcribe">gpt-4o-transcribe (recomendado)</option>
+                  <option value="gpt-4o-mini-transcribe">gpt-4o-mini-transcribe (erra mais o nome)</option>
                   <option value="whisper-1">whisper-1</option>
                 </select>
               </div>
@@ -3226,7 +3226,7 @@ function applyLlm(l){
   document.getElementById("llm-azure-active").textContent=l.azure_speech_key_set?"· voz em uso":"";
   loadAzureVoices(l.azure_tts_voice);
   document.getElementById("stt-provider").value=l.stt_provider||"auto";
-  document.getElementById("stt-model").value=l.stt_model||"gpt-4o-mini-transcribe";
+  document.getElementById("stt-model").value=l.stt_model||"gpt-4o-transcribe";
   const note=document.getElementById("llm-audio-note");
   if(l.audio_available){
     note.className="llm-note";

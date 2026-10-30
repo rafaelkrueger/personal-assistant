@@ -24,7 +24,7 @@ from cassandra import sounds
 from cassandra.sounds import SoundPlayer
 from cassandra.speaker_keepalive import SpeakerKeepAlive
 from cassandra.timer_manager import TimerManager, format_duration
-from cassandra.voice import VoiceOutput
+from cassandra.voice import VoiceOutput, speaker_waker
 from cassandra.alarm_manager import AlarmManager
 from skills.alarm.skill import AlarmSkill
 from skills.clock.skill import ClockSkill
@@ -42,6 +42,14 @@ from cassandra.routine_manager import RoutineManager
 from cassandra.calendar_service import CalendarService
 
 TIMER_RINGS = 3  # quantas vezes o toque soa quando um timer acaba
+
+
+def _looks_like_background(text: str) -> bool:
+    """Depois de um chamado só com o nome, a próxima fala vira o pedido — e a TV ou uma conversa da casa viravam
+    "pedidos" (29/10: 40 palavras em 4 frases de um vídeo). Pedido de verdade é curto: várias frases e muitas
+    palavras é fala de fundo."""
+    sentences = [s for s in re.split(r"[.!?…]+", text) if s.strip()]
+    return len(sentences) >= 3 and len(text.split()) >= 25
 
 
 class CassandraAssistant:
@@ -163,6 +171,8 @@ class CassandraAssistant:
         self._task_gen: int | None = None
         self._task_done: tuple[int, dict | None] | None = None
         self.input_source.on_barge = lambda: mic_monitor.set(phase="ouvindo o pedido")
+        # Nome provável: a caixa acorda já (o bip de ativação, curto, não se perde no amplificador desligado).
+        self.input_source.on_candidate = lambda: speaker_waker.hold(5.0)
         self._conv_nudges = 0  # vezes seguidas que ela puxou assunto sem resposta (modo conversa)
 
         while True:
@@ -278,6 +288,10 @@ class CassandraAssistant:
                 # Active session: no wake word required.
                 command = raw_text
                 command_source = "active_session"
+                if not conversation_mode.active() and _looks_like_background(command):
+                    mic_monitor.event("ignored", f"Ignorado (parece TV ou conversa, não um pedido): “{command}”")
+                    self._log_passive_heard(command)
+                    continue  # a sessão segue aberta até o prazo: o pedido de verdade ainda pode vir
 
             if not command:
                 active_until = time.monotonic() + self.settings.wake_timeout_seconds
@@ -305,6 +319,7 @@ class CassandraAssistant:
 
     def _start_task(self, command: str, source: str) -> None:
         gen = speech_state.generation()
+        speaker_waker.hold(6.0)  # a resposta sai sem o sopro de espera (a caixa já está acordada)
 
         def run() -> None:
             speech_state.task_begin(gen)

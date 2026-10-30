@@ -10,7 +10,7 @@ class Settings:
     assistant_name: str = "cassandra"
     assistant_aliases: list[str] | None = None
     input_mode: str = "text"
-    transcription_model: str = "gpt-4o-mini-transcribe"
+    transcription_model: str = "gpt-4o-transcribe"
     # Modo microfone: "local" detecta o nome no próprio Pi (Vosk, sem API); "openai" transcreve toda fala
     # na OpenAI e procura o nome no texto (comportamento antigo, gasta créditos o tempo todo).
     wake_word_engine: str = "local"
@@ -19,8 +19,12 @@ class Settings:
     transcription_provider: str = "auto"
     vosk_model_path: str = "models/vosk-model-small-pt-0.3"
     transcription_language: str = "pt"
-    # Exemplos no estilo das falas (vocabulário, nomes): é contexto para a transcrição, não instrução.
-    transcription_prompt: str = "Cassandra, toca Legião Urbana no Spotify. Que horas são? Liga a TV e coloca na Netflix."
+    # Contexto (não exemplos): com exemplos de pedidos, o modelo os repetia em áudio ruim. Medido no Pi com 111 falas:
+    # nome reconhecido 29/31 (antes 9/31), erro de palavras 3% (antes 31%), nenhuma frase inventada (antes 22).
+    transcription_prompt: str = (
+        "Fala em português do Brasil dirigida à assistente de voz Cassandra: pedidos de casa como música no Spotify,"
+        " TV, Netflix, alarmes, lembretes e os agentes Cifra, Pulse, Torque e Lume."
+    )
     # VAD (Voice Activity Detection) settings
     vad_energy_threshold: int = 400
     vad_silence_duration: float = 0.6
@@ -62,8 +66,8 @@ def load_settings() -> Settings:
         assistant_aliases += [v for v in CASSANDRA_VARIANTS if v not in assistant_aliases]
     input_mode = os.getenv("INPUT_MODE", "text").strip().lower() or "text"
     transcription_model = (
-        os.getenv("TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe").strip()
-        or "gpt-4o-mini-transcribe"
+        os.getenv("TRANSCRIPTION_MODEL", "gpt-4o-transcribe").strip()
+        or "gpt-4o-transcribe"
     )
     transcription_language = os.getenv("TRANSCRIPTION_LANGUAGE", "pt").strip().lower() or "pt"
     wake_word_engine = os.getenv("WAKE_WORD_ENGINE", "local").strip().lower() or "local"
@@ -74,10 +78,9 @@ def load_settings() -> Settings:
     )
     transcription_prompt = (
         os.getenv(
-            "TRANSCRIPTION_PROMPT",
-            "Cassandra, toca Legião Urbana no Spotify. Que horas são? Liga a TV e coloca na Netflix.",
+            "TRANSCRIPTION_PROMPT", Settings.transcription_prompt,
         ).strip()
-        or "Cassandra, toca Legião Urbana no Spotify. Que horas são? Liga a TV e coloca na Netflix."
+        or Settings.transcription_prompt
     )
     # VAD settings
     vad_energy_threshold = int(os.getenv("VAD_ENERGY_THRESHOLD", "400").strip() or "400")
