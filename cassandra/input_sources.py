@@ -31,6 +31,9 @@ _EARLY_JOIN_TIMEOUT = 8.0  # no fim da gravação, quanto esperar uma conferênc
 # para quem grita o nome e pede em voz normal) não abre gravação — a TV do outro lado da sala virava "o pedido".
 _SESSION_LEVEL_RATIO = 0.2
 _CALLER_LEVEL_SECONDS = 60.0  # por quanto tempo o volume de quem chamou vale
+_SPEECH_VOICED_FRAMES = 3  # quadros com voz que contam como "alguém começou a falar" (on_speech)
+_PROMPT_ECHO_WORDS = 5  # palavras seguidas do texto de contexto que denunciam a transcrição inventada
+_WAKE_LOCK = threading.Lock()
 
 
 def _frames_to_wav(frames: list[bytes]) -> str:
@@ -142,7 +145,11 @@ class MicrophoneInputSource:
         self.on_wake = on_wake  # toca o som de ativação quando o nome é reconhecido
         self.on_barge = None  # chamado quando a pessoa diz o nome enquanto a Cassandra fala (interromper)
         self.on_candidate = None  # o nome PROVAVELMENTE foi dito: hora de acordar a caixa para o bip (ver SpeakerWaker)
+        self.on_speech = None  # alguém começou a falar (uma vez por gravação): a caixa e a conexão já se preparam
+        self.on_wake_cancel = None  # o bip na hora foi desmentido pela transcrição: desfaz (música volta)
         self._signaled = False  # nome confirmado (o bip já tocou)
+        self._instant = False  # o bip saiu pela decisão local (WakeStream.instant), antes da nuvem conferir
+        self._cloud_ok = False  # a transcrição já confirmou o nome nesta gravação
         self._caller_level = 0.0  # pico da voz de quem chamou por último (ver _SESSION_LEVEL_RATIO)
         self._caller_at = 0.0
         self._candidate = False  # o Vosk achou o nome ao vivo, falta a transcrição confirmar
@@ -170,6 +177,8 @@ class MicrophoneInputSource:
             return InputEvent(text="")
         silence_override = self.vad_wake_silence_duration if wake_phase else silence
         self._signaled = False
+        self._instant = False
+        self._cloud_ok = False
         self._candidate = False
         self._candidate_at = 0.0
         self._early = ("", 0)  # (o que a conferência antecipada ouviu, até que quadro)
@@ -195,11 +204,15 @@ class MicrophoneInputSource:
             self._candidate = True
             self._candidate_at = time.monotonic()
             monitor.event("wake", "Nome talvez ouvido — conferindo")
-            if self.on_candidate:
-                try:
-                    self.on_candidate()
-                except Exception:  # noqa: BLE001 — nunca derruba a escuta
-                    pass
+            self._notify(self.on_candidate)
+
+    @staticmethod
+    def _notify(callback) -> None:
+        if callback:
+            try:
+                callback()
+            except Exception:  # noqa: BLE001 — nunca derruba a escuta
+                pass
 
     def _confirm_early(self, frames: list[bytes], done: threading.Event, abandoned: threading.Event,
                        stream=None) -> None:
@@ -232,6 +245,7 @@ class MicrophoneInputSource:
             if abandoned.is_set():
                 return
             if self._name_starts(heard):
+                self._cloud_ok = True
                 self._early = (heard, end)
                 self._signal_wake()
                 return
@@ -247,20 +261,52 @@ class MicrophoneInputSource:
             return None
         return heard if sum(_is_voiced(f) for f in frames[end:]) <= 1 else None
 
-    def _signal_wake(self) -> None:
-        """Nome confirmado: toca o som de ativação (e pausa a música, via on_wake)."""
-        if self._signaled:
-            return
-        self._signaled = True
-        took = time.monotonic() - getattr(self, "_candidate_at", 0.0)
-        monitor.event("wake", f"Nome confirmado em {took:.1f} s".replace(".", ",") if took < 60 else "Nome confirmado")
-        if getattr(self, "debug", False):
-            print(f"[WAKE] nome confirmado {took:.2f} s depois do candidato", flush=True)
-        if self.on_wake:
-            try:
-                self.on_wake()
-            except Exception:  # noqa: BLE001 — o som nunca pode derrubar a escuta
-                pass
+    def _signal_wake(self, instant: dict | None = None) -> None:
+        """Nome confirmado: toca o som de ativação (e pausa a música, via on_wake). instant = a decisão local do
+        WakeStream (bip na hora); a transcrição ainda confere (ver _wake_denied)."""
+        with _WAKE_LOCK:  # a decisão local (microfone) e a conferência na nuvem (outra thread) podem chegar juntas
+            if self._signaled:
+                return
+            self._signaled = True
+        self._instant = instant is not None
+        if instant is not None:
+            after = instant.get("after_name")
+            note = f" ({after:.1f} s depois do nome)".replace(".", ",") if after is not None else ""
+            monitor.event("wake", f"Nome reconhecido na hora{note}")
+            if getattr(self, "debug", False):
+                print(f"[WAKE] bip na hora: {instant}", flush=True)
+        else:
+            took = time.monotonic() - getattr(self, "_candidate_at", 0.0)
+            monitor.event("wake", f"Nome confirmado em {took:.1f} s".replace(".", ",") if took < 60
+                          else "Nome confirmado")
+            if getattr(self, "debug", False):
+                print(f"[WAKE] nome confirmado {took:.2f} s depois do candidato", flush=True)
+        self._notify(self.on_wake)
+
+    # Desfazer o bip na hora: a transcrição não pode ter nem uma grafia torta do nome ("Casandara" 0,94, "Cacandra"
+    # 0,88). Palavras de verdade parecidas desfazem ("Cansada" 0,80, "Amanda" 0,71): a sessão aberta à toa deixaria a
+    # próxima fala da TV virar pedido — pior que pedir para chamar de novo.
+    _NAME_LIKE_RATIO = 0.85
+
+    def _wake_denied(self, heard: str) -> bool:
+        """O bip na hora (decisão local) foi desmentido: a transcrição ouviu outra coisa, sem nada parecido com o nome
+        ("Fernanda", uma frase da TV). Vazia ou inventada não desmente — aí vale o Vosk."""
+        if not heard or self._hallucinated(heard) or self._name_in(heard):
+            return False
+        words = self._tokens(heard)
+        if not words:
+            return False
+        near = [w for w in (words[:2] + words[-2:])
+                if self._phon(w) in self._SHORT_KEYS
+                or SequenceMatcher(None, self._phon(w), "casandra").ratio() >= self._NAME_LIKE_RATIO]
+        return not near
+
+    def _cancel_wake(self, heard: str) -> None:
+        self._signaled = False
+        self._instant = False
+        monitor.event("no_wake", f"Bip desfeito — a transcrição não tem o nome: “{heard}”")
+        print(f"[WAKE] bip na hora desfeito: a transcrição ouviu {heard!r}", flush=True)
+        self._notify(self.on_wake_cancel)
 
     def _capture_and_transcribe(self, silence_duration: float | None = None, wake_phase: bool = False,
                                 max_wait: float | None = None) -> str:
@@ -291,12 +337,23 @@ class MicrophoneInputSource:
             self._signal_wake()
             return True
 
+        spoke = []  # já avisou on_speech nesta gravação
+
         def on_frame(frame: bytes) -> bool:
             """True = o nome talvez foi dito (o gravador pode encerrar na primeira pausa depois dele)."""
             frames.append(frame)
             if stream is not None and stream.feed(frame):
                 self._mark_candidate()
                 checker.start()
+            live = getattr(self._recorder, "live", None)
+            if live is None:
+                return self._candidate
+            if not spoke and live.voiced >= _SPEECH_VOICED_FRAMES:
+                spoke.append(True)
+                self._notify(self.on_speech)
+                self._warm_transcription()
+            if stream is not None and stream.instant(live.quiet, live.onset) and not self._signaled:
+                self._signal_wake(instant=stream.instant_info)
             return self._candidate
 
         frames: list[bytes] = []  # tudo o que foi gravado até agora (para a conferência antecipada do nome)
@@ -310,7 +367,7 @@ class MicrophoneInputSource:
             wav_path = self._recorder.record_utterance(
                 silence_duration=silence_duration,
                 interrupt_event=self.interrupt_event,
-                on_frame=on_frame if stream is not None else None,
+                on_frame=on_frame,
                 max_wait=max_wait,
                 # Na sessão (depois do bip) a pessoa está falando com ela: basta um pouco de voz (o chiado dá 0).
                 min_voiced=None if wake_phase else _SESSION_MIN_VOICED,
@@ -338,6 +395,13 @@ class MicrophoneInputSource:
                 except Exception as exc:  # noqa: BLE001 — já ativou: abre a sessão e a pessoa repete o pedido
                     print(f"[WAKE] Sem transcrição do pedido ({str(exc)[:120]}).", flush=True)
                     full = ""
+                if self._instant and not self._cloud_ok and self._wake_denied(full):
+                    # O bip saiu pela decisão local e a transcrição ouviu outra coisa ("Fernanda", a TV): desfaz,
+                    # em vez de abrir a sessão — a próxima fala da TV viraria pedido.
+                    self._cancel_wake(full)
+                    return ""
+                if full and self._hallucinated(full):
+                    full = ""  # texto inventado com áudio ruim: abre a sessão só com o nome (não descarta o chamado)
                 if full and not self._name_in(full):
                     text = self._with_wake_word(full)  # a transcrição da frase inteira errou o nome
                 else:
@@ -420,6 +484,15 @@ class MicrophoneInputSource:
     def _local_ready(self) -> bool:
         return self.local is not None and self.local.available()
 
+    def _warm_transcription(self) -> None:
+        """A transcrição vai para a OpenAI? Então a conexão já abre agora (ver llm_settings.warm_audio)."""
+        try:
+            settings = llm_settings.get()
+            if (settings.get("stt_provider") or self.transcription_provider) != "local":
+                llm_settings.warm_audio(settings.get("stt_model") or self.transcription_model)
+        except Exception:  # noqa: BLE001 — só uma preparação
+            pass
+
     def _transcribe(self, wav_path: str) -> str:
         # Provedor e modelo vêm das Configurações > Modelo de IA > Transcrição (valem na hora); o .env é o padrão.
         settings = llm_settings.get()
@@ -475,6 +548,12 @@ class MicrophoneInputSource:
         # só quando repete a maior parte do texto de instrução (um pedido curto que aparece nele é legítimo)
         if prompt and len(t) >= 0.6 * len(prompt) and (t in prompt or prompt in t
                                                       or SequenceMatcher(None, t, prompt).ratio() >= 0.6):
+            return True
+        # ... ou um pedaço dele, palavra por palavra (5+): "pedidos de casa como música no Spotify, TV, Netflix" virou
+        # pedido no Pi. Pedido de verdade não repete 5 palavras seguidas do contexto ("toca música no Spotify" passa).
+        said, told = t.split(), prompt.split()
+        runs = {tuple(told[i:i + _PROMPT_ECHO_WORDS]) for i in range(len(told) - _PROMPT_ECHO_WORDS + 1)}
+        if any(tuple(said[i:i + _PROMPT_ECHO_WORDS]) in runs for i in range(len(said) - _PROMPT_ECHO_WORDS + 1)):
             return True
         return any(p in t for p in _HALLUCINATIONS)
 

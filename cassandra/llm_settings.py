@@ -192,8 +192,37 @@ def _http_client():
         return None
 
 
+_openai_used = 0.0  # última vez que o cliente da OpenAI foi pego (a conexão dele vale _KEEPALIVE_SECONDS)
+
+
+def warm_audio(model: str) -> None:
+    """Alguém começou a falar: se a conexão com a OpenAI já fechou (sem uso há ~2 min), abre de novo em segundo
+    plano, com uma consulta grátis — a conferência do nome sai ~1 s depois e encontra a conexão pronta, em vez de
+    pagar a conexão + TLS na hora (~0,3 s no Pi, medido)."""
+    global _openai_used
+    import time  # noqa: PLC0415
+
+    key = get()["openai_api_key"]
+    if not key or time.monotonic() - _openai_used < _KEEPALIVE_SECONDS - 15:
+        return
+    client = _client(key)  # marca o uso: outra fala logo depois não abre outra conexão
+
+    def run() -> None:
+        try:
+            client.with_options(max_retries=0, timeout=5.0).models.retrieve(model)
+        except Exception:  # noqa: BLE001 — só uma preparação; a transcrição de verdade trata os erros
+            pass
+
+    threading.Thread(target=run, name="abre-conexao", daemon=True).start()
+
+
 def _client(api_key: str, base_url: str = "", **options: Any) -> OpenAI:
+    global _openai_used
     key = (api_key, base_url)
+    if not base_url:
+        import time  # noqa: PLC0415
+
+        _openai_used = time.monotonic()
     with _lock:
         client = _clients.get(key)
         if client is None:

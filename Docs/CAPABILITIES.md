@@ -64,10 +64,11 @@ técnicos e exemplos de API estão em [`API.md`](./API.md) — este arquivo é s
 - **Pedir coisas aos outros agentes (web-agent, IDE, editor), sempre através do maestro**: ela é origem de pedidos
   em `POST /maestro/request`, pelo plug-in `maestro_link`.
 - **Ouvir pelo microfone** (USB, ou o viva-voz de uma caixa Bluetooth): detecta o nome
-  "Cassandra" no próprio aparelho, sem mandar nada para a internet, confere o nome
-  na transcrição (gpt-4o-transcribe) assim que ele é dito — o bip sai ~1 s depois do
-  nome, sem esperar o pedido terminar — e transcreve o comando. Ver "Como ela ouve"
-  no README.
+  "Cassandra" no próprio aparelho, sem mandar nada para a internet. O nome dito sozinho
+  e claro bipa na hora (~0,2 s depois do nome, pela decisão local); o resto é conferido
+  na transcrição (gpt-4o-transcribe) assim que o nome é dito — bip ~1 s depois, sem
+  esperar o pedido terminar — e a transcrição também desfaz um bip na hora que não era o
+  nome. Depois, transcreve o comando. Ver "Como ela ouve" no README.
 
 ## Não pode / não faz
 

@@ -10,6 +10,7 @@ import threading
 import time
 import wave
 from collections import deque
+from typing import NamedTuple
 
 from cassandra.mic_monitor import monitor
 from cassandra import speech_state
@@ -73,6 +74,15 @@ REL_SILENCE = 0.3
 # Depois do nome, a gravação dura no máximo isto (o pedido mais longo cabe): com barulho contínuo (TV alta, música)
 # ela terminava só nos 30 s do limite geral.
 AFTER_NAME_MAX_S = 8.0
+
+
+class LiveFrame(NamedTuple):
+    """O que o gravador sabe do quadro que acabou de passar para o on_frame (VadRecorder.live)."""
+    quiet: bool  # conta como pausa (o mesmo critério que encerra a fala)
+    voiced: int  # quadros com voz desde o começo da gravação
+    peak: float  # pico da voz nesta gravação
+    threshold: float  # limite de fala agora
+    onset: int = 0  # quadros desde que a fala começou (o limite foi cruzado)
 
 
 def _is_voiced(frame: bytes) -> bool:
@@ -508,6 +518,7 @@ class VadRecorder:
         busy_tail: list[bytes] = []  # ~1,5 s de áudio da fala dela, para a gravação incluir o nome dito por cima
         self.last_barged = False
         self.last_peak = 0.0
+        self.live = None
         threshold = self._threshold()
         fast_end = False  # quem ouve ao vivo avisou (ex.: o nome foi reconhecido): basta uma pausa curta
         # Nome reconhecido ao vivo: o bip já tocou, mas a gravação segue até o fim da frase ("Cassandra, que horas
@@ -516,6 +527,7 @@ class VadRecorder:
         fast_end_at: int | None = None  # quadro em que o nome foi reconhecido
         after_name_frames = int(AFTER_NAME_MAX_S * 1000 / FRAME_MS)
         peak = 0.0  # pico (suavizado) da voz de quem fala nesta gravação
+        onset_at = 0  # quadro em que a fala começou
         waited_frames = 0
         max_wait_frames = int(max_wait * 1000 / FRAME_MS) if max_wait else None
 
@@ -567,12 +579,14 @@ class VadRecorder:
                         pre_roll.pop(0)
                     if energy > max(threshold, min_level or 0.0):
                         speaking = True
+                        voiced_frames = sum(_is_voiced(f) for f in pre_roll) + _is_voiced(frame)
+                        onset_at = frames_read
+                        self.live = LiveFrame(False, voiced_frames, 0.0, threshold)
                         if on_frame:
                             for f in pre_roll:
                                 fast_end = bool(on_frame(f)) or fast_end
                             fast_end = bool(on_frame(frame)) or fast_end
                         recorded.extend(pre_roll)
-                        voiced_frames = sum(_is_voiced(f) for f in pre_roll) + _is_voiced(frame)
                         pre_roll.clear()
                         recorded.append(frame)
                         silent_frames = 0
@@ -581,16 +595,18 @@ class VadRecorder:
                     recorded.append(frame)
                     voiced = _is_voiced(clean)
                     voiced_frames += voiced
-                    if on_frame:
-                        fast_end = bool(on_frame(frame)) or fast_end
                     smooth = math.sqrt(sum(e * e for e in recent) / len(recent))
                     if voiced:
                         peak = max(peak, smooth)
+                    quiet = smooth < max(threshold * SILENCE_RATIO, REL_SILENCE * peak)
+                    self.live = LiveFrame(quiet, voiced_frames, peak, threshold, frames_read - onset_at)
+                    if on_frame:
+                        fast_end = bool(on_frame(frame)) or fast_end
                     if fast_end and fast_end_at is None:
                         fast_end_at = frames_read
                     if fast_end_at is not None and frames_read - fast_end_at >= after_name_frames:
                         break  # barulho contínuo depois do nome: o pedido já cabia aqui
-                    if smooth < max(threshold * SILENCE_RATIO, REL_SILENCE * peak):
+                    if quiet:
                         silent_frames += 1
                         if silent_frames >= (fast_silence_frames if fast_end else silence_frames_needed):
                             break

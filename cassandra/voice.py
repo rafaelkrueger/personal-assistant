@@ -189,16 +189,25 @@ def _lead_in(rate: int = 24_000) -> bytes:
 class SpeakerWaker:
     """Mantém o amplificador da caixa acordado (o mesmo sopro inaudível do _lead_in, contínuo) por alguns segundos.
 
-    Chamado quando o nome PROVAVELMENTE foi dito (candidato do Vosk, ~1 s antes do bip) e quando um pedido começa a
-    ser atendido: o bip de ativação dura ~0,4 s e a caixa que acorda em ~0,5 s o engolia inteiro — ela ouvia e
-    parecia que não. Com a caixa acordada, a resposta também não precisa do sopro antes da fala."""
+    Chamado quando alguém começa a falar perto do microfone e quando um pedido começa a ser atendido: o bip de
+    ativação dura ~0,4 s e a caixa que acorda em ~0,5 s o engolia inteiro — ela ouvia e parecia que não. Com a caixa
+    acordada, a resposta também não precisa do sopro antes da fala.
 
-    RATE = 24_000
+    O bip sai por este mesmo canal (cue): um pw-play novo levava 0,2-1,7 s só para começar a tocar no Pi (medido), e
+    o canal já aberto toca o som ~40 ms depois de escrito."""
+
+    RATE = 48_000  # a taxa do PipeWire: sem conversão, e o cano de 4 KB guarda só ~40 ms à frente do que toca
+    CHUNK = RATE // 50 * 2  # 20 ms de sopro por vez (bytes)
+    LEAD = 0.5  # sopro antes de um som se o canal acabou de abrir (a caixa ainda dormia)
+    WARM = 0.8  # canal aberto há tanto tempo: a caixa já acordou
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._until = 0.0
         self._running = False
+        self._since = 0.0  # quando o canal atual abriu
+        self._cues: list[bytes] = []  # sons esperando a vez (tocam antes do próximo pedaço de sopro)
+        self._sounds: dict[tuple[str, float], bytes] = {}
 
     def awake(self) -> bool:
         return self._running and time.monotonic() < self._until - 0.3
@@ -211,26 +220,72 @@ class SpeakerWaker:
             if self._running:
                 return
             self._running = True
+            self._since = time.monotonic()
         threading.Thread(target=self._run, name="acorda-caixa", daemon=True).start()
 
-    def _run(self) -> None:
+    def preload(self, *sounds: tuple[str, float]) -> None:
+        """Decodifica os sons (caminho, volume 0-1) uma vez, em segundo plano: o cue toca sem abrir arquivo."""
+        def load() -> None:
+            for path, volume in sounds:
+                pcm = self._decode(path, volume)
+                if pcm:
+                    self._sounds[(path, volume)] = pcm
+
+        threading.Thread(target=load, name="carrega-sons", daemon=True).start()
+
+    def cue(self, path: str, volume: float = 1.0) -> bool:
+        """Toca um som curto (o bip) pelo canal aberto. False = não dá (sem pw-play, som não carregado): o chamador
+        toca do jeito normal."""
+        pcm = self._sounds.get((path, volume))
+        if not pcm or shutil.which("pw-play") is None:
+            return False
+        with self._lock:
+            warm = self._running and time.monotonic() - self._since >= self.WARM
+        lead = b"" if warm else _noise(int(self.RATE * self.LEAD))
+        with self._lock:
+            self._cues.append(lead + pcm)
+        self.hold((len(lead) + len(pcm)) / (2 * self.RATE) + 0.5)
+        return True
+
+    def _decode(self, path: str, volume: float) -> bytes:
+        """PCM s16 mono a 48 kHz, sem o silêncio do começo do arquivo (o on.mp3 tem ~0,1 s) e com o volume."""
         import numpy as np  # noqa: PLC0415
 
-        chunk = np.random.randint(-30, 31, self.RATE // 10, dtype=np.int16).tobytes()  # 0,1 s
+        if not Path(path).exists() or shutil.which("ffmpeg") is None:
+            return b""
+        try:
+            out = subprocess.run(["ffmpeg", "-nostdin", "-loglevel", "error", "-i", path, "-f", "s16le", "-ac", "1",
+                                  "-ar", str(self.RATE), "-"], capture_output=True, timeout=30, check=True).stdout
+        except (OSError, subprocess.SubprocessError):
+            return b""
+        x = np.frombuffer(out, dtype=np.int16).astype(np.float32)
+        loud = np.nonzero(np.abs(x) > 0.01 * float(np.abs(x).max()))[0] if len(x) else []
+        if not len(loud):
+            return b""
+        x = x[max(0, int(loud[0]) - self.RATE // 200):]  # a partir de 5 ms antes do som
+        return np.clip(x * volume, -32768, 32767).astype(np.int16).tobytes()
+
+    def _run(self) -> None:
         proc = None
         try:
             proc = subprocess.Popen(["pw-play", "--raw", "--format", "s16", "--rate", str(self.RATE), "--channels",
                                      "1", "-"], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
-                                    stderr=subprocess.DEVNULL)
+                                    stderr=subprocess.DEVNULL, bufsize=0)
+            _shrink_pipe(proc.stdin)
+            noise, pos = _noise(self.RATE), 0  # 1 s de sopro, tocado em pedaços
             while True:
                 with self._lock:
-                    if time.monotonic() >= self._until:
+                    if not self._cues and time.monotonic() >= self._until:
                         self._running = False
                         break
-                proc.stdin.write(chunk)  # bloqueia no ritmo do som (o cano guarda ~1 s)
+                    data = self._cues.pop(0) if self._cues else None
+                if data is None:
+                    data, pos = noise[pos:pos + self.CHUNK], (pos + self.CHUNK) % len(noise)
+                _write_all(proc.stdin, data)  # bloqueia no ritmo do som
         except (OSError, ValueError):
             with self._lock:
                 self._running = False
+                self._cues.clear()
         finally:
             if proc is not None:
                 try:
@@ -238,6 +293,29 @@ class SpeakerWaker:
                     proc.wait(timeout=3)
                 except (OSError, subprocess.TimeoutExpired):
                     proc.kill()
+
+
+def _noise(samples: int) -> bytes:
+    """O sopro inaudível (~-60 dBFS) que acorda o amplificador; silêncio puro não serve, a caixa o ignora."""
+    import numpy as np  # noqa: PLC0415
+
+    return np.random.randint(-30, 31, samples, dtype=np.int16).tobytes()
+
+
+def _shrink_pipe(pipe) -> None:
+    """Cano de 4 KB (o mínimo do Linux) no lugar de 64 KB: o som escrito toca logo, não depois de ~0,7 s de sopro."""
+    try:
+        import fcntl  # noqa: PLC0415
+
+        fcntl.fcntl(pipe.fileno(), getattr(fcntl, "F_SETPIPE_SZ", 1031), 4096)
+    except (ImportError, OSError):
+        pass
+
+
+def _write_all(pipe, data: bytes) -> None:
+    view = memoryview(data)
+    while view:
+        view = view[pipe.write(view):]
 
 
 speaker_waker = SpeakerWaker()

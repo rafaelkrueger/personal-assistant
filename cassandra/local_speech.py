@@ -48,6 +48,23 @@ _SHORT_NAMES = {"sandra", "alessandra", "lessandra"}  # medido: "alessandro" nã
 AGC_TARGET_RMS = 3500.0
 AGC_MAX_GAIN = 5.0
 
+# Bip na hora, sem esperar a transcrição na nuvem (~1 s): só quando o nome veio SOZINHO, seguido logo de uma pausa
+# — o jeito de chamar e esperar o bip ("Cassandra." ... "toca música"). Exige: o Vosk não reconheceu mais nada (nem
+# fala que ele não conhece, [unk]), o nome inteiro (não "Sandra"), a pausa logo depois dele e a fala toda até ela do
+# tamanho de um nome. O nome no meio de uma frase, de longe ou por cima da TV espera a nuvem como antes — e a nuvem
+# confere o bip na hora também, e o desfaz se não era o nome (ver MicrophoneInputSource).
+INSTANT_QUIET_FRAMES = 5  # a pausa depois do nome (~150 ms); 0 desliga o bip na hora
+INSTANT_WAIT_FRAMES = 20  # a pausa tem que vir até ~0,6 s depois do candidato (senão a fala continuou)
+# Até a pausa, a fala toda não pode ser mais longa que um nome ("Ô Cassandra!" ~1,1 s): o Vosk às vezes ignora as
+# palavras em volta e via "o nome sozinho" em "eu falei com a Cassandra ontem" (medido: 40% dessas frases bipavam).
+INSTANT_MAX_SPEECH_S = 1.3
+# Conferir também a confiança e a duração da palavra exige fechar o resultado do Vosk (~0,35 s no Pi a 600 MHz) e,
+# medido, quase não separa: nome de verdade p25 0,88 / mediana 0,99, palavras parecidas p25 0,70 / mediana 0,97 — e
+# custava metade dos bipes na hora na sala. Desligado; a nuvem confere depois mesmo assim.
+INSTANT_CONF_CHECK = False
+INSTANT_MIN_CONF = 0.9
+INSTANT_NAME_SECONDS = (0.3, 1.3)
+
 
 class _Agc:
     def __init__(self) -> None:
@@ -203,6 +220,10 @@ class WakeStream:
         self._texts: list[str] = []
         self._words: list[dict] = []  # palavras finais com tempo (start/end), inclusive [unk]
         self._frames = 0
+        self._fed = 0  # quadros recebidos (inclusive depois do nome)
+        self._heard_at = 0
+        self._quiet_run = 0  # quadros seguidos de pausa (ver instant)
+        self.instant_info: dict | None = None  # a decisão do bip na hora, uma vez por gravação (para o log)
         speech._lock.acquire()
         self._rec = speech._wake_rec
         self._rec.Reset()
@@ -226,9 +247,13 @@ class WakeStream:
         """True só na primeira vez que o nome aparece."""
         if self._open:
             frame = self._agc(frame)
+            self._fed += 1
         if not self._open or self.heard:
-            if self._open:
-                self._rec.AcceptWaveform(frame)
+            if self._open and self._rec.AcceptWaveform(frame) and self.instant_info is None:
+                # o Vosk fechou a frase sozinho (pausa) antes da decisão do bip na hora: ela precisa dessas palavras
+                res = json.loads(self._rec.Result())
+                self._texts.append(res.get("text", ""))
+                self._words.extend(res.get("result", []))
             return False
         self._frames += 1
         # A pausa antes do nome é medida nos resultados FINAIS (tempos confiáveis); o parcial segue só pelo texto.
@@ -245,8 +270,56 @@ class WakeStream:
             return False
         if found:
             self.heard = True
+            self._heard_at = self._fed
             return True
         return False
+
+    def instant(self, quiet: bool, since_onset: int = 0) -> bool:
+        """True (uma vez só) quando dá para bipar sem esperar a nuvem — ver INSTANT_*. Chamado a cada quadro, logo
+        depois do feed(); quiet = o gravador conta o quadro como pausa; since_onset = quadros desde o começo da fala."""
+        if not self._open or self.instant_info is not None:
+            return False
+        self._quiet_run = self._quiet_run + 1 if quiet else 0
+        if not self.heard or not INSTANT_QUIET_FRAMES:
+            return False
+        if self._quiet_run < INSTANT_QUIET_FRAMES:
+            if self._fed - self._heard_at >= INSTANT_WAIT_FRAMES:
+                self.instant_info = {"ok": False, "why": "a fala continuou depois do nome"}
+            return False
+        partial = json.loads(self._rec.PartialResult()).get("partial", "")
+        heard = " ".join([*self._texts, partial]).split()
+        names = [w for w in self.speech.wake_words if w not in _SHORT_NAMES and w not in _NEAR_NAME_FIRST]
+        speech = max(0, since_onset - self._quiet_run) * 0.03  # do começo da fala até a pausa
+        info = {"ok": False, "heard": " ".join(heard), "speech": round(speech, 2)}
+        if INSTANT_CONF_CHECK:
+            # Tempos e confiança só existem no resultado fechado (~0,35 s no Pi a 600 MHz). Ligar as palavras no
+            # parcial não serve: no meio da frase ele volta vazio, e ligado o tempo todo piora o reconhecimento.
+            res = json.loads(self._rec.FinalResult())
+            self._texts.append(res.get("text", ""))
+            self._words.extend(res.get("result", []))
+            words = self._words
+            word = words[0] if len(words) == 1 else {}
+            info.update(conf=round(float(word.get("conf", 0.0)), 3),
+                        seconds=round(float(word.get("end", 0.0)) - float(word.get("start", 0.0)), 2))
+        else:
+            words = [{"word": w} for w in heard]
+        if len(words) != 1 or words[0].get("word") not in names:
+            why = "não era só o nome: " + (" ".join(w.get("word", "") for w in words) or "nada")
+        elif speech > INSTANT_MAX_SPEECH_S:
+            why = f"falou {speech:.1f} s antes da pausa"
+        elif INSTANT_CONF_CHECK and info["conf"] < INSTANT_MIN_CONF:
+            why = f"confiança {info['conf']:.2f}"
+        elif INSTANT_CONF_CHECK and not INSTANT_NAME_SECONDS[0] <= info["seconds"] <= INSTANT_NAME_SECONDS[1]:
+            why = f"duração {info['seconds']:.2f} s"
+        else:
+            why = ""
+        info.update(ok=not why, why=why)
+        if INSTANT_CONF_CHECK and len(words) == 1:
+            info["after_name"] = round(self._fed * 0.03 - float(words[0].get("end", 0.0)), 2)
+        else:  # sem os tempos: a pausa até aqui (a média do volume atrasa ~2 quadros o começo dela)
+            info["after_name"] = round((self._quiet_run + 2) * 0.03, 2)
+        self.instant_info = info
+        return not why
 
     def close(self) -> tuple[bool, bool, str]:
         """(ouviu o nome, era só o nome, texto ouvido). Libera o reconhecedor."""

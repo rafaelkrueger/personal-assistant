@@ -42,6 +42,9 @@ from cassandra.routine_manager import RoutineManager
 from cassandra.calendar_service import CalendarService
 
 TIMER_RINGS = 3  # quantas vezes o toque soa quando um timer acaba
+# Alguém começou a falar perto do microfone: a caixa fica acordada (sopro inaudível) por tanto tempo. Se for o nome,
+# o bip sai na hora — a caixa religa o amplificador em ~0,5 s e um pw-play novo leva ~0,3 s só para abrir.
+_SPEECH_HOLD_SECONDS = 8.0
 
 
 def _looks_like_background(text: str) -> bool:
@@ -171,8 +174,13 @@ class CassandraAssistant:
         self._task_gen: int | None = None
         self._task_done: tuple[int, dict | None] | None = None
         self.input_source.on_barge = lambda: mic_monitor.set(phase="ouvindo o pedido")
-        # Nome provável: a caixa acorda já (o bip de ativação, curto, não se perde no amplificador desligado).
+        # Alguém começou a falar / nome provável: a caixa acorda já — o bip de ativação, curto, não se perde no
+        # amplificador desligado e sai pelo canal já aberto (ver SpeakerWaker.cue).
+        self.input_source.on_speech = lambda: speaker_waker.hold(_SPEECH_HOLD_SECONDS)
         self.input_source.on_candidate = lambda: speaker_waker.hold(5.0)
+        self.input_source.on_wake_cancel = self._on_wake_cancel
+        speaker_waker.preload((self.settings.on_sound_path, 1.0),
+                              (self.settings.off_sound_path, sounds.SOFT_VOLUME))
         self._conv_nudges = 0  # vezes seguidas que ela puxou assunto sem resposta (modo conversa)
 
         while True:
@@ -275,7 +283,7 @@ class CassandraAssistant:
                 mic_monitor.event("status", "Pedido anterior interrompido")
             if wake_detected:
                 if not getattr(event, "wake_signaled", False):
-                    self.sound_player.play(self.settings.on_sound_path)
+                    self._cue(self.settings.on_sound_path)
                 self.music_pause.pause()  # já pausada pelo _on_wake na maioria das vezes; repetir não faz nada
                 command = wake_command
                 command_source = "wake_inline"
@@ -830,8 +838,18 @@ class CassandraAssistant:
 
     def _on_wake(self) -> None:
         """Nome reconhecido ao vivo: som de ativação e pausa da música, antes mesmo do pedido."""
-        self.sound_player.play(self.settings.on_sound_path)
+        self._cue(self.settings.on_sound_path)
         self.music_pause.pause()
+
+    def _on_wake_cancel(self) -> None:
+        """O bip na hora foi desmentido pela transcrição (não era o nome): som baixinho de desligar e a música volta."""
+        self._cue(self.settings.off_sound_path, sounds.SOFT_VOLUME)
+        self.music_pause.resume()
+
+    def _cue(self, path: str, volume: float = 1.0) -> None:
+        """Som curto pelo canal já aberto da caixa (sai na hora); sem ele, pelo player normal."""
+        if self.sound_player.enabled and not speaker_waker.cue(path, volume):
+            self.sound_player.play(path, volume=None if volume == 1.0 else volume)
 
     def _shutdown_with_goodbye(self) -> None:
         self.memory.clear()

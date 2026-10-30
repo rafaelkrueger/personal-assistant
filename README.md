@@ -152,16 +152,26 @@ créditos), a Cassandra usa só o local pelos 10 minutos seguintes.
    fala** (a TV bem mais baixa conta como pausa).
    Sem isso a gravação não terminava e ela levava até 30 s para responder. Depois do nome, no máximo 8 s.
 2. **Candidato** (Vosk, gramática restrita): acha o nome ao vivo, ~0,2 s depois de ele ser dito.
-3. **Conferência** (`input_sources.py`): o trecho até o nome vai na hora para a transcrição; se ele começa pelo
-   nome, toca o bip — sem esperar a pessoa terminar o pedido. Nome dito no meio da TV (depois de uma pausa) é
-   conferido a partir dele.
-4. **Transcrição**: `gpt-4o-transcribe` com um *contexto* (não exemplos de pedidos: com exemplos o modelo os
+3. **Bip na hora** (`WakeStream.instant`): o nome dito **sozinho**, seguido de uma pausa ("Cassandra." … e a pessoa
+   espera), bipa pela decisão local, sem esperar a nuvem — ~0,2 s depois do nome. Só quando nada mais foi
+   reconhecido, a pausa vem logo e a fala toda até ela cabe num nome (≤ 1,3 s: o Vosk às vezes ignora as palavras
+   em volta e via "o nome sozinho" em "eu falei com a Cassandra ontem"). Na bancada: o nome sozinho bipa na hora
+   92% das vezes a 2-3 m e 78% na sala (em silêncio); palavras soltas parecidas ("Casada!", "Passando!") bipam
+   ~1,7% das vezes, e a transcrição desfaz (som baixinho de desligar, a música volta). Fechar o resultado do Vosk
+   para ter a confiança custava ~0,35 s no Pi e quase não separava — desligado.
+4. **Conferência** (`input_sources.py`): o resto (nome com o pedido emendado, de longe, por cima da TV) espera a
+   transcrição: o trecho até o nome vai na hora e, se ele começa pelo nome, toca o bip — sem esperar a pessoa
+   terminar o pedido. Nome dito no meio da TV (depois de uma pausa) é conferido a partir dele.
+5. **Transcrição**: `gpt-4o-transcribe` com um *contexto* (não exemplos de pedidos: com exemplos o modelo os
    repetia em áudio ruim). Em 111 falas: nome reconhecido 29/31 (antes 9/31), erro de palavras 3% (antes 31%).
-   A conexão HTTPS fica aberta 2 min (cada conferência economiza ~0,3 s). Chave do Azure recusada (401/403)
-   não é tentada de novo até ser trocada.
-5. **Caixa Bluetooth**: caixas como a Alaxe desligam o amplificador no silêncio e engoliam o começo do som (o
-   bip inteiro). Quando o nome provavelmente foi dito, um sopro inaudível já acorda a caixa (`SpeakerWaker`).
-6. **Depois do nome**: o pedido é da mesma pessoa — som muito mais baixo que a voz de quem chamou não abre
+   A conexão HTTPS fica aberta 2 min e, se fechou, reabre assim que alguém começa a falar (cada conferência
+   economiza ~0,3 s). Texto que repete 5+ palavras seguidas do contexto é inventado (virava pedido). Chave do
+   Azure recusada (401/403) não é tentada de novo até ser trocada.
+6. **Caixa Bluetooth e o bip**: caixas como a Alaxe desligam o amplificador no silêncio e engoliam o começo do som
+   (o bip inteiro). Assim que alguém começa a falar, um sopro inaudível já acorda a caixa por um canal que fica
+   aberto (`SpeakerWaker`), e o bip sai **por esse canal**: um `pw-play` novo levava 0,2-1,7 s só para começar a
+   tocar no Pi; o canal aberto toca ~40 ms depois (o bip também perdeu os 0,1 s de silêncio do começo do arquivo).
+7. **Depois do nome**: o pedido é da mesma pessoa — som muito mais baixo que a voz de quem chamou não abre
    gravação, e uma fala longa e narrativa (várias frases, 25+ palavras) é ignorada como TV/conversa.
 
 ## Outros agentes, sempre via maestro
