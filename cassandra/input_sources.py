@@ -20,7 +20,13 @@ _HALLUCINATIONS = ("legendas pela comunidade", "amaraorg", "obrigado por assisti
                    "inscrevase no canal", "se inscreva no canal", "legenda adriana", "transcricao e legendas",
                    "subtitles by", "thanks for watching", "thank you for watching")
 _OPENAI_RETRY_AFTER = 600  # depois de uma falha da OpenAI (ex.: sem créditos), usa só o local por 10 min
-_BARGE_WHILE_SPEAKING = os.getenv("BARGE_IN_WHILE_SPEAKING", "").strip().lower() in {"1", "true", "sim"}
+_BARGE_WHILE_SPEAKING = os.getenv("BARGE_IN_WHILE_SPEAKING", "1").strip().lower() not in {"0", "false", "nao", "não"}
+# Nome dito por cima da fala dela: a nuvem transcreve os últimos ~2,4 s do microfone a cada ~0,8 s (uma conferência
+# por vez). O eco da caixa é tão alto quanto a pessoa — o Vosk confundia trechos da fala com o nome — mas a transcrição
+# escreve o que foi dito, e o que ela mesma fala está registrado (speech_state.said_recently).
+_BARGE_WINDOW_FRAMES = 80
+_BARGE_STEP_FRAMES = 27
+_BARGE_MIN_VOICED = 4  # quadros com voz no trecho novo (silêncio entre frases não vai para a nuvem)
 _SESSION_MIN_VOICED = 2  # quadros com voz exigidos numa sessão ativa (esperando o nome são 7)
 # Conferência antecipada do nome: segundos depois do candidato do Vosk em que o trecho gravado até ali vai para a
 # transcrição, com a pessoa ainda falando. Medido: o parcial do Vosk sai 0,07-0,5 s DEPOIS do fim do nome (só 2%
@@ -66,6 +72,55 @@ def _trim_wav(path: str, start_seconds: float) -> str:
         dst.setparams(params)
         dst.writeframes(data)
     return out
+
+
+class _CloudBarge:
+    """Procura o nome no que o microfone ouve enquanto a Cassandra fala. feed() recebe cada quadro e nunca bloqueia
+    (o microfone tem ~30 ms de buffer): a transcrição roda numa thread e o resultado vale no próximo quadro."""
+
+    def __init__(self, transcribe, is_call) -> None:
+        from collections import deque  # noqa: PLC0415
+
+        self._transcribe = transcribe  # caminho do WAV -> texto
+        self._is_call = is_call  # texto -> o nome foi dito?
+        self._window: deque[bytes] = deque(maxlen=_BARGE_WINDOW_FRAMES)
+        self._since = 0  # quadros desde a última conferência
+        self._inflight = False
+        self._closed = False
+        self.heard: str | None = None  # a transcrição que tinha o nome
+
+    def feed(self, frame: bytes) -> bool:
+        from cassandra.vad_recorder import _is_voiced  # noqa: PLC0415
+
+        if self.heard is not None:
+            return True
+        self._window.append(frame)
+        self._since += 1
+        if self._inflight or self._since < _BARGE_STEP_FRAMES:
+            return False
+        fresh = list(self._window)[-self._since:]
+        self._since = 0
+        if sum(_is_voiced(f) for f in fresh) < _BARGE_MIN_VOICED:
+            return False
+        self._inflight = True
+        threading.Thread(target=self._check, args=(list(self._window),), name="confere-interrupcao",
+                         daemon=True).start()
+        return False
+
+    def _check(self, frames: list[bytes]) -> None:
+        path = _frames_to_wav(frames)
+        try:
+            text = (self._transcribe(path) or "").strip()
+        except Exception:  # noqa: BLE001 — sem rede agora: a próxima janela tenta de novo
+            text = ""
+        finally:
+            os.unlink(path)
+            self._inflight = False
+        if text and not self._closed and self._is_call(text):
+            self.heard = text
+
+    def close(self) -> None:
+        self._closed = True
 
 
 @dataclass
@@ -314,20 +369,17 @@ class MicrophoneInputSource:
         # Esperando o nome: reconhece ao vivo enquanto grava (o som de ativação sai na hora).
         stream = self.local.stream() if (wake_phase and self.local_wake and self._local_ready()) else None
 
-        # Nome dito POR CIMA da fala dela: desligado por padrão — com a voz dela saindo da caixa, o detector local
-        # confundia trechos da fala com o nome (18 falsos positivos em 15 falas testadas) e ela se interrompia
-        # sozinha. Interromper enquanto ela PROCESSA um pedido (pesquisa, agentes) continua valendo.
-        barge = (self.local.barge_detector()
-                 if _BARGE_WHILE_SPEAKING and self.local is not None and self._local_ready() else None)
-        if barge is not None:
-            barge.reset()
+        # Nome dito POR CIMA da fala dela: conferido na nuvem (ver _CloudBarge). O detector local (Vosk) ouvia o eco
+        # da caixa como o nome (18 falsos positivos em 15 falas) e ela se interrompia sozinha.
+        barge = _CloudBarge(self._transcribe_barge, self._calls_anywhere) if _BARGE_WHILE_SPEAKING else None
 
         def on_busy_frame(frame: bytes) -> bool:
             """Enquanto ela fala: o nome dito por cima interrompe tudo e a gravação vira o pedido novo."""
             if barge is None or not barge.feed(frame):
                 return False
-            if speech_state.said_recently(self.local.wake_words):
-                return False  # foi ela mesma dizendo o próprio nome ("eu sou a Cassandra")
+            if speech_state.said_recently(self.wake_words):
+                barge.heard = None  # foi ela mesma dizendo o próprio nome ("eu sou a Cassandra")
+                return False
             speech_state.cancel()
             monitor.event("wake", "Interrompida: nome ouvido enquanto ela falava")
             if self.on_barge:
@@ -379,6 +431,8 @@ class MicrophoneInputSource:
             )
         finally:
             result = stream.close() if stream is not None else None
+            if barge is not None:
+                barge.close()
             done.set()
             if checker.ident is not None:
                 checker.join(_EARLY_JOIN_TIMEOUT)  # uma conferência em andamento termina antes de decidir
@@ -392,7 +446,8 @@ class MicrophoneInputSource:
         try:
             if getattr(self._recorder, "last_barged", False):
                 # O nome foi dito por cima da fala dela (o WakeStream não ouviu esse trecho): é um pedido com o nome.
-                text = self._with_wake_word(self._transcribe(wav_path))
+                # A gravação começa com o eco dela — o pedido é o que vem depois do nome.
+                text = self._after_call(self._transcribe(wav_path))
             elif self._signaled:
                 # O nome já foi confirmado (e o bip tocou) enquanto a pessoa falava: falta só o pedido.
                 full = self._after_early_check(frames, chimes)
@@ -654,6 +709,35 @@ class MicrophoneInputSource:
             words = [w for w in (vosk_text or "").split() if w != "[unk]"]
             return bool(words) and words[0] == self.assistant_name.lower(), vosk_text
         return self._name_in(full, full_only=full_only), full
+
+    def _transcribe_barge(self, wav_path: str) -> str:
+        """Transcrição para achar o nome dito por cima da fala dela (ver _CloudBarge). Sem o texto de contexto: ele
+        cita o nome e puxaria o eco para "Cassandra". Só a OpenAI — o Vosk de vocabulário livre é mais lento que o
+        tempo real no Pi; sem a nuvem, não interrompe."""
+        settings = llm_settings.get()
+        provider = settings.get("stt_provider") or self.transcription_provider
+        if (provider == "local" or not settings["openai_api_key"]
+                or time.monotonic() < getattr(self, "_openai_down_until", 0.0)):
+            return ""
+        model = (settings.get("stt_model") if provider == "openai" else None) or self.transcription_model
+        return self.llm.transcribe_audio_file(wav_path, model=model, language=self.transcription_language)
+
+    def _calls_anywhere(self, text: str) -> bool:
+        """O nome inteiro aparece em qualquer ponto do texto. Só para o que foi ouvido enquanto ela fala: a janela
+        corta a frase em qualquer lugar, então o nome pode cair no meio — e quem fala por cima dela é para ela."""
+        words = self._tokens(text)
+        return any(self._name_len_at(words, i, short_ok=False) for i in range(len(words)))
+
+    def _after_call(self, text: str) -> str:
+        """Gravação que começou com o eco dela e tem o nome no meio: o pedido é o que vem depois do último nome."""
+        parts = (text or "").strip().split()
+        normed = ["".join(self._tokens(p)) or "x" for p in parts]
+        for i in range(len(parts) - 1, -1, -1):
+            n = self._name_len_at(normed, i, short_ok=False)
+            if n:
+                rest = " ".join(parts[i + n:]).strip(" ,.;:!?")
+                return f"{self.assistant_name}, {rest}" if rest else self.assistant_name
+        return self._with_wake_word(text)
 
     def _with_wake_word(self, text: str) -> str:
         """O nome foi detectado localmente, mas a transcrição completa às vezes o erra ("sandra que horas

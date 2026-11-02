@@ -277,8 +277,9 @@ class CassandraAssistant:
                     print("[WAKE] Ignorado: wake word nao detectada.")
                 continue
 
-            if wake_detected and working:
-                # Chamaram a Cassandra enquanto ela ainda trabalhava: o pedido anterior é abandonado.
+            if wake_detected and working and not speech_state.cancelled(self._task_gen):
+                # Chamaram a Cassandra enquanto ela ainda trabalhava: o pedido anterior é abandonado (em geral o bip
+                # já fez isso, ver _on_wake).
                 speech_state.cancel()
                 mic_monitor.event("status", "Pedido anterior interrompido")
             if wake_detected:
@@ -338,7 +339,8 @@ class CassandraAssistant:
                 print(f"[ERRO] Pedido falhou: {exc}", flush=True)
             finally:
                 self._task_done = (gen, result)
-                self._timer_interrupt.set()  # acorda o microfone para reabrir a sessão (ou seguir esperando)
+                if not speech_state.cancelled(gen):  # interrompido: o microfone está gravando o pedido novo
+                    self._timer_interrupt.set()  # acorda o microfone para reabrir a sessão (ou seguir esperando)
 
         self._task_gen = gen
         self._task_thread = threading.Thread(target=run, name="cassandra-task", daemon=True)
@@ -415,7 +417,8 @@ class CassandraAssistant:
                 print(f"[CONVERSA] Falhou ao puxar assunto: {exc}", flush=True)
             finally:
                 self._task_done = (gen, result)
-                self._timer_interrupt.set()
+                if not speech_state.cancelled(gen):
+                    self._timer_interrupt.set()
 
         self._task_gen = gen
         self._task_thread = threading.Thread(target=run, name="cassandra-conversa", daemon=True)
@@ -837,7 +840,11 @@ class CassandraAssistant:
             pass
 
     def _on_wake(self) -> None:
-        """Nome reconhecido ao vivo: som de ativação e pausa da música, antes mesmo do pedido."""
+        """Nome reconhecido ao vivo: som de ativação e pausa da música, antes mesmo do pedido. Se ela ainda
+        trabalhava num pedido (pesquisa, agentes, resposta), ele para AGORA — não depois de transcrever a frase nova."""
+        if getattr(self, "_task_thread", None) is not None and self._task_running():
+            speech_state.cancel()
+            mic_monitor.event("status", "Pedido anterior interrompido")
         self._cue(self.settings.on_sound_path)
         self.music_pause.pause()
 

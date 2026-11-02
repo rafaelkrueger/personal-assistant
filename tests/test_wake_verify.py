@@ -239,3 +239,67 @@ def test_the_cloud_transcription_gets_the_cloud_audio(monkeypatch):
     transcribe = MicrophoneInputSource._transcribe.__get__(m)  # o de verdade (o _src troca por um falso)
     assert transcribe("gravacao.wav") == "ok" and sent == ["fala-24k.wav"]  # a gravação inteira: só a fala, 24 kHz
     assert transcribe("trecho.wav") == "ok" and sent[-1] == "trecho.wav"  # recortes (conferência) seguem iguais
+
+
+def test_name_said_over_her_speech_counts_anywhere_in_the_window():
+    m = _src()
+    assert m._calls_anywhere("a previsão para amanhã é de Cassandra para chuva")
+    assert m._calls_anywhere("sol com algumas nuvens Cas Sandra que horas são")
+    assert not m._calls_anywhere("a previsão para amanhã é de sol com algumas nuvens")
+    assert not m._calls_anywhere("ela está cansada e casada com a Sandra")
+
+
+def test_request_after_barging_in_drops_her_echo():
+    m = _src()
+    assert m._after_call("previsão de sol para amanhã Cassandra, que horas são?") == "cassandra, que horas são"
+    assert m._after_call("e a temperatura fica em Cassandra.") == "cassandra"
+    assert m._after_call("que horas são") == "cassandra, que horas são"
+
+
+def test_cloud_barge_checks_her_speech_in_the_background(monkeypatch):
+    import threading
+
+    from cassandra import input_sources as src
+    from cassandra import vad_recorder
+
+    monkeypatch.setattr(vad_recorder, "_is_voiced", lambda _f: True)
+    heard, sent = threading.Event(), []
+
+    def transcribe(path):
+        sent.append(path)
+        heard.set()
+        return "nuvens para amanhã Cassandra para"
+
+    barge = src._CloudBarge(transcribe, _src()._calls_anywhere)
+    frame = b"\x00\x00" * 480
+    assert not any(barge.feed(frame) for _ in range(src._BARGE_STEP_FRAMES))  # 1ª janela: vai para a nuvem
+    assert heard.wait(2)
+    for _ in range(100):
+        if barge.feed(frame):
+            break
+        threading.Event().wait(0.01)
+    assert barge.heard and len(sent) == 1
+
+
+def test_cloud_barge_skips_silence_and_ignores_late_answers(monkeypatch):
+    import threading
+
+    from cassandra import input_sources as src
+    from cassandra import vad_recorder
+
+    monkeypatch.setattr(vad_recorder, "_is_voiced", lambda _f: False)
+    sent = []
+    barge = src._CloudBarge(lambda p: sent.append(p) or "Cassandra", _src()._calls_anywhere)
+    for _ in range(src._BARGE_STEP_FRAMES * 3):
+        assert not barge.feed(b"\x00\x00" * 480)
+    assert not sent  # pausa entre frases: nada vai para a nuvem
+
+    monkeypatch.setattr(vad_recorder, "_is_voiced", lambda _f: True)
+    release = threading.Event()
+    late = src._CloudBarge(lambda p: release.wait(2) and "Cassandra", _src()._calls_anywhere)
+    for _ in range(src._BARGE_STEP_FRAMES):
+        late.feed(b"\x00\x00" * 480)
+    late.close()  # a gravação acabou antes da resposta
+    release.set()
+    threading.Event().wait(0.2)
+    assert late.heard is None

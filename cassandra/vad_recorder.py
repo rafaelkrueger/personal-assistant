@@ -74,6 +74,9 @@ REL_SILENCE = 0.3
 # Depois do nome, a gravação dura no máximo isto (o pedido mais longo cabe): com barulho contínuo (TV alta, música)
 # ela terminava só nos 30 s do limite geral.
 AFTER_NAME_MAX_S = 8.0
+# Quanto da fala dela fica guardado enquanto ela fala: o nome dito por cima é conferido na nuvem (janela de ~2,4 s +
+# ~1 s de resposta), então quando a interrupção chega o nome já ficou uns 4 s para trás.
+BUSY_TAIL_FRAMES = 150
 
 
 class LiveFrame(NamedTuple):
@@ -552,7 +555,7 @@ class VadRecorder:
         echo_aborted = False  # ela começou a falar no meio da gravação
         barged = False  # alguém disse o nome enquanto ela falava: esta gravação é o pedido novo
         frames_read = 0
-        busy_tail: list[bytes] = []  # ~1,5 s de áudio da fala dela, para a gravação incluir o nome dito por cima
+        busy_tail: list[bytes] = []  # ~4,5 s de áudio da fala dela, para a gravação incluir o nome dito por cima
         self.last_barged = False
         self.last_peak = 0.0
         self.live = None
@@ -595,7 +598,7 @@ class VadRecorder:
                     pre_chime.clear()
                     pre_raw.clear()
                     busy_tail.append(frame)
-                    if len(busy_tail) > 50:
+                    if len(busy_tail) > BUSY_TAIL_FRAMES:
                         busy_tail.pop(0)
                     if on_busy_frame and on_busy_frame(frame):
                         # Interrompida: a gravação começa aqui, já com o nome, e segue até a pessoa parar de falar.
