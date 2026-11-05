@@ -142,21 +142,24 @@ class LLMService:
         text: str,
         model: str = "tts-1",
         voice: str = "nova",
+        speed: float = 1.0,
     ) -> bytes:
         # sem novas tentativas: se falhar (ex.: sem créditos), a voz grátis assume na hora
         response = llm_settings.audio_client().with_options(max_retries=0).audio.speech.create(
             model=model,
             voice=voice,
             input=text,
+            speed=speed,
         )
         usage_log.record_tts("openai", model, len(text))
         return response.content
 
-    def stream_speech(self, text: str, model: str = "gpt-4o-mini-tts", voice: str = "nova"):
-        """Voz em streaming: gera pedaços de PCM 16-bit mono 24 kHz enquanto a OpenAI produz o áudio."""
+    def stream_speech(self, text: str, model: str = "gpt-4o-mini-tts", voice: str = "nova", speed: float = 1.0):
+        """Voz em streaming: gera pedaços de PCM 16-bit mono 24 kHz enquanto a OpenAI produz o áudio. speed: 1.0 =
+        normal (medido no Pi com o gpt-4o-mini-tts: 1,5 fala a mesma frase em 73% do tempo, 0,7 em 155%)."""
         client = llm_settings.audio_client().with_options(max_retries=0)
         with client.audio.speech.with_streaming_response.create(
-            model=model, voice=voice, input=text, response_format="pcm",
+            model=model, voice=voice, input=text, response_format="pcm", speed=speed,
         ) as response:
             got = 0
             try:

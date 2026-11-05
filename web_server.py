@@ -1238,6 +1238,21 @@ HTML_PAGE = """<!doctype html>
           <div class="settings-row-desc" style="margin-bottom:10px">Qual aparelho faz cada coisa. Se o escolhido estiver desligado, ela usa o padrão até ele voltar.</div>
           <div class="dv-card" id="dvRoutes"><div class="bt-empty">Carregando…</div></div>
           <div class="bt-job" id="dvRoutesMsg"></div>
+          <div class="dv-section-title"><span>Voz da Cassandra</span></div>
+          <div class="dv-card">
+            <div style="display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center">
+              <div style="min-width:140px;flex:1"><div class="dv-name">Velocidade da fala</div><div class="dv-sub">1,0× = normal · vale para todas as respostas</div></div>
+              <div style="display:flex;align-items:center;gap:8px;flex:2;min-width:220px">
+                <span class="dv-sub">Devagar</span>
+                <input type="range" id="dvSpeed" min="0.6" max="1.8" step="0.05" value="1" style="flex:1;min-width:0;accent-color:var(--brand);cursor:pointer"/>
+                <span class="dv-sub">Rápido</span>
+                <span class="settings-range-val" id="dvSpeedVal">1,0×</span>
+              </div>
+              <button class="btn btn-ghost btn-sm" id="dvSpeedTest">Ouvir</button>
+              <button class="btn btn-ghost btn-sm" id="dvSpeedReset">Normal</button>
+            </div>
+          </div>
+          <div class="bt-job" id="dvSpeedMsg"></div>
         </div>
 
         <div id="dvRemote" style="display:none">
@@ -3147,6 +3162,7 @@ function applySettingsToForm(s){
   const rate=v.fallback_rate||160;
   document.getElementById("voice-rate").value=rate;
   document.getElementById("voice-rate-val").textContent=rate;
+  showSpeed(v.speed||1);
   const snd=s.sounds||{};
   document.getElementById("sounds-enabled").checked=snd.enabled!==false;
   const sess=s.session||{};
@@ -4060,6 +4076,21 @@ document.getElementById("micOnlyUseful").addEventListener("change",micRenderLog)
 document.addEventListener("visibilitychange",()=>{if(document.hidden) micClose(); else if(currentTab==="mic") micOpen();});
 
 // ── Aba Aparelhos ──
+function speedLabel(v){return (+v).toFixed(2).replace(/0$/,"").replace(".",",")+"×";}
+function showSpeed(v){document.getElementById("dvSpeed").value=v;document.getElementById("dvSpeedVal").textContent=speedLabel(v);}
+async function saveSpeed(v){
+  const msg=document.getElementById("dvSpeedMsg"); msg.className="bt-job running"; msg.textContent="Salvando…";
+  try{applySettingsToForm(await api("/api/settings","POST",{voice:{speed:+v}}));msg.className="bt-job ok";msg.textContent="Pronto. A próxima resposta já sai nessa velocidade.";}
+  catch(err){msg.className="bt-job error";msg.textContent=err.message;}
+}
+document.getElementById("dvSpeed").addEventListener("input",e=>{document.getElementById("dvSpeedVal").textContent=speedLabel(e.target.value);});
+document.getElementById("dvSpeed").addEventListener("change",e=>saveSpeed(e.target.value));
+document.getElementById("dvSpeedReset").addEventListener("click",()=>{showSpeed(1);saveSpeed(1);});
+document.getElementById("dvSpeedTest").addEventListener("click",async()=>{
+  const msg=document.getElementById("dvSpeedMsg");
+  try{const r=await api("/api/voice/test","POST",{});msg.className=r.spoken?"bt-job ok":"bt-job error";msg.textContent=r.spoken?"Falando na caixa…":"A voz está desligada nas Configurações.";}
+  catch(err){msg.className="bt-job error";msg.textContent=err.message;}
+});
 const APP_COLORS={netflix:"#e50914",youtube:"#ff0033",prime:"#00a8e1",disney:"#113ccf",globoplay:"#f15a24",max:"#5822b4",spotify:"#1db954",twitch:"#9146ff"};
 // Categoria vem do servidor (classificada ao conectar); aqui só o nome e o ícone de cada uma.
 const DV_CATEGORIES={
@@ -5312,6 +5343,10 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
 
             if parsed.path == "/api/settings/reset":
                 self._send_json(assistant.reset_ui_settings())
+                return
+
+            if parsed.path == "/api/voice/test":
+                self._send_json(assistant.test_voice())
                 return
 
             if parsed.path == "/api/calendar/configure":

@@ -93,13 +93,16 @@ def azure_voices() -> list[dict]:
 class _AzureResponse:
     """Resposta da voz do Azure lida aos poucos (só biblioteca padrão: o Pi não tem httpx)."""
 
-    def __init__(self, text: str, output_format: str) -> None:
+    def __init__(self, text: str, output_format: str, speed: float = 1.0) -> None:
         import urllib.error  # noqa: PLC0415
         import urllib.request  # noqa: PLC0415
 
         key, region, voice = _azure_config()
+        body = _xml_escape(text)
+        if speed != 1.0:
+            body = f"<prosody rate='{round((speed - 1) * 100):+d}%'>{body}</prosody>"
         ssml = (f"<speak version='1.0' xml:lang='pt-BR'><voice name='{voice}'>"
-                f"{_xml_escape(text)}</voice></speak>")
+                f"{body}</voice></speak>")
         req = urllib.request.Request(
             f"https://{region}.tts.speech.microsoft.com/cognitiveservices/v1", data=ssml.encode("utf-8"),
             method="POST",
@@ -153,9 +156,9 @@ def reject_azure_key(key: str) -> None:
               "transcrição vão pela OpenAI.", flush=True)
 
 
-def _azure_request(text: str, output_format: str) -> _AzureResponse:
+def _azure_request(text: str, output_format: str, speed: float = 1.0) -> _AzureResponse:
     """Abre o streaming da voz do Azure. O chamador lê os bytes enquanto chegam (use com `with`)."""
-    return _AzureResponse(text, output_format)
+    return _AzureResponse(text, output_format, speed)
 
 # Variante feminina do espeak-ng. Medido num Raspberry Pi 3: ~80 ms por frase. As alternativas femininas
 # grátis foram bem mais lentas (Edge TTS ~4,5 s, Kokoro ~25 s) e o Piper não tem voz feminina em português.
@@ -419,6 +422,7 @@ class VoiceOutput:
         self.tts_model = tts_model
         self.fallback_lang = fallback_lang
         self.fallback_rate = fallback_rate
+        self.speed = 1.0  # velocidade da fala em qualquer voz (Configurações/Aparelhos): 1.0 = normal
         self.engine = engine if engine in self.ENGINES else "auto"
         self._player = detect_player()
         self._espeak = shutil.which("espeak-ng") or shutil.which("espeak")
@@ -496,7 +500,7 @@ class VoiceOutput:
         if (self._player != "pw-play" or not key or time.monotonic() < self._azure_down_until
                 or azure_key_rejected()):
             return False
-        cache = self._cache_path(text, engine=f"azure|{voice}")
+        cache = self._cache_path(text, engine=f"azure|{voice}{self._speed_key()}")
         play = ["pw-play", "--raw", "--format", "s16", "--rate", str(_STREAM_RATE), "--channels", "1", "-"]
         with self._play_lock:
             if cache and cache.exists():
@@ -510,7 +514,7 @@ class VoiceOutput:
             got: list[bytes] = []
             boost = _Booster()
             try:
-                with _azure_request(text, "raw-24khz-16bit-mono-pcm") as resp:
+                with _azure_request(text, "raw-24khz-16bit-mono-pcm", self.speed) as resp:
                     if resp.status_code != 200:
                         raise RuntimeError(f"HTTP {resp.status_code}: {resp.read()[:160]!r}")
                     for chunk in resp.iter_bytes(4096):
@@ -551,10 +555,14 @@ class VoiceOutput:
                     pass
             return True
 
+    def _speed_key(self) -> str:
+        """Parte da chave do cache que muda com a velocidade (vazia no normal: o cache antigo continua valendo)."""
+        return "" if self.speed == 1.0 else f"|x{self.speed:.2f}"
+
     def _cache_path(self, text: str, engine: str | None = None) -> Path | None:
         if len(text) > _CACHE_MAX_CHARS:
             return None
-        prefix = engine or f"{self.tts_model}|{self.tts_voice}"
+        prefix = engine or f"{self.tts_model}|{self.tts_voice}{self._speed_key()}"
         key = hashlib.sha1(f"{prefix}|{text}".encode()).hexdigest()[:20]
         return _TTS_CACHE / f"{key}.pcm"
 
@@ -577,7 +585,8 @@ class VoiceOutput:
             got: list[bytes] = []
             boost = _Booster()
             try:
-                stream = self.llm.stream_speech(text, model=self.tts_model, voice=self.tts_voice)
+                stream = self.llm.stream_speech(text, model=self.tts_model, voice=self.tts_voice,
+                                                speed=self.speed)
                 for chunk in stream:
                     if self._stopped():
                         break
@@ -770,7 +779,7 @@ class VoiceOutput:
     def _synth_azure(self, text: str) -> str | None:
         if not _azure_config()[0]:
             return None
-        with _azure_request(text, "riff-24khz-16bit-mono-pcm") as resp:
+        with _azure_request(text, "riff-24khz-16bit-mono-pcm", self.speed) as resp:
             if resp.status_code != 200:
                 raise RuntimeError(f"HTTP {resp.status_code}: {resp.read()[:160]!r}")
             audio = resp.read()
@@ -782,7 +791,7 @@ class VoiceOutput:
     def _synth_openai(self, text: str) -> str | None:
         if not self.llm:
             return None
-        audio = self.llm.synthesize_speech(text, model=self.tts_model, voice=self.tts_voice)
+        audio = self.llm.synthesize_speech(text, model=self.tts_model, voice=self.tts_voice, speed=self.speed)
         tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
         tmp.write(audio)
         tmp.close()
@@ -792,7 +801,7 @@ class VoiceOutput:
         # Espera no máximo alguns segundos pelo carregamento; se ainda não estiver pronto, cai no espeak.
         if not self._piper.available(wait=5):
             raise RuntimeError("voz local ainda carregando ou indisponível")
-        return self._piper.synthesize_to_file(text, rate_wpm=self.fallback_rate)
+        return self._piper.synthesize_to_file(text, rate_wpm=round(self.fallback_rate * self.speed))
 
     def _synth_espeak(self, text: str) -> str | None:
         if not self._espeak:
@@ -804,7 +813,7 @@ class VoiceOutput:
         tmp.close()
         voice = f"{lang}+{ESPEAK_FEMALE_VARIANT}"
         subprocess.run(
-            [self._espeak, "-v", voice, "-s", str(self.fallback_rate), "-w", tmp.name, text],
+            [self._espeak, "-v", voice, "-s", str(round(self.fallback_rate * self.speed)), "-w", tmp.name, text],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=True,

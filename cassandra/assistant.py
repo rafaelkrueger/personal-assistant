@@ -42,6 +42,8 @@ from cassandra.routine_manager import RoutineManager
 from cassandra.calendar_service import CalendarService
 
 TIMER_RINGS = 3  # quantas vezes o toque soa quando um timer acaba
+SPEED_MIN, SPEED_MAX = 0.5, 2.0  # velocidade da fala aceita (a OpenAI vai de 0,25 a 4)
+VOICE_SAMPLE = "Oi! É assim que eu falo agora. Se quiser, deixo mais rápido ou mais devagar."
 # Alguém começou a falar perto do microfone: a caixa fica acordada (sopro inaudível) por tanto tempo. Se for o nome,
 # o bip sai na hora — a caixa religa o amplificador em ~0,5 s e um pw-play novo leva ~0,3 s só para abrir.
 _SPEECH_HOLD_SECONDS = 8.0
@@ -744,7 +746,18 @@ class CassandraAssistant:
         vo.tts_model = str(v.get("tts_model", self.settings.tts_model))
         vo.fallback_lang = str(v.get("fallback_lang", self.settings.voice_lang))
         vo.fallback_rate = int(v.get("fallback_rate", self.settings.voice_rate))
+        try:
+            vo.speed = min(SPEED_MAX, max(SPEED_MIN, round(float(v.get("speed", 1.0)), 2)))
+        except (TypeError, ValueError):
+            vo.speed = 1.0
         vo.set_engine(str(v.get("engine", "auto")))
+
+    def test_voice(self) -> dict[str, bool]:
+        """Uma frase de exemplo na velocidade atual (botão Ouvir da aba Aparelhos), sem ir para o histórico."""
+        if not self.voice_output.enabled:
+            return {"spoken": False}
+        self._speak_in_background(VOICE_SAMPLE)
+        return {"spoken": True}
 
     def remove_alarm(self, alarm_id: str) -> bool:
         return self.alarm_manager.remove_alarm(alarm_id)

@@ -21,6 +21,7 @@ _DEFAULTS: dict = {
         "tts_voice": "nova",
         "fallback_lang": "pt",
         "fallback_rate": 160,
+        "speed": 1.0,  # velocidade da fala em qualquer voz (aba Aparelhos): 1.0 = normal
     },
     "sounds": {
         "enabled": True,
