@@ -11,7 +11,7 @@ from threading import Thread
 from typing import Type
 from urllib.parse import parse_qs, urlencode, urlparse
 
-from cassandra import agent_alerts, audio_devices, llm_settings
+from cassandra import agent_alerts, audio_devices, intercom, llm_settings
 from cassandra import spotify as spotify_api
 from cassandra import network_devices
 from cassandra.mic_monitor import monitor as mic_monitor
@@ -772,6 +772,9 @@ HTML_PAGE = """<!doctype html>
     .dv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin-bottom:8px}
     .dv-card{background:var(--glass);border:1px solid var(--border);border-radius:var(--rl);padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0}
     .dv-card.clickable{cursor:pointer;transition:all .15s}
+    .btn.ic-on{background:#ef4444;border-color:#ef4444;color:#fff;animation:icPulse 1.4s ease-in-out infinite}
+    @keyframes icPulse{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.55)}50%{box-shadow:0 0 0 8px rgba(239,68,68,0)}}
+    .ic-note{font-size:12px;color:#ef4444;font-weight:600}
     .dv-card.clickable:hover{border-color:rgba(251,146,60,.35);transform:translateY(-2px)}
     .dv-head{display:flex;align-items:center;gap:10px;min-width:0}
     .dv-icon{width:40px;height:40px;border-radius:12px;background:var(--brand-dim);color:var(--brand2);display:flex;align-items:center;justify-content:center;flex-shrink:0}
@@ -4154,13 +4157,66 @@ function btBattery(x){
     <b style="color:${color}">${p}%</b>${st?` · <span${st[1]?` style="color:${st[1]}"`:""}>${st[0]}</span>`:""}</div>`;
 }
 setInterval(()=>{const t=document.getElementById("tab-devices");if(t&&!t.classList.contains("hidden")&&document.getElementById("dvRemote").style.display==="none"&&!dvBtPoll) loadDeviceBt();},60000);
+// ── Interfone: o microfone deste aparelho sai na caixa da Cassandra (cassandra/intercom.py) ──
+// Pedaços de 0,2 s de PCM 16-bit a 24 kHz, um POST cada (o proxy do Netlify corta conexões longas).
+let ic=null;
+const IC_RATE=24000, IC_CHUNK=4800;
+const IC_MIC='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px;margin-right:5px"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0014 0"/><line x1="12" y1="17" x2="12" y2="22"/></svg>';
+function icButton(){return `<button class="btn btn-primary btn-sm${ic?" ic-on":""}" data-ic="1">${IC_MIC}${ic?"Parar":"Falar na caixa"}</button>`;}
+function icNote(){return ic?'<div class="ic-note">Microfone ligado: o que você fala sai na caixa. A Cassandra fica em silêncio até você parar.</div>':"";}
+function icRender(){if(document.getElementById("tab-devices")) loadDeviceBt();}
+async function icStart(){
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){alert("Este navegador não libera o microfone aqui. Abra pelo site da Cassandra (https).");return;}
+  let stream;
+  try{stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});}
+  catch(e){alert("Sem permissão para usar o microfone: "+(e.message||e.name));return;}
+  const Ctx=window.AudioContext||window.webkitAudioContext, ctx=new Ctx();
+  try{await ctx.resume();}catch(e){}
+  let r;
+  try{r=await api("/api/intercom","POST",{active:true});}
+  catch(e){stream.getTracks().forEach(t=>t.stop());ctx.close();alert(e.message);return;}
+  const src=ctx.createMediaStreamSource(stream), proc=ctx.createScriptProcessor(4096,1,1), mute=ctx.createGain();
+  mute.gain.value=0;  // o processador só roda ligado à saída; mudo para não tocar de volta no próprio aparelho
+  ic={session:r.session,stream,ctx,src,proc,seq:0,out:new Int16Array(IC_CHUNK),fill:0,pos:0,step:ctx.sampleRate/IC_RATE};
+  proc.onaudioprocess=e=>icCapture(e.inputBuffer.getChannelData(0));
+  src.connect(proc); proc.connect(mute); mute.connect(ctx.destination);
+  icRender();
+}
+function icCapture(x){
+  if(!ic) return;
+  let p=ic.pos;
+  while(p<x.length){  // reamostra para 24 kHz (interpolação linear)
+    const i=Math.floor(p), f=p-i, a=x[i], b=x[Math.min(i+1,x.length-1)];
+    const v=Math.max(-1,Math.min(1,a+(b-a)*f));
+    ic.out[ic.fill++]=v<0?v*32768:v*32767;
+    if(ic.fill===IC_CHUNK){icSend(ic.out);ic.out=new Int16Array(IC_CHUNK);ic.fill=0;}
+    p+=ic.step;
+  }
+  ic.pos=p-x.length;
+}
+function icSend(pcm){
+  const s=ic.session, n=ic.seq++;
+  fetch(`/api/intercom/audio?s=${s}&n=${n}`,{method:"POST",headers:{"Content-Type":"application/octet-stream"},body:pcm.buffer})
+    .then(r=>r.json()).then(d=>{if(d.active===false&&ic&&ic.session===s) icStop(false);}).catch(()=>{});
+}
+async function icStop(tell=true){
+  const c=ic; if(!c) return;
+  ic=null;
+  try{c.proc.onaudioprocess=null;c.src.disconnect();c.proc.disconnect();}catch(e){}
+  c.stream.getTracks().forEach(t=>t.stop());
+  try{c.ctx.close();}catch(e){}
+  if(tell){try{await api("/api/intercom","POST",{active:false,session:c.session});}catch(e){}}
+  icRender();
+}
+document.addEventListener("click",e=>{const b=e.target.closest("[data-ic]"); if(!b) return; e.preventDefault(); ic?icStop():icStart();});
 async function loadDeviceBt(){
   try{
     const d=await api("/api/bluetooth");
     const paired=(d.devices||[]).filter(x=>x.paired);
     document.getElementById("dvBt").innerHTML=!d.available?'<div class="bt-empty">Bluetooth indisponível.</div>':(paired.length?paired.map(x=>`
       <div class="dv-card"><div class="dv-head"><div class="dv-icon">${DV_BT_ICON}</div><div style="min-width:0;flex:1"><div class="dv-name">${esc(x.name)}</div><div class="dv-sub"><span class="dv-dot ${x.connected?"on":""}"></span>${x.connected?"conectado":"desconectado"}</div>${btBattery(x)}</div></div>
-      <div class="dv-actions">${x.connected?`<button class="btn btn-primary btn-sm" data-bt-open="${esc(x.mac)}" data-name="${esc(x.name)}">Controlar</button><button class="btn btn-ghost btn-sm" data-dv-bt="disconnect" data-mac="${esc(x.mac)}">Desconectar</button>`:`<button class="btn btn-primary btn-sm" data-dv-bt="connect" data-mac="${esc(x.mac)}">Conectar</button>`}</div></div>`).join(""):'<div class="bt-empty">Nenhum aparelho Bluetooth pareado.</div>');
+      ${x.connected?icNote():""}
+      <div class="dv-actions">${x.connected?`${icButton()}<button class="btn btn-primary btn-sm" data-bt-open="${esc(x.mac)}" data-name="${esc(x.name)}">Controlar</button><button class="btn btn-ghost btn-sm" data-dv-bt="disconnect" data-mac="${esc(x.mac)}">Desconectar</button>`:`<button class="btn btn-primary btn-sm" data-dv-bt="connect" data-mac="${esc(x.mac)}">Conectar</button>`}</div></div>`).join(""):'<div class="bt-empty">Nenhum aparelho Bluetooth pareado.</div>');
     renderDeviceBtScan(d);
   }catch(e){document.getElementById("dvBt").innerHTML=`<div class="bt-empty">${esc(e.message)}</div>`;}
 }
@@ -4798,6 +4854,9 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
             if parsed.path == "/api/history":
                 self._send_json({"history": assistant.get_conversation_history()})
                 return
+            if parsed.path == "/api/intercom":
+                self._send_json(intercom.status())
+                return
             if parsed.path == "/api/agent-alerts":
                 self._send_json({"alerts": agent_alerts.recent(), "quiet": agent_alerts.quiet()})
                 return
@@ -5000,6 +5059,24 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
 
         def do_POST(self) -> None:
             parsed = urlparse(self.path)
+
+            if parsed.path == "/api/intercom/audio":
+                # Interfone: um pedaço do microfone do aparelho (PCM 16-bit mono 24 kHz), ver cassandra/intercom.py.
+                q = parse_qs(parsed.query)
+                length = int(self.headers.get("Content-Length", "0") or 0)
+                pcm = self.rfile.read(length) if 0 < length <= 200_000 else b""
+                try:
+                    seq = int((q.get("n") or ["-1"])[0])
+                except ValueError:
+                    seq = -1
+                ok = intercom.feed((q.get("s") or [""])[0], seq, pcm) if seq >= 0 else False
+                self._send_json({"active": ok})
+                return
+
+            if parsed.path == "/api/intercom":
+                data = self._read_json_body()
+                self._send_json(intercom.start() if data.get("active") else intercom.stop(data.get("session") or None))
+                return
 
             if parsed.path == "/api/reset":
                 assistant.clear_conversation()

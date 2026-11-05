@@ -12,6 +12,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from xml.sax.saxutils import escape as _xml_escape
 
+from cassandra import intercom
 from cassandra import usage_log
 from cassandra import speech_state
 
@@ -441,7 +442,7 @@ class VoiceOutput:
         if not self.enabled:
             return
         cleaned = text.strip()
-        if not cleaned:
+        if not cleaned or intercom.active():  # interfone ligado: a caixa é de quem está falando
             return
         if speech_state.task_cancelled():
             return  # o pedido que ia falar isto foi interrompido (a pessoa chamou a Cassandra de novo)
@@ -633,7 +634,7 @@ class VoiceOutput:
         ouve (speech_state): ela não se ativa nem responde à própria voz."""
         if not self.enabled:
             return "".join(token_iter)
-        if speech_state.task_cancelled():
+        if speech_state.task_cancelled() or intercom.active():
             return ""
         with speech_state.speaking() as gen:
             self._tl.gen = gen

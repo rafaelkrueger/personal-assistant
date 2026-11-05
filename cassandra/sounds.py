@@ -25,8 +25,10 @@ class SoundPlayer:
         SoundPlayer.default = self
 
     def _command(self, sound_path: str, volume: float | None) -> list[str] | None:
-        if not self.enabled or not self._backend:
-            return None
+        from cassandra import intercom  # noqa: PLC0415
+
+        if not self.enabled or not self._backend or intercom.active():
+            return None  # interfone ligado: nenhum som dela (bipes, alarmes, timers) por cima de quem fala
         path = Path(sound_path)
         if not path.exists():
             return None

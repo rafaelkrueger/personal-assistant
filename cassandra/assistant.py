@@ -12,6 +12,7 @@ from pathlib import Path
 from cassandra.config import load_settings
 from cassandra.input_sources import InputEvent, MicrophoneInputSource, TextInputSource
 from cassandra.memory import ConversationMemory
+from cassandra import intercom
 from cassandra import speech_state
 from cassandra.mic_monitor import monitor as mic_monitor
 from cassandra.music_pause import MusicPause
@@ -184,9 +185,16 @@ class CassandraAssistant:
         speaker_waker.preload((self.settings.on_sound_path, 1.0),
                               (self.settings.off_sound_path, sounds.SOFT_VOLUME))
         self._conv_nudges = 0  # vezes seguidas que ela puxou assunto sem resposta (modo conversa)
+        intercom.set_listener(self._on_intercom)
 
         while True:
             self._timer_interrupt.clear()
+            if intercom.active():
+                # Interfone: ela não escuta o nome (ouviria a própria caixa) nem faz mais nada até desligar.
+                mic_monitor.set(phase="interfone")
+                self._timer_interrupt.wait(1.0)
+                active_until = None
+                continue
             active_until = self._finish_task(active_until)
             # Use a shorter silence threshold when waiting for the wake word.
             working = self._task_running()
@@ -851,6 +859,16 @@ class CassandraAssistant:
             )
         except OSError:
             pass
+
+    def _on_intercom(self, on: bool) -> None:
+        """Interfone ligado: a música pausa e a escuta para; desligado, a música volta e ela espera o nome."""
+        if on:
+            self.music_pause.pause()
+            mic_monitor.event("status", "Interfone ligado — a caixa toca o microfone do aparelho")
+        else:
+            self.music_pause.resume()
+            mic_monitor.event("status", "Interfone desligado — esperando o nome de novo")
+        self._timer_interrupt.set()  # tira o microfone da gravação em andamento / volta a ouvir
 
     def _on_wake(self) -> None:
         """Nome reconhecido ao vivo: som de ativação e pausa da música, antes mesmo do pedido. Se ela ainda

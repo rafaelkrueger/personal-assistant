@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from difflib import SequenceMatcher
 
+from cassandra import intercom
 from cassandra import llm_settings
 from cassandra import speech_state
 from cassandra.mic_monitor import monitor
@@ -375,8 +376,8 @@ class MicrophoneInputSource:
 
         def on_busy_frame(frame: bytes) -> bool:
             """Enquanto ela fala: o nome dito por cima interrompe tudo e a gravação vira o pedido novo."""
-            if barge is None or not barge.feed(frame):
-                return False
+            if barge is None or intercom.recently_active() or not barge.feed(frame):
+                return False  # interfone: o que o microfone dela ouve é a pessoa saindo pela caixa
             if speech_state.said_recently(self.wake_words):
                 barge.heard = None  # foi ela mesma dizendo o próprio nome ("eu sou a Cassandra")
                 return False
