@@ -4165,11 +4165,19 @@ const IC_MIC='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke
 function icButton(){return `<button class="btn btn-primary btn-sm${ic?" ic-on":""}" data-ic="1">${IC_MIC}${ic?"Parar":"Falar na caixa"}</button>`;}
 function icNote(){return ic?'<div class="ic-note">Microfone ligado: o que você fala sai na caixa. A Cassandra fica em silêncio até você parar.</div>':"";}
 function icRender(){if(document.getElementById("tab-devices")) loadDeviceBt();}
+function icMicError(e){
+  const ios=/iPhone|iPad|iPod/.test(navigator.userAgent), safari=ios&&!/CriOS|FxiOS|EdgiOS|OPiOS/.test(navigator.userAgent)&&/Version[/]/.test(navigator.userAgent);
+  if(e&&e.name==="NotFoundError") return "Não achei nenhum microfone neste aparelho.";
+  if(e&&e.name==="NotReadableError") return "O microfone está sendo usado por outro app (ligação, gravador). Feche e tente de novo.";
+  if(ios&&!safari) return "Este navegador não liberou o microfone. No iPhone: Ajustes > (o app deste navegador) > ative Microfone. Se não aparecer essa opção, abra cassandra-app.netlify.app no Safari.";
+  if(ios) return "O Safari recusou o microfone. Toque em aA na barra de endereço > Ajustes do Site > Microfone > Permitir, e tente de novo.";
+  return "O navegador recusou o microfone. Clique no cadeado ao lado do endereço, permita o Microfone e tente de novo.";
+}
 async function icStart(){
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){alert("Este navegador não libera o microfone aqui. Abra pelo site da Cassandra (https).");return;}
   let stream;
   try{stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});}
-  catch(e){alert("Sem permissão para usar o microfone: "+(e.message||e.name));return;}
+  catch(e){alert(icMicError(e));return;}
   const Ctx=window.AudioContext||window.webkitAudioContext, ctx=new Ctx();
   try{await ctx.resume();}catch(e){}
   let r;
