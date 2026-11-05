@@ -4141,12 +4141,25 @@ function renderDevices(d){
   if(running){if(!dvPoll) dvPoll=setInterval(loadDevices,2500);} else if(dvPoll){clearInterval(dvPoll);dvPoll=null;}
 }
 async function loadDevices(){try{renderDevices(await api("/api/devices"));}catch(e){dvSay(e.message,"error");}}
+// Bateria que a caixa informa; "carregando" é deduzido pela tendência (o Bluetooth não diz), por isso só aparece
+// depois que a porcentagem muda.
+const BT_CHARGING={charging:["carregando","#22c55e"],discharging:["na bateria",""],full:["carregada","#22c55e"]};
+function btBattery(x){
+  if(x.battery==null) return "";
+  const p=Math.max(0,Math.min(100,x.battery)), st=BT_CHARGING[x.charging]||null;
+  const color=x.charging==="charging"||x.charging==="full"?"#22c55e":p<=20?"#ef4444":p<=40?"#f59e0b":"var(--brand)";
+  const bolt=x.charging==="charging"?'<path d="M11 7l-3 5h4l-3 5" stroke="#fff" stroke-width="1.6" fill="none"/>':"";
+  return `<div class="dv-sub" style="display:flex;align-items:center;gap:6px;margin-top:3px" title="Bateria informada pela caixa">
+    <svg width="26" height="14" viewBox="0 0 26 24" style="flex:none"><rect x="1" y="5" width="21" height="14" rx="3" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="22.5" y="9.5" width="2.5" height="5" rx="1" fill="currentColor"/><rect x="3" y="7" width="${(17*p/100).toFixed(1)}" height="10" rx="1.5" fill="${color}"/>${bolt}</svg>
+    <b style="color:${color}">${p}%</b>${st?` · <span${st[1]?` style="color:${st[1]}"`:""}>${st[0]}</span>`:""}</div>`;
+}
+setInterval(()=>{const t=document.getElementById("tab-devices");if(t&&!t.classList.contains("hidden")&&document.getElementById("dvRemote").style.display==="none"&&!dvBtPoll) loadDeviceBt();},60000);
 async function loadDeviceBt(){
   try{
     const d=await api("/api/bluetooth");
     const paired=(d.devices||[]).filter(x=>x.paired);
     document.getElementById("dvBt").innerHTML=!d.available?'<div class="bt-empty">Bluetooth indisponível.</div>':(paired.length?paired.map(x=>`
-      <div class="dv-card"><div class="dv-head"><div class="dv-icon">${DV_BT_ICON}</div><div style="min-width:0;flex:1"><div class="dv-name">${esc(x.name)}</div><div class="dv-sub"><span class="dv-dot ${x.connected?"on":""}"></span>${x.connected?"conectado":"desconectado"}</div></div></div>
+      <div class="dv-card"><div class="dv-head"><div class="dv-icon">${DV_BT_ICON}</div><div style="min-width:0;flex:1"><div class="dv-name">${esc(x.name)}</div><div class="dv-sub"><span class="dv-dot ${x.connected?"on":""}"></span>${x.connected?"conectado":"desconectado"}</div>${btBattery(x)}</div></div>
       <div class="dv-actions">${x.connected?`<button class="btn btn-primary btn-sm" data-bt-open="${esc(x.mac)}" data-name="${esc(x.name)}">Controlar</button><button class="btn btn-ghost btn-sm" data-dv-bt="disconnect" data-mac="${esc(x.mac)}">Desconectar</button>`:`<button class="btn btn-primary btn-sm" data-dv-bt="connect" data-mac="${esc(x.mac)}">Conectar</button>`}</div></div>`).join(""):'<div class="bt-empty">Nenhum aparelho Bluetooth pareado.</div>');
     renderDeviceBtScan(d);
   }catch(e){document.getElementById("dvBt").innerHTML=`<div class="bt-empty">${esc(e.message)}</div>`;}

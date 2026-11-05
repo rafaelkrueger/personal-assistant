@@ -15,6 +15,9 @@ from typing import Any
 
 _MAC_RE = re.compile(r"^[0-9A-F]{2}(:[0-9A-F]{2}){5}$")
 _DEVICE_LINE = re.compile(r"^Device ([0-9A-F:]{17}) (.*)$")
+_BATTERY_LINE = re.compile(r"Battery Percentage:.*\((\d+)\)")
+_BATTERY_EVERY = 120  # segundos entre leituras da bateria das caixas conectadas (para saber se está carregando)
+_CHARGING_WINDOW = 30 * 60  # a bateria subiu há menos que isso: está carregando
 
 
 def _run(cmd: list[str], timeout: float = 10) -> tuple[int, str]:
@@ -141,6 +144,50 @@ def _devices(filter_: str | None = None) -> dict[str, str]:
     return found
 
 
+def battery(mac: str) -> int | None:
+    """Bateria (%) que o aparelho informa pelo Bluetooth (a caixa manda pelo viva-voz); None se ele não informa."""
+    _, out = _run(["bluetoothctl", "info", mac], timeout=5)
+    m = _BATTERY_LINE.search(out)
+    return int(m.group(1)) if m else None
+
+
+class BatteryTrend:
+    """O Bluetooth só dá a porcentagem, nunca se está carregando: isso sai da tendência. A caixa avisa de 10 em 10%,
+    então a bateria subiu há pouco = carregando; desceu = na bateria; sem mudança recente = não dá para saber."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._last: dict[str, tuple[int, int, float]] = {}  # mac -> (%, direção da última mudança, quando)
+
+    def note(self, mac: str, pct: int | None, now: float | None = None) -> None:
+        now = time.monotonic() if now is None else now
+        with self._lock:
+            if pct is None:
+                self._last.pop(mac, None)
+                return
+            prev = self._last.get(mac)
+            if prev is None:
+                self._last[mac] = (pct, 0, now)
+            elif pct != prev[0]:
+                self._last[mac] = (pct, 1 if pct > prev[0] else -1, now)
+
+    def state(self, mac: str, now: float | None = None) -> str | None:
+        """"charging", "discharging", "full" ou None (ainda não deu para saber)."""
+        now = time.monotonic() if now is None else now
+        with self._lock:
+            last = self._last.get(mac)
+        if last is None:
+            return None
+        pct, direction, at = last
+        if pct >= 100:
+            return "full"
+        if direction > 0 and now - at < _CHARGING_WINDOW:
+            return "charging"
+        if direction < 0:
+            return "discharging"
+        return None
+
+
 def _looks_unnamed(mac: str, name: str) -> bool:
     return not name or name.replace("-", ":").upper() == mac
 
@@ -155,6 +202,18 @@ class BluetoothManager:
         self._job: dict[str, Any] | None = None  # {"action", "mac", "state": running|ok|error, "message", "at"}
         self._scan_proc: subprocess.Popen | None = None
         self._scan_until = 0.0
+        self.batteries = BatteryTrend()
+        self._watching = False
+
+    def _watch_batteries(self) -> None:
+        """Lê a bateria das caixas conectadas de tempos em tempos (a tendência diz se está carregando)."""
+        while True:
+            try:
+                for mac in _devices("Connected"):
+                    self.batteries.note(mac, battery(mac))
+            except Exception:  # noqa: BLE001 — só uma leitura
+                pass
+            time.sleep(_BATTERY_EVERY)
 
     @staticmethod
     def available() -> bool:
@@ -164,6 +223,9 @@ class BluetoothManager:
     def status(self) -> dict[str, Any]:
         if not self.available():
             return {"available": False, "powered": False, "scanning": False, "devices": [], "job": None}
+        if not self._watching:
+            self._watching = True
+            threading.Thread(target=self._watch_batteries, name="bateria-bluetooth", daemon=True).start()
         _, show = _run(["bluetoothctl", "show"])
         powered = "Powered: yes" in show
         known = _devices()
@@ -175,12 +237,17 @@ class BluetoothManager:
             is_paired = mac in paired
             if not is_paired and _looks_unnamed(mac, name):
                 continue  # aparelho sem nome achado na busca: só polui a lista
+            pct = battery(mac) if mac in connected else None
+            if pct is not None:
+                self.batteries.note(mac, pct)
             devices.append({
                 "mac": mac,
                 "name": name if not _looks_unnamed(mac, name) else mac,
                 "paired": is_paired,
                 "connected": mac in connected,
                 "trusted": mac in trusted,
+                "battery": pct,
+                "charging": self.batteries.state(mac) if pct is not None else None,
             })
         devices.sort(key=lambda d: (not d["connected"], not d["paired"], d["name"].lower()))
         with self._lock:
