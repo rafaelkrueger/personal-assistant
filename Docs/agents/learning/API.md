@@ -117,6 +117,26 @@ existem; com `force: true` troca por outras, mantendo as já escolhidas. Nada se
 mapa pequeno (1 ou 2 regiões, de 2 a 5 módulos curtos). Apagar o estudo libera a sugestão de novo. 404 se não é
 uma sugestão de hoje.
 
+### `GET /api/feed` · `POST /api/feed/more` · `POST /api/feed/{id}/{like|dislike|seen|save}` · `GET /api/feed/liked` · `PUT /api/feed/interests`
+O **feed de aprendizado** (`app/feed.py`, `data/feed.json`): uma rolagem no formato de rede social, um post por tela,
+cada um ensinando UMA ideia específica e útil em 20 a 40 segundos. O `GET` → `{ "posts": [{ "id", "title", "hook",
+"body", "takeaway", "kind", "topic", "tags", "liked", "disliked", "card_id", "related_to", "seen_at" }],
+"interests", "likes", "avoid", "today", "generating" }` — os posts ainda não vistos, na ordem. Com estudos ativos
+(pausados não contam), o lote normal é ~75% ligado a eles (a região atual e as duas seguintes, um módulo por ideia)
+e ~25% "fora da caixa" (outras áreas, de preferência com uma ponte com os estudos), em dois pedidos ao modelo e
+intercalados (um de fora a cada três); `likes`/`avoid` são as
+tags com mais e menos peso; `today`, quantos foram vistos hoje. O `.../more` (`{ "related_to": "" }`) gera um lote
+pela IA em duas etapas — as ideias específicas, depois o texto de cada post — (8 posts, com os interesses, os estudos, as tags curtidas e evitadas e os títulos já mostrados) →
+`{ "posts": [...] }`; com `related_to` (um post curtido), gera 3 relacionados que vão para o começo da fila. Com
+`topics` (`["comunicação", "empreender"]`, assuntos que a pessoa acabou de pedir — a UI manda os interesses novos
+ao salvar), gera 6 só sobre eles, também no começo da fila.
+`like`/`dislike` (`{ "on": true }`) dão ou tiram peso das tags e do tema do post; `seen` (`{ "ms" }`) tira da fila
+(quem leu mais de 12 s dá um pouco de peso); `save` vira card de revisão (tag `feed`). `PUT .../interests`
+(`{ "interests": [] }`) grava os interesses que a pessoa informou. Com a OpenAI ativa, o feed usa
+`LEARNING_FEED_MODEL` (padrão `gpt-4.1-mini`; `padrao` = o modelo configurado no Lume). 404 se o post não existe.
+Cada post traz `img` (a imagem do artigo da Wikipédia que bate com ele, ou `""`) e `img_page` (o título do
+artigo, para o crédito); `LEARNING_FEED_IMAGES=0` desliga a busca.
+
 ### `POST /api/subjects/{id}/modules` · `PATCH .../modules/{mid}` · `DELETE .../modules/{mid}`
 `{ "title", "description", "objectives": [], "lessons": [], "practice", "est_minutes", "status": "todo | doing",
 "unit_id", "position" }` — `position` (0 = primeiro) muda a ordem; sem `unit_id`, o módulo novo vai para a região
@@ -220,7 +240,9 @@ As questões com nota abaixo de 1 viram flashcards (frente = pergunta, verso = r
 10 minutos, 1 por card lembrado, 4 × os acertos ponderados de cada provação ou chefe VENCIDO (1 × no treino), +100
 na primeira vitória de cada provação, +500 no primeiro chefe de cada região, +10 por dia com a meta cumprida;
 derrota: −40 (provação) e −150 (chefe), sem nunca baixar o nível alcançado. O nível N começa em 60·(N−1)^1,9 XP
-(nível 10 ≈ 3 900 XP; 20 ≈ 16 000). `xp_lost` é o total perdido em derrotas.
+(nível 10 ≈ 3 900 XP; 20 ≈ 16 000). `xp_lost` é o total perdido em derrotas. **Saber de antes do Lume**: uma matéria com `prior: true` dá, por região
+conquistada, +500 (o chefe) e +100 por módulo feito, e o chefão da matéria (`final_boss: { "name", "epithet", "lore",
+"kind", "defeated_at" }`, mostrado derrotado no cartão de "Seus estudos") dá +1000 (crônica: `prior` e `final_boss`).
 
 ## 7. Conversa
 

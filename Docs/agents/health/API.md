@@ -139,28 +139,50 @@ faixa). Gasto em repouso por Mifflin-St Jeor, vezes o fator da atividade; `calor
 "total_kcal", "total_protein_g", "target_kcal", "generated_at", "for_today", "stale", "off_target" }` — toda
 quantidade em `g` ou `ml`; as somas são feitas no servidor. `for_today`: foram feitas para hoje (cada dia tem
 sugestões novas; as de ontem continuam aparecendo até as de hoje chegarem). `stale`: não são de hoje ou a meta
-mudou mais de 100 kcal. `food_notes`: preferências e restrições de comida.
+mudou mais de 100 kcal. `fixed`: é o plano fixo da pessoa (ver `PUT`): vale todo dia, com `for_today` sempre
+`true` e `stale`/`off_target` sempre `false`, e a página não pede sugestões novas sozinha. `food_notes`:
+preferências e restrições de comida.
+
+### `PUT /api/weight/meal-plan` — `{ "meals": [ { "name", "time", "items": [ { "food", "qty", "unit", "measure", "kcal", "protein_g" } ] } ] }`
+Fixa as refeições da própria pessoa: repetem todo dia (`fixed: true`) até ela pedir sugestões à IA pelo `POST`.
+Cada alimento precisa de `qty` (g ou ml) e `kcal`; as somas são feitas no servidor. As refeições marcadas hoje
+saem; os extras ficam. `400` se falta alimento, quantidade ou caloria.
 
 ### `POST /api/weight/meal-plan` — `{ "notes": "não como peixe" }` (opcional; fica guardado)
 O LLM sugere as refeições de hoje para a meta de calorias e os macros, com o perfil e os exames no contexto
 (alguns segundos), sem repetir o que sugeriu da última vez. As refeições já marcadas hoje saem; os extras ficam. Se a soma fugir mais de 12% da meta, o servidor pede de novo dizendo a diferença (até 3 tentativas) e guarda a
 tentativa mais próxima; se nem ela chegou perto, `meal_plan.off_target` vem `true`. Devolve o
-mesmo que o `GET`. `400` se falta dado no perfil, `502` se o modelo falhou.
+mesmo que o `GET`. `400` se falta dado no perfil, `502` se o modelo falhou. Substitui um plano fixo (volta a
+haver sugestões novas a cada dia).
 
 O dia a dia vem na mesma resposta:
 - `today`: `{ "date", "meals": [0, 2], "extras": [ { "id", "food", "qty", "unit", "kcal", "estimated" } ], "kcal",
-  "ratio", "hit", "over" }` — as refeições sugeridas marcadas hoje e o que foi comido por fora. `kcal` soma os
+  "ratio", "hit", "over", "gym", "goal" }` — as refeições sugeridas marcadas hoje e o que foi comido por fora. `kcal` soma os
   dois; o dia conta (`hit`) a partir de `hit_ratio` (85%) da meta de calorias e, para quem quer perder peso, até
   110% dela (`over` = passou disso).
-- `streak`: `{ "current", "best", "total", "month" }` — dias seguidos cumpridos (até hoje, ou até ontem se hoje
-  ainda está em aberto), o recorde, o total e os deste mês.
-- `calendar`: 35 dias, de domingo a sábado, terminando na semana de hoje: `{ "date", "kcal", "ratio", "hit", "future" }`.
+- `streak`: `{ "current", "best", "total", "month", "gym_month", "gym_total" }` — dias seguidos cumpridos (até
+  hoje, ou até ontem se hoje ainda está em aberto), o recorde, o total, os deste mês e os dias de academia (no mês
+  e no total).
+- `calendar`: 35 dias, de domingo a sábado, terminando na semana de hoje: `{ "date", "kcal", "ratio", "hit",
+  "future", "gym", "goal" }`. `gym`: foi à academia (`true`/`false`; `null` = não marcado). `goal`: a meta de
+  calorias marcada à mão (`null` = vale a conta das refeições); quando marcada, é ela que decide `hit`.
+- `expected`: `{ "kg", "actual_kg", "diff_kg", "since", "since_kg", "from_profile", "days", "gym_days",
+  "balance_kcal" }` — quanto a pessoa deveria estar pesando pelo que comeu e treinou, desde a primeira pesagem (sem
+  pesagem: desde o primeiro dia anotado, partindo do peso do perfil, `from_profile: true`), até hoje (com o que já foi anotado hoje). Por dia: gasto =
+  repouso (Mifflin-St Jeor com o peso daquele dia) x 1,2 + 300 kcal se foi à academia; o saldo das calorias comidas
+  vira peso (7.700 kcal por kg). Dia sem nada anotado não conta; "bati a meta" sem refeições vale a meta do dia.
+  `actual_kg`: o peso de agora; `diff_kg` = agora − esperado. `series`: `[ { "date", "kcal", "gym", "counted",
+  "kg" } ]`, o peso esperado ao fim de cada dia, da partida até hoje. `null` se não há dia para contar.
 - `journey`: `{ "start_kg", "target_kg", "pct" }` do peso da primeira pesagem até a meta (`null` para quem sempre
   esteve na faixa saudável).
-- `badges`: `[ { "id", "label", "hint", "earned" } ]` — as conquistas (dias seguidos, pesagens, quilos, meta).
 
 ### `POST /api/weight/day` — `{ "meals": [0, 2] }` (índices das refeições sugeridas já feitas hoje) ou, sem sugestões, `{ "done": true }`
 Substitui as refeições marcadas hoje.
+
+### `PATCH /api/weight/days/{AAAA-MM-DD}` — `{ "gym": true, "goal": false }` (um ou os dois; `null` desmarca)
+Marca um dia do calendário, hoje ou antes (até 400 dias atrás): se foi à academia e se bateu a meta de calorias.
+`goal` vale por cima da conta das refeições e entra na sequência. `400` para dia futuro, data inválida ou valor que
+não seja `true`/`false`/`null`.
 
 ### `POST /api/weight/extra` — `{ "food": "pão de queijo", "qty": 60, "unit": "g" | "ml", "kcal": 180 }`
 Algo comido fora das sugestões; entra na conta do dia. Sem `kcal`, o LLM estima pelo alimento e pela quantidade
@@ -169,6 +191,10 @@ Algo comido fora das sugestões; entra na conta do dia. Sem `kcal`, o LLM estima
 
 ### `PUT /api/weight` — `{ "activity", "pace": 0.25 | 0.5, "target_kg" }` (meta vazia = automática; `400` se a meta sai da faixa saudável)
 ### `POST /api/weight/log` — `{ "kg": 62.4, "date": "AAAA-MM-DD" }` (sem data = hoje; uma por dia). A pesagem mais recente vira o peso do perfil.
+Cada pesagem pode trazer `time` ("HH:MM") e `source` ("balança"). **Balança OKOK pelo Bluetooth** (`app/scale.py`,
+ligada com `SCALE_LISTEN=1` e `SCALE_ADDRESS` no .env do Pi; pacote `bleak`): a cada pesagem final (bit 0 do byte 6 do
+anúncio; peso nos bytes 0-1 em centésimos de kg) grava a pesagem de hoje com o horário (a de hoje é substituída) e
+manda à Cassandra "você pesou X quilos, Y a mais/menos que na pesagem de dd/mm".
 ### `DELETE /api/weight/log/{AAAA-MM-DD}`
 Os três devolvem o mesmo que o `GET`.
 

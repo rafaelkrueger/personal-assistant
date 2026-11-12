@@ -31,7 +31,8 @@ e todos os exames já enviados, com os marcadores extraídos. Cada resposta leva
 - **Sugerir as refeições de cada dia**: todo dia refeições diferentes, com a quantidade de cada alimento em
   gramas ou mililitros, para bater a meta de calorias, respeitando preferências, alergias e o que os exames
   mostram. Soma também o que o usuário comeu por fora (estimando as calorias, se ele não souber) e diz se o dia
-  bateu a meta — é o que mantém a sequência de dias e as conquistas.
+  bateu a meta — é o que mantém a sequência de dias. Também guarda um plano fixo de refeições do próprio
+  usuário (repete todo dia) e, em qualquer dia do calendário, se ele foi à academia e se bateu a meta de calorias.
 - **Gerar um panorama da saúde**: como está, o que melhorou/piorou, prioridades e o que conversar com o médico.
 - **Ler exames novos** (PDF, foto ou texto) — pela UI ou pela API (`POST /api/exams`).
 - **Avisar sozinho, pela Cassandra**: a cada 30 min confere o checkup e manda à Cassandra (que fala na casa) o

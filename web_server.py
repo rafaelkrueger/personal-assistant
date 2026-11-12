@@ -395,6 +395,20 @@ HTML_PAGE = """<!doctype html>
     .alarm-row-mini{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--border)}
     .alarm-row-mini:last-child{border-bottom:none}
     .alarm-time-lg{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.03em}
+    .sys-head{display:flex;gap:12px;align-items:center;padding:14px 16px;border-radius:var(--rl);border:1px solid var(--border);background:var(--glass);margin-bottom:14px}
+    .sys-head .big{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;font-size:20px;font-weight:900;flex-shrink:0}
+    .sys-head.ok .big{background:var(--green-dim);color:var(--green)}.sys-head.warn .big{background:var(--amber-dim);color:var(--amber)}.sys-head.bad .big{background:var(--red-dim);color:var(--red)}
+    .sys-head b{display:block;font-size:16px}.sys-head small{color:var(--text2);font-size:12px}
+    .sys-issues{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+    .sys-issue{font-size:13px;padding:9px 12px;border-radius:10px;border:1px solid var(--border)}
+    .sys-issue.warn{background:var(--amber-dim);color:var(--amber)}.sys-issue.bad{background:var(--red-dim);color:var(--red)}
+    .sys-meter{margin-top:8px;height:6px;border-radius:4px;background:var(--border);overflow:hidden}
+    .sys-meter>div{height:100%;border-radius:4px;background:var(--green);transition:width .4s}
+    .sys-meter>div.warn{background:var(--amber)}.sys-meter>div.bad{background:var(--red)}
+    .sys-sub{font-size:11px;color:var(--text3);margin-top:4px}
+    .sys-row{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px}
+    .sys-row:last-child{border-bottom:0}.sys-row span:last-child{color:var(--text2);font-variant-numeric:tabular-nums;text-align:right}
+    .sys-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:8px;background:var(--green)}.sys-dot.off{background:var(--red)}
     .cost-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:14px}
     .cost-chart{width:100%;height:190px;display:block}
     .cost-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--text2);margin-top:8px}
@@ -1110,6 +1124,30 @@ HTML_PAGE = """<!doctype html>
           </div>
         </div>
         <div class="cost-note">Estimativa pela tabela de preços de cada provedor (US$, sem impostos), a partir do que a Cassandra registra em cada chamada. Transcrição local (Vosk) e voz local (Piper) são grátis e não aparecem.</div>
+      </div>
+
+      <!-- ══ SAÚDE DO PI ══ -->
+      <div class="tab-panel hidden" id="tab-system">
+        <div class="sys-head ok" id="sysHead"><div class="big" id="sysBig">…</div><div><b id="sysTitle">Lendo o aparelho…</b><small id="sysSub"></small></div></div>
+        <div class="sys-issues" id="sysIssues"></div>
+        <div class="cost-grid">
+          <div class="stat-card"><div class="stat-val" id="sysCpu">—</div><div class="stat-lbl">CPU</div><div class="sys-meter"><div id="sysCpuBar"></div></div><div class="sys-sub" id="sysCpuSub"></div></div>
+          <div class="stat-card"><div class="stat-val" id="sysRam">—</div><div class="stat-lbl">Memória RAM usada</div><div class="sys-meter"><div id="sysRamBar"></div></div><div class="sys-sub" id="sysRamSub"></div></div>
+          <div class="stat-card"><div class="stat-val" id="sysSwap">—</div><div class="stat-lbl">Swap usado</div><div class="sys-meter"><div id="sysSwapBar"></div></div><div class="sys-sub" id="sysSwapSub"></div></div>
+          <div class="stat-card"><div class="stat-val" id="sysDisk">—</div><div class="stat-lbl">Disco usado</div><div class="sys-meter"><div id="sysDiskBar"></div></div><div class="sys-sub" id="sysDiskSub"></div></div>
+          <div class="stat-card"><div class="stat-val" id="sysTemp">—</div><div class="stat-lbl">Temperatura</div><div class="sys-meter"><div id="sysTempBar"></div></div><div class="sys-sub" id="sysTempSub"></div></div>
+        </div>
+        <div class="dash-cols">
+          <div class="dash-section">
+            <div class="dash-section-title">Serviços da casa</div>
+            <div id="sysServices"></div>
+          </div>
+          <div class="dash-section">
+            <div class="dash-section-title">O que mais usa memória</div>
+            <div id="sysTop"></div>
+          </div>
+        </div>
+        <div class="cost-note" id="sysNote">Atualiza sozinho a cada 10 segundos enquanto esta aba está aberta.</div>
       </div>
 
       <!-- ══ CHAT ══ -->
@@ -2090,6 +2128,7 @@ const IC = {
   settings: `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>`,
   habits:   `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14.5 17.5l2.2 2.2 4-4.4"/></svg>`,
   costs:    `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>`,
+  system:   `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="5" width="14" height="14" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>`,
   agents:   `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0113 0"/><circle cx="17.5" cy="9" r="2.5"/><path d="M17 14.5a5 5 0 014.5 5"/></svg>`,
   trash:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>`,
   check:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`,
@@ -2110,6 +2149,7 @@ const ALL_TABS = [
   {id:"agenda",    label:"Agenda",     group:"Organização"},
   {id:"alarms",    label:"Alarmes",    group:"Automação"},
   {id:"routines",  label:"Rotinas",    group:"Automação"},
+  {id:"system",    label:"Saúde do Pi", group:"Sistema"},
   {id:"mic",       label:"Microfone",  group:"Sistema"},
   {id:"costs",     label:"Gastos",     group:"Sistema"},
   {id:"settings",  label:"Config.",    group:"Sistema"},
@@ -2117,7 +2157,7 @@ const ALL_TABS = [
 let currentTab = "dashboard";
 const PAGE_TITLES = {
   dashboard:"Dashboard",chat:"Chat",agents:"Agentes",music:"Música",devices:"Aparelhos",mic:"Microfone",shopping:"Compras",
-  todos:"Tarefas",habits:"Hábitos",alarms:"Alarmes",routines:"Rotinas",agenda:"Agenda",settings:"Configurações",costs:"Gastos",
+  todos:"Tarefas",habits:"Hábitos",alarms:"Alarmes",routines:"Rotinas",agenda:"Agenda",settings:"Configurações",costs:"Gastos",system:"Saúde do Pi",
 };
 const DAY_NAMES = ["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"];
 const MONTHS_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
@@ -2257,6 +2297,7 @@ function gotoTab(tab){
   if(tab==="mic") micOpen(); else micClose();
   if(tab==="alarms") renderAlmCalendar();
   if(tab==="costs") loadCosts();
+  if(tab==="system") loadSystem();
   if(tab==="habits") loadHabits(true);
   if(tab==="agents") agOpen();
   syncCassFab();
@@ -2518,6 +2559,49 @@ async function loadCosts(){
     +(d.unpriced.length?`<div class="cost-note">Sem preço cadastrado: ${d.unpriced.map(esc).join(", ")}.</div>`:"");
 }
 document.getElementById("costDays").addEventListener("change",loadCosts);
+
+// ── Saúde do Pi ──
+function fmtBytes(b){if(b==null) return "—";const g=b/1073741824;return g>=1?g.toFixed(1).replace(".",",")+" GB":Math.round(b/1048576)+" MB";}
+function fmtUptime(s){if(s==null) return "";const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return d?`${d} d ${h} h`:h?`${h} h ${m} min`:`${m} min`;}
+function sysMeter(id,pct,warnAt,badAt){
+  const el=document.getElementById(id);if(!el) return;
+  el.style.width=Math.max(0,Math.min(100,pct||0))+"%";
+  el.className=pct>=badAt?"bad":pct>=warnAt?"warn":"";
+}
+async function loadSystem(){
+  let d;
+  try{d=await api("/api/system");}catch(e){document.getElementById("sysTitle").textContent=e.message;return;}
+  const head=document.getElementById("sysHead");
+  if(!d.available){head.className="sys-head warn";document.getElementById("sysTitle").textContent=d.reason||"Indisponível";return;}
+  const LBL={ok:["✓","Tudo certo"],warn:["!","Precisa de atenção"],bad:["✕","Com problema"]}[d.status];
+  head.className="sys-head "+d.status;
+  document.getElementById("sysBig").textContent=LBL[0];
+  document.getElementById("sysTitle").textContent=LBL[1];
+  document.getElementById("sysSub").textContent=`${d.model} · ligado há ${fmtUptime(d.uptime_s)} · atualizado às ${d.at.slice(11,16)}`;
+  document.getElementById("sysIssues").innerHTML=d.issues.map(i=>`<div class="sys-issue ${i.level}">${esc(i.text)}</div>`).join("");
+  const m=d.memory,sw=d.swap,dk=d.disk;
+  const ramPct=m.total?100*m.used/m.total:0,swPct=sw.total?100*sw.used/sw.total:0,dkPct=dk.total?100*dk.used/dk.total:0;
+  document.getElementById("sysCpu").textContent=d.cpu_percent==null?"—":Math.round(d.cpu_percent)+"%";
+  sysMeter("sysCpuBar",d.cpu_percent,70,90);
+  document.getElementById("sysCpuSub").textContent=[d.cpu_mhz?d.cpu_mhz+" MHz":"",d.load.length?"carga "+d.load.map(x=>x.toFixed(2).replace(".",",")).join(" / "):"",d.cores+" núcleos"].filter(Boolean).join(" · ");
+  document.getElementById("sysRam").textContent=Math.round(ramPct)+"%";
+  sysMeter("sysRamBar",ramPct,80,90);
+  document.getElementById("sysRamSub").textContent=`${fmtBytes(m.used)} de ${fmtBytes(m.total)} · ${fmtBytes(m.available)} livre`;
+  document.getElementById("sysSwap").textContent=sw.total?Math.round(swPct)+"%":"—";
+  sysMeter("sysSwapBar",swPct,60,85);
+  document.getElementById("sysSwapSub").textContent=sw.total?`${fmtBytes(sw.used)} de ${fmtBytes(sw.total)}`:"sem swap";
+  document.getElementById("sysDisk").textContent=Math.round(dkPct)+"%";
+  sysMeter("sysDiskBar",dkPct,80,90);
+  document.getElementById("sysDiskSub").textContent=`${fmtBytes(dk.used)} de ${fmtBytes(dk.total)} · ${fmtBytes(dk.free)} livre`;
+  document.getElementById("sysTemp").textContent=d.temp_c==null?"—":Math.round(d.temp_c)+" °C";
+  sysMeter("sysTempBar",d.temp_c==null?0:d.temp_c/85*100,70/85*100,80/85*100);
+  document.getElementById("sysTempSub").textContent=d.temp_c==null?"":d.temp_c>=60?"acima de 60 °C o Pi 3 reduz a CPU":"normal";
+  document.getElementById("sysServices").innerHTML=d.services.map(x=>`<div class="sys-row"><span><i class="sys-dot${x.state==="active"?"":" off"}"></i>${esc(x.label)}</span><span>${x.state==="active"?"no ar":esc(x.state)}</span></div>`).join("");
+  document.getElementById("sysTop").innerHTML=d.top.map(x=>`<div class="sys-row"><span>${esc(x.name)}</span><span>${fmtBytes(x.memory)} · CPU ${Math.round(x.cpu)}%</span></div>`).join("");
+  const past=d.throttle_past.filter(t=>!d.issues.some(i=>i.text===t));
+  document.getElementById("sysNote").textContent="Atualiza sozinho a cada 10 segundos enquanto esta aba está aberta."+(past.length?" Desde que ligou: "+past.join("; ").toLowerCase()+".":"");
+}
+setInterval(()=>{if(currentTab==="system"&&!document.hidden) loadSystem();},10000);
 
 // Enquanto a Cassandra trabalha num pedido do chat, mostra o que já chegou — ex.: o aviso "deixa eu dar uma
 // olhada" antes de uma pesquisa ou de outro agente; o resultado vem depois, em outra mensagem.
@@ -4903,6 +4987,11 @@ def make_handler(assistant: CassandraAssistant) -> Type[BaseHTTPRequestHandler]:
                 except ValueError:
                     year = 0
                 self._send_json(habits.overview(year or None))
+                return
+            if parsed.path == "/api/system":
+                from cassandra import system_health  # noqa: PLC0415
+
+                self._send_json(system_health.snapshot())
                 return
             if parsed.path == "/api/usage":
                 from cassandra import usage_log  # noqa: PLC0415
