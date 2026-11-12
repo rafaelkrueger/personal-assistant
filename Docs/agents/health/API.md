@@ -187,6 +187,20 @@ não seja `true`/`false`/`null`.
 ### `POST /api/weight/extra` — `{ "food": "pão de queijo", "qty": 60, "unit": "g" | "ml", "kcal": 180 }`
 Algo comido fora das sugestões; entra na conta do dia. Sem `kcal`, o LLM estima pelo alimento e pela quantidade
 (`estimated: true`). `400` se falta o alimento, a quantidade ou a unidade.
+Com `"food_id"` (item da tabela, ver abaixo) e sem `kcal`, as calorias saem da tabela: `kcal = kcal/100 g × qty` (ml
+conta como g) e o extra guarda `"source": "TACO: Arroz, tipo 1, cozido (128 kcal/100 g)"`. Sem `kcal` nem `food_id`,
+o modelo estima (com os itens parecidos da TACO como referência) e o extra fica `estimated: true`.
+
+### `GET /api/foods?q=arroz branco&limit=8`
+A tabela de alimentos do Pulse: **TACO** (Tabela Brasileira de Composição de Alimentos, 4ª ed., NEPA/UNICAMP, 2011),
+591 itens, mais 4 do USDA para o que a TACO não tem energia (leite líquido integral/desnatado/semidesnatado e
+macarrão cozido, `"source": "USDA"`). Resposta: `{ "foods": [ { "id", "name", "category", "kcal", "protein_g",
+"carbs_g", "fat_g", "fiber_g", "score" } ], "table": { "source", "basis", "count" } }` — valores por 100 g.
+
+**No chat** (`POST /api/chat`, inclusive vindo do Maestro ou da Cassandra): "comi 2 ovos fritos" faz o modelo usar as
+ferramentas `buscar_alimento` (TACO) e `registrar_alimento` (grava o extra de hoje com as calorias da tabela;
+fora da tabela, com o rótulo ou uma estimativa marcada como tal) e responder com o total do dia.
+
 ### `DELETE /api/weight/extra/{id}`
 
 ### `PUT /api/weight` — `{ "activity", "pace": 0.25 | 0.5, "target_kg" }` (meta vazia = automática; `400` se a meta sai da faixa saudável)

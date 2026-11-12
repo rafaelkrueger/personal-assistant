@@ -33,6 +33,10 @@ e todos os exames já enviados, com os marcadores extraídos. Cada resposta leva
   mostram. Soma também o que o usuário comeu por fora (estimando as calorias, se ele não souber) e diz se o dia
   bateu a meta — é o que mantém a sequência de dias. Também guarda um plano fixo de refeições do próprio
   usuário (repete todo dia) e, em qualquer dia do calendário, se ele foi à academia e se bateu a meta de calorias.
+- **Anotar o que o usuário comeu com calorias confiáveis**: "comi 2 ovos fritos e um pão francês" → busca na tabela
+  TACO (Unicamp, 591 alimentos, por 100 g), converte a medida caseira em gramas e anota no dia com as calorias da
+  tabela (o que não está na tabela entra pelo rótulo ou como estimativa, avisando). Também responde "quantas calorias
+  tem 100 g de arroz?" pela tabela.
 - **Gerar um panorama da saúde**: como está, o que melhorou/piorou, prioridades e o que conversar com o médico.
 - **Ler exames novos** (PDF, foto ou texto) — pela UI ou pela API (`POST /api/exams`).
 - **Avisar sozinho, pela Cassandra**: a cada 30 min confere o checkup e manda à Cassandra (que fala na casa) o
