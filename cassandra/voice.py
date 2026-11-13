@@ -15,6 +15,7 @@ from xml.sax.saxutils import escape as _xml_escape
 from cassandra import intercom
 from cassandra import usage_log
 from cassandra import speech_state
+from cassandra import spoken_numbers
 
 
 def _split_sentences(text: str) -> tuple[list[str], str]:
@@ -25,7 +26,9 @@ def _split_sentences(text: str) -> tuple[list[str], str]:
     while i < len(text):
         ch = text[i]
         if ch in ".!?":
-            if i + 1 >= len(text) or text[i + 1] in " \n\t":
+            # Só corta com o espaço seguinte já recebido: no streaming o pedaço pode acabar em "R$ 7." e o resto
+            # ("000,00") ainda vir no próximo token. O que sobrar no fim é falado por quem chama.
+            if i + 1 < len(text) and text[i + 1] in " \n\t":
                 s = text[last : i + 1].strip()
                 if s:
                     sentences.append(s)
@@ -441,7 +444,7 @@ class VoiceOutput:
     def speak(self, text: str) -> None:
         if not self.enabled:
             return
-        cleaned = text.strip()
+        cleaned = spoken_numbers.for_speech(text.strip())
         if not cleaned or intercom.active():  # interfone ligado: a caixa é de quem está falando
             return
         if speech_state.task_cancelled():
@@ -689,6 +692,7 @@ class VoiceOutput:
                 if sentence is None or self._stopped():
                     break
                 parts_stream.append(sentence)
+                sentence = spoken_numbers.for_speech(sentence)
                 speech_state.remember(sentence)
                 if not self._speak_streamed(sentence):
                     path = self._synthesize(sentence)
@@ -704,7 +708,7 @@ class VoiceOutput:
                 if sentence is None:
                     audio_q.put(None)
                     break
-                audio_q.put((sentence, self._synthesize(sentence)))
+                audio_q.put((sentence, self._synthesize(spoken_numbers.for_speech(sentence))))
 
         threading.Thread(target=collect, daemon=True).start()
         threading.Thread(target=generate_tts, daemon=True).start()
